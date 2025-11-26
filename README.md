@@ -12,6 +12,7 @@
 
 ## 项目结构
 
+```
 SatCom-Infer/
 ├── satellite_node.py          # 卫星节点核心实现
 ├── satellite_api.py           # 卫星节点API服务
@@ -30,6 +31,9 @@ SatCom-Infer/
 │   └── config/               # 预测模型配置
 └── net/                      # 网络通信模块
     └── net_utils.py
+```
+
+
 
 ## 快速开始
 
