@@ -306,15 +306,15 @@ class SatelliteNode:
         return network_info
 
     def estimate_link_bandwidth(self, neighbor_info):
-        """估计链路带宽（基于卫星类型和距离）"""
-        # 简化估计：遥感卫星到计算卫星的带宽
-        if self.satellite_type == SatelliteType.REMOTE_SENSING:
-            if neighbor_info['type'] == 'leo_computing':
-                return 100.0  # Mbps
-            else:
-                return 50.0  # Mbps
+        """更真实的带宽估计"""
+        # 如果是连接到地面站，带宽较低（星地链路）
+        if neighbor_info.get('type') == 'ground_station' or 'ground' in neighbor_info.get('node_id', '').lower():
+            return 50.0  # 星地带宽较低
+        # 星间链路带宽较高
+        elif self.satellite_type == SatelliteType.REMOTE_SENSING:
+            return 100.0
         else:
-            return 80.0  # Mbps
+            return 80.0
 
     def estimate_link_latency(self, neighbor_info):
         """估计链路延迟（基于卫星类型）"""
@@ -325,48 +325,83 @@ class SatelliteNode:
             return 5.0  # ms
 
     def calculate_optimal_partition(self, network_info):
-        """简单的分割方案计算（临时替代）"""
-        print(f"{self.node_id} 计算简单分割方案...")
+        """改进的分割方案，考虑地面站高算力"""
+        print(f"{self.node_id} 计算分割方案...")
 
-        # 获取可用节点
         available_nodes = list(network_info['nodes'].keys())
-        print(f"可用节点: {available_nodes}")
 
-        # 简单的分割策略：按节点算力分配层数
+        # 识别地面站和卫星节点
+        ground_stations = []
+        satellite_nodes = []
+
+        for node_id in available_nodes:
+            node_info = network_info['nodes'][node_id]
+            # 通过type字段识别地面站
+            if node_info.get('type') == 'ground_station':
+                ground_stations.append(node_id)
+            else:
+                satellite_nodes.append(node_id)
+
+        print(f"可用节点: 卫星{satellite_nodes}, 地面站{ground_stations}")
+
         total_layers = len(self.current_model)
         print(f"模型总层数: {total_layers}")
 
-        # 计算总算力
-        total_compute = sum(network_info['nodes'][node]['compute_capacity'] for node in available_nodes)
-
         partition_plan = []
-        current_layer = 0
 
-        for i, node_id in enumerate(available_nodes):
-            if current_layer >= total_layers:
-                break
+        # 优先使用地面站的高算力
+        if ground_stations:
+            ground_station_id = ground_stations[0]
+            split_point = int(total_layers * 0.6)  # 前60%在卫星，后40%在地面站
 
-            # 基于节点算力比例分配层数
-            node_compute = network_info['nodes'][node_id]['compute_capacity']
-            compute_ratio = node_compute / total_compute
-            layers_to_assign = max(1, int(total_layers * compute_ratio))
+            # 卫星节点分配前半部分
+            if satellite_nodes:
+                current_layer = 0
+                for i, sat_id in enumerate(satellite_nodes):
+                    if current_layer >= split_point:
+                        break
+                    # 简单平均分配前半部分
+                    layers_per_sat = (split_point - current_layer) // (len(satellite_nodes) - i)
+                    end_layer = min(current_layer + layers_per_sat, split_point)
+                    partition_plan.append({
+                        'node_id': sat_id,
+                        'layer_range': (current_layer, end_layer),
+                        'compute_load': end_layer - current_layer
+                    })
+                    current_layer = end_layer
 
-            # 确保不会超过总层数
-            end_layer = min(current_layer + layers_to_assign, total_layers)
-
+            # 地面站分配计算密集的后半部分
             partition_plan.append({
-                'node_id': node_id,
-                'layer_range': (current_layer, end_layer),
-                'compute_load': end_layer - current_layer
+                'node_id': ground_station_id,
+                'layer_range': (split_point, total_layers),
+                'compute_load': total_layers - split_point
             })
+        else:
+            # 如果没有地面站，使用原来的卫星分配策略
+            total_compute = sum(network_info['nodes'][node]['compute_capacity'] for node in available_nodes)
+            current_layer = 0
 
-            current_layer = end_layer
+            for i, node_id in enumerate(available_nodes):
+                if current_layer >= total_layers:
+                    break
 
-        # 如果还有剩余层数，分配给最后一个节点
-        if current_layer < total_layers and partition_plan:
-            last_partition = partition_plan[-1]
-            last_partition['layer_range'] = (last_partition['layer_range'][0], total_layers)
-            last_partition['compute_load'] = total_layers - last_partition['layer_range'][0]
+                node_compute = network_info['nodes'][node_id]['compute_capacity']
+                compute_ratio = node_compute / total_compute
+                layers_to_assign = max(1, int(total_layers * compute_ratio))
+                end_layer = min(current_layer + layers_to_assign, total_layers)
+
+                partition_plan.append({
+                    'node_id': node_id,
+                    'layer_range': (current_layer, end_layer),
+                    'compute_load': end_layer - current_layer
+                })
+                current_layer = end_layer
+
+            # 如果还有剩余层数，分配给最后一个节点
+            if current_layer < total_layers and partition_plan:
+                last_partition = partition_plan[-1]
+                last_partition['layer_range'] = (last_partition['layer_range'][0], total_layers)
+                last_partition['compute_load'] = total_layers - last_partition['layer_range'][0]
 
         print(f"分割方案: {partition_plan}")
         return partition_plan

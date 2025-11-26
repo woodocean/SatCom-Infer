@@ -55,14 +55,21 @@ def main():
             satellite.discover_neighbor(neighbor_ip, int(neighbor_port))
             time.sleep(0.5)
 
-        # 启动发现服务
-        satellite.start_discovery_service()
+    # 启动发现服务
+    satellite.start_discovery_service()
 
-        #  启动任务服务
-        satellite.start_task_service()
+    # 启动任务服务
+    satellite.start_task_service()
 
-        print(
-            f"卫星节点 {args.node_id} 启动完成，监听 {args.ip}:{args.port}(发现服务) 和 {args.ip}:{args.port + 1000}(任务服务)")
+    print(
+        f"卫星节点 {args.node_id} 启动完成，监听 {args.ip}:{args.port}(发现服务) 和 {args.ip}:{args.port + 1000}(任务服务)")
+
+    # 连接邻居节点
+    if args.neighbors:
+        for neighbor in args.neighbors:
+            neighbor_ip, neighbor_port = neighbor.split(':')
+            satellite.discover_neighbor(neighbor_ip, int(neighbor_port))
+            time.sleep(0.5)
 
     # 保持运行
     try:
