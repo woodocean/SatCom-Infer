@@ -1,4 +1,3 @@
-```markdown
 # SatCom-Infer：面向分布式卫星协同推理的高效通信策略
 
 一个分布式卫星协同推理系统，支持在具有异构计算能力的多卫星节点间进行高效的DNN模型拆分与协同推理。
@@ -13,7 +12,6 @@
 
 ## 项目结构
 
-```
 SatCom-Infer/
 ├── satellite_node.py          # 卫星节点核心实现
 ├── satellite_api.py           # 卫星节点API服务
@@ -32,7 +30,6 @@ SatCom-Infer/
 │   └── config/               # 预测模型配置
 └── net/                      # 网络通信模块
     └── net_utils.py
-```
 
 ## 快速开始
 
