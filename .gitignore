@@ -1,0 +1,19 @@
+# 忽略 Python 编译文件
+*.pyc
+__pycache__/
+
+# 忽略模型检查点文件
+checkpoints/*.pth
+trained_models/*.pth
+
+# 忽略数据文件
+data/*.csv
+data/*.tar.gz
+
+# 忽略日志文件
+*.log
+
+# 忽略 IDE 配置文件夹
+.vscode/
+.idea/
+
