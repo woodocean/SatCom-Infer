@@ -61,14 +61,13 @@ def submit_task(task, satellite_ip, satellite_port):
         except:
             pass
 
-
 if __name__ == "__main__":
     # 创建测试任务
     task = {
         'task_id': 'urban_detection_001',
         'model_type': 'alex_net',
-        'input_data': torch.rand(1, 3, 224, 224),
-        'max_latency': 5000,
+        'input_data': torch.rand(1, 3, 1024, 1024),  # 🎯 大幅增大到高分辨率
+        'max_latency': 30000,  # 🎯 相应增加时限到30秒
         'priority': 'high'
     }
 

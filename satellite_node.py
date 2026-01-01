@@ -6,7 +6,7 @@ import threading
 from enum import Enum
 from utils.inference_utils import get_dnn_model, model_partition
 from predictor import predictor_utils
-
+from utils import dataset_utils
 
 class SatelliteType(Enum):
     REMOTE_SENSING = "remote_sensing"  # 遥感卫星
@@ -16,20 +16,20 @@ class SatelliteType(Enum):
 class SatelliteNode:
     def __init__(self, node_id: str, satellite_type: SatelliteType,
                  ip: str, port: int, compute_capacity: float, device: str = "cpu"):
-        self.node_id = node_id
-        self.satellite_type = satellite_type
-        self.ip = ip
-        self.port = port
-        self.compute_capacity = compute_capacity
-        self.device = device
+        self.node_id = node_id                      #卫星编号
+        self.satellite_type = satellite_type        #卫星种类 遥感or计算
+        self.ip = ip                                #ip号，用于模拟不同主机间通信
+        self.port = port                            #端口号，模拟主机不同的应用程序
+        self.compute_capacity = compute_capacity    #卫星节点算力
+        self.device = device                        #节点使用cpu/cuda
 
         # 网络信息
-        self.neighbor_nodes = {}  # 存储发现的邻居
+        self.neighbor_nodes = {}                    # 存储发现的邻居
 
         # 添加模型和预测器
-        self.current_model = None
-        self.assigned_layers = None
-        self.predictor_dict = {}  # 时延预测器字典
+        self.current_model = None                   #？？
+        self.assigned_layers = None                 #？？
+        self.predictor_dict = {}                    # 时延预测器字典
 
         # 任务状态
         self.current_task = None
@@ -91,10 +91,10 @@ class SatelliteNode:
         try:
             # 接收完整数据
             data = b""
-            conn.settimeout(5.0)  # 设置接收超时
+            conn.settimeout(60.0)  # 🎯 增大超时时间
 
             while True:
-                chunk = conn.recv(4096)
+                chunk = conn.recv(65536)  # 🎯 增大到64KB每次
                 if not chunk:
                     break
                 data += chunk
@@ -325,6 +325,20 @@ class SatelliteNode:
             return 5.0  # ms
 
     def calculate_optimal_partition(self, network_info):
+        if hasattr(self, 'current_task') and self.current_task.get('test_type') == 'single_satellite':
+            print(f"{self.node_id} 使用单星推理模式")
+            total_layers = len(self.current_model)
+
+            # 选择算力最强的节点（包括地面站）
+            all_nodes = list(network_info['nodes'].keys())
+            best_node = max(all_nodes, key=lambda x: network_info['nodes'][x]['compute_capacity'])
+
+            return [{
+                'node_id': best_node,
+                'layer_range': (0, total_layers),
+                'compute_load': total_layers
+            }]
+
         """改进的分割方案，考虑地面站高算力"""
         print(f"{self.node_id} 计算分割方案...")
 
@@ -407,7 +421,7 @@ class SatelliteNode:
         return partition_plan
 
     def distribute_and_execute(self, partition_plan):
-        """分发任务并执行协同推理（包含地面站）"""
+        """分发任务并执行协同推理 - 修复版本：确保返回最终输出"""
         print(f"{self.node_id} 分发任务到 {len(partition_plan)} 个节点...")
 
         execution_results = {
@@ -415,14 +429,14 @@ class SatelliteNode:
             'total_latency': 0.0,
             'partition_plan': partition_plan,
             'node_results': {},
-            'final_output': None
+            'final_output': None  # 确保有这个字段
         }
 
         current_data = self.input_data
         total_latency = 0.0
 
         try:
-            # 执行各卫星节点的分配任务
+            # 执行各节点的分配任务
             for i, partition in enumerate(partition_plan):
                 node_id = partition['node_id']
                 layer_range = partition['layer_range']
@@ -437,43 +451,54 @@ class SatelliteNode:
                         'status': 'success'
                     }
                     total_latency += exec_time
+                    current_data = output_data  # 使用真实输出数据
                 else:
-                    # 远程节点执行（模拟）
-                    print(f"    远程执行 {node_id}")
-                    exec_time = self.estimate_remote_execution(current_data, layer_range, node_id)
-                    execution_results['node_results'][node_id] = {
-                        'execution_time': exec_time,
-                        'status': 'simulated'
-                    }
-                    total_latency += exec_time
+                    # 真实远程节点执行
+                    print(f"    发送数据到远程节点 {node_id}")
 
-                # 更新中间数据
-                current_data = self.estimate_output_size(current_data, layer_range)
-
-                # 传输时延
-                if i < len(partition_plan) - 1:
-                    next_node = partition_plan[i + 1]['node_id']
-                    transmit_time = self.estimate_transmission_time(current_data, node_id, next_node)
+                    # 发送数据到远程节点
+                    transmit_time, output_data = self.send_data_to_node(current_data, node_id, layer_range)
                     total_latency += transmit_time
 
-            # 关键补充：将最终结果传输到地面站
+                    execution_results['node_results'][node_id] = {
+                        'execution_time': transmit_time,  # 包含传输+执行时间
+                        'status': 'remote_executed'
+                    }
+                    current_data = output_data  # 使用真实输出数据
+
+                # 传输时延（使用真实数据传输）
+                if i < len(partition_plan) - 1:
+                    next_node = partition_plan[i + 1]['node_id']
+                    if next_node != self.node_id:  # 只有需要传输时才计算
+                        transmit_time = self.calculate_real_transmission_time(current_data, node_id, next_node)
+                        total_latency += transmit_time
+
+            # 🎯 关键修复：确保保存最终输出
+            execution_results['final_output'] = current_data
+
+            # 传输最终结果到地面站（如果有地面站）
             if current_data is not None and self.ground_stations:
-                # 选择第一个地面站作为最终接收点
                 ground_station_id = list(self.ground_stations.keys())[0]
                 print(f"  传输最终结果到地面站: {ground_station_id}")
 
-                # 估算传输时延
-                ground_transmit_time = self.estimate_ground_transmission_time(current_data)
+                ground_transmit_time = self.calculate_real_transmission_time(current_data, self.node_id,
+                                                                             ground_station_id)
                 total_latency += ground_transmit_time
 
                 execution_results['ground_station'] = ground_station_id
                 execution_results['ground_transmit_time'] = ground_transmit_time
-                execution_results['final_output'] = current_data  # 模拟最终输出
+                # 最终输出已经保存在上面
 
             execution_results['total_latency'] = total_latency
             execution_results['success'] = total_latency <= self.max_latency
 
             print(f"协同推理完成，总时延: {total_latency:.2f}ms")
+
+            # 🎯 调试信息：检查最终输出
+            if execution_results['final_output'] is not None:
+                print(f"✅ 最终输出形状: {execution_results['final_output'].shape}")
+            else:
+                print("❌ 最终输出为None")
 
         except Exception as e:
             print(f"协同推理失败: {e}")
@@ -481,6 +506,125 @@ class SatelliteNode:
             execution_results['error'] = str(e)
 
         return execution_results
+
+    def send_data_to_node(self, data, remote_node_id, layer_range):
+        """发送数据到远程节点并获取执行结果 - 修复版本"""
+        try:
+            # 获取远程节点信息
+            node_info = self.neighbor_nodes.get(remote_node_id)
+            if not node_info:
+                raise ValueError(f"未知节点: {remote_node_id}")
+
+            # 建立连接
+            conn = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            conn.settimeout(60.0)
+            conn.connect((node_info['ip'], node_info['port'] + 1000))
+
+            # 准备任务数据 - 明确要求返回输出
+            task_data = {
+                'type': 'execute_layers',
+                'data': data,
+                'layer_range': layer_range,
+                'model_type': self.model_type,
+                'return_output': True  # 🎯 明确要求返回输出
+            }
+
+            # 发送数据并记录传输开始时间
+            start_time = time.perf_counter()
+            conn.sendall(pickle.dumps(task_data))
+
+            # 接收响应
+            response_data = b""
+            while True:
+                chunk = conn.recv(65536)
+                if not chunk:
+                    break
+                response_data += chunk
+                try:
+                    response = pickle.loads(response_data)
+                    break
+                except:
+                    continue
+
+            end_time = time.perf_counter()
+
+            response = pickle.loads(response_data)
+
+            if response['status'] == 'success':
+                transmit_time = (end_time - start_time) * 1000
+                # 🎯 确保有输出数据
+                if 'output_data' in response and response['output_data'] is not None:
+                    return transmit_time, response['output_data']
+                else:
+                    raise Exception("远程节点没有返回输出数据")
+            else:
+                raise Exception(f"远程执行失败: {response.get('message', '未知错误')}")
+
+        except Exception as e:
+            print(f"发送数据到节点 {remote_node_id} 失败: {e}")
+            # 失败时返回估算值
+            estimated_time = self.estimate_remote_execution(data, layer_range, remote_node_id)
+            return estimated_time, self.estimate_output_size(data, layer_range)
+        finally:
+            try:
+                conn.close()
+            except:
+                pass
+
+    def calculate_real_transmission_time(self, data, from_node, to_node):
+        """计算真实传输时延（基于数据大小和带宽）"""
+        # 计算数据大小
+        if torch.is_tensor(data):
+            # 🎯 考虑中间特征图可能比输入更大
+            data_size_bytes = data.nelement() * data.element_size() * 4  # 🎯 假设4倍膨胀
+        else:
+            data_size_bytes = len(pickle.dumps(data))
+
+        data_size_mb = data_size_bytes / (1024 * 1024)  # MB
+
+        # 获取带宽（Mbps）
+        bandwidth = self.get_link_bandwidth(from_node, to_node)
+
+        # 计算传输时间：数据大小(MB) * 8 / 带宽(Mbps) = 时间(秒)
+        transmission_time_sec = (data_size_mb * 8) / bandwidth
+
+        # 获取传播时延
+        propagation_delay = self.get_propagation_delay(from_node, to_node)
+
+        total_time_ms = (transmission_time_sec + propagation_delay) * 1000
+
+        print(f"    传输数据: {data_size_mb:.2f}MB, 带宽: {bandwidth}Mbps, 时延: {total_time_ms:.2f}ms")
+        return total_time_ms
+
+    def get_link_bandwidth(self, from_node, to_node):
+        """获取链路带宽"""
+        # 星间链路 vs 星地链路
+        from_info = self.neighbor_nodes.get(from_node, {})
+        to_info = self.neighbor_nodes.get(to_node, {})
+
+        # 判断是否为星地链路
+        is_ground_link = (from_info.get('type') == 'ground_station' or
+                          to_info.get('type') == 'ground_station' or
+                          'ground' in from_node.lower() or 'ground' in to_node.lower())
+
+        if is_ground_link:
+            return 50.0  # 星地带宽较低 50 Mbps
+        else:
+            return 200.0  # 星间带宽较高 200 Mbps
+
+    def get_propagation_delay(self, from_node, to_node):
+        """获取传播时延（秒）"""
+        # 星间链路 vs 星地链路
+        from_info = self.neighbor_nodes.get(from_node, {})
+        to_info = self.neighbor_nodes.get(to_node, {})
+
+        is_ground_link = (from_info.get('type') == 'ground_station' or
+                          to_info.get('type') == 'ground_station')
+
+        if is_ground_link:
+            return 0.27  # 低轨卫星到地面站约270ms
+        else:
+            return 0.01  # 星间链路约10ms
 
     def extract_layers_range(self, start_layer, end_layer):
         """提取指定层范围的模型（适配自定义模型结构）"""
@@ -605,15 +749,16 @@ class SatelliteNode:
         return total_latency
 
     def predict_computation_latency(self, input_data, layer_range):
-        """使用你现有的时延预测模型预测计算时延"""
+        """使用预训练的时延预测模型预测计算时延"""
         start_layer, end_layer = layer_range
         target_model = self.extract_layers_range(start_layer, end_layer)
 
-        # 使用你现有的 predictor_utils
+        # 🆕 确保使用您的预训练预测器
         predicted_latency = predictor_utils.predict_model_latency(
             input_data, target_model, self.device, self.predictor_dict
         )
 
+        print(f"    时延预测: {predicted_latency:.2f}ms (层{start_layer}-{end_layer})")
         return predicted_latency
 
     def estimate_remote_computation(self, layer_range, node_info):
@@ -651,26 +796,54 @@ class SatelliteNode:
         return torch.rand_like(input_data)
 
     def execute_assigned_layers(self, input_data, layer_range):
-        """执行分配到的模型层（真实执行）"""
+        """执行分配到的模型层 - 修复设备不匹配"""
         print(f"    {self.node_id} 执行层 {layer_range}")
+
+        # 确定目标设备
+        target_device = self.device
+        if target_device == "cuda" and not torch.cuda.is_available():
+            target_device = "cpu"
+            print(f"⚠️  CUDA不可用，切换到{target_device}")
+
+        # 确保输入数据在目标设备上
+        if str(input_data.device) != target_device:
+            input_data = input_data.to(target_device)
+            print(f"🔄 移动输入数据到: {target_device}")
 
         # 提取指定层范围的模型
         start_layer, end_layer = layer_range
         target_model = self.extract_layers_range(start_layer, end_layer)
 
+        # 确保模型在目标设备上
+        target_model = target_model.to(target_device)
+        print(f"🔄 模型已移动到: {target_device}")
+
         # 预热
         self.warm_up_model(target_model, input_data)
 
-        # 记录真实执行时间
-        start_time = time.time()
-        with torch.no_grad():
-            output_data = target_model(input_data)
-        end_time = time.time()
+        # 高精度计时
+        num_runs = 10
+        execution_times = []
 
-        execution_time = (end_time - start_time) * 1000  # 转换为毫秒
+        # 预热（不计时）
+        for _ in range(3):
+            with torch.no_grad():
+                _ = target_model(input_data)
 
-        print(f"       执行完成, 耗时: {execution_time:.2f}ms")
-        return output_data, execution_time
+        # 正式计时运行
+        for run in range(num_runs):
+            start_time = time.perf_counter()
+            with torch.no_grad():
+                output_data = target_model(input_data)
+            end_time = time.perf_counter()
+            execution_times.append((end_time - start_time) * 1000)
+
+        # 取中位数避免异常值
+        execution_times.sort()
+        median_time = execution_times[len(execution_times) // 2]
+
+        print(f"       执行完成, 中位时延: {median_time:.3f}ms")
+        return output_data, median_time
 
     def warm_up_model(self, model, input_data):
         """模型预热"""
@@ -713,22 +886,74 @@ class SatelliteNode:
     def _handle_task_connection(self, conn, addr):
         """处理任务连接请求"""
         try:
-            data = conn.recv(4096)
-            if data:
-                message = pickle.loads(data)
-                if message['type'] == 'task':
-                    print(f"{self.node_id} 接收到任务: {message['data']['task_id']}")
+            conn.settimeout(120.0)  # 🎯 增大超时到120秒
+            data = b""
 
-                    # 处理任务
-                    if self.satellite_type == SatelliteType.REMOTE_SENSING:
-                        result = self.assign_task(message['data'])
-                    else:
-                        result = {"status": "not_coordinator", "message": "非协调节点"}
+            # 🎯 增大缓冲区并确保完整接收
+            while True:
+                chunk = conn.recv(65536)  # 🎯 增大到64KB每次
+                if not chunk:
+                    break
+                data += chunk
+                # 尝试判断数据是否完整
+                try:
+                    message = pickle.loads(data)
+                    break  # 成功解析，数据完整
+                except:
+                    continue  # 数据不完整，继续接收
 
-                    # 返回结果
-                    conn.send(pickle.dumps(result))
+            if not data:
+                return
+
+            message = pickle.loads(data)
+
+            if message['type'] == 'task':
+                print(f"{self.node_id} 接收到任务: {message['data']['task_id']}")
+
+                if self.satellite_type == SatelliteType.REMOTE_SENSING and not self.is_busy:
+                    result = self.assign_task(message['data'])
                 else:
-                    conn.send(pickle.dumps({"status": "error", "message": "未知消息类型"}))
+                    result = {"status": "not_coordinator", "message": "非协调节点"}
+
+                # 返回结果
+                conn.send(pickle.dumps(result))
+
+
+            elif message['type'] == 'execute_layers':
+
+                print(f"{self.node_id} 接收到层执行请求: {message['layer_range']}")
+
+                # 加载模型
+
+                if not self.current_model:
+                    self.current_model = get_dnn_model(message['model_type'])
+
+                # 执行指定层
+
+                output_data, exec_time = self.execute_assigned_layers(
+
+                    message['data'],
+
+                    message['layer_range']
+
+                )
+
+                # 🎯 确保返回输出数据
+
+                response = {
+
+                    'status': 'success',
+
+                    'output_data': output_data,  # 确保有这个字段
+
+                    'execution_time': exec_time
+
+                }
+
+                conn.send(pickle.dumps(response))
+
+            else:
+                conn.send(pickle.dumps({"status": "error", "message": "未知消息类型"}))
 
         except Exception as e:
             print(f"处理任务消息错误: {e}")
@@ -738,3 +963,42 @@ class SatelliteNode:
                 pass
         finally:
             conn.close()
+
+    def evaluate_local_model(self, testloader):
+        """评估本地模型精度"""
+        if not self.current_model:
+            print(f"{self.node_id} 没有加载模型")
+            return 0.0
+
+        accuracy = evaluate_model_accuracy(self.current_model, testloader, self.device)
+        print(f"{self.node_id} 模型精度: {accuracy:.2f}%")
+        return accuracy
+
+    def execute_complete_model(self, input_data):
+        """执行完整模型（用于单星推理对比）"""
+        if not self.current_model:
+            print(f"{self.node_id} 没有加载模型")
+            return None, 0.0
+
+        print(f"{self.node_id} 执行完整模型推理...")
+
+        # 高精度计时
+        num_runs = 10
+        execution_times = []
+
+        # 预热
+        self.warm_up_model(self.current_model, input_data)
+
+        # 正式计时
+        for run in range(num_runs):
+            start_time = time.perf_counter()
+            with torch.no_grad():
+                output_data = self.current_model(input_data)
+            end_time = time.perf_counter()
+            execution_times.append((end_time - start_time) * 1000)
+
+        execution_times.sort()
+        median_time = execution_times[len(execution_times) // 2]
+
+        print(f"    完整模型执行完成, 时延: {median_time:.2f}ms")
+        return output_data, median_time

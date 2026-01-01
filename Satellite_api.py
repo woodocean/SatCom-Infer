@@ -46,17 +46,6 @@ def main():
 
     # 启动发现服务
     satellite.start_discovery_service()
-    print(f"卫星节点 {args.node_id} 启动完成，监听 {args.ip}:{args.port}")
-
-    # 连接邻居节点
-    if args.neighbors:
-        for neighbor in args.neighbors:
-            neighbor_ip, neighbor_port = neighbor.split(':')
-            satellite.discover_neighbor(neighbor_ip, int(neighbor_port))
-            time.sleep(0.5)
-
-    # 启动发现服务
-    satellite.start_discovery_service()
 
     # 启动任务服务
     satellite.start_task_service()
@@ -64,12 +53,21 @@ def main():
     print(
         f"卫星节点 {args.node_id} 启动完成，监听 {args.ip}:{args.port}(发现服务) 和 {args.ip}:{args.port + 1000}(任务服务)")
 
-    # 连接邻居节点
+    # 连接邻居节点（只保留一次）
     if args.neighbors:
+        print(f"🔗 开始连接邻居节点...")
         for neighbor in args.neighbors:
             neighbor_ip, neighbor_port = neighbor.split(':')
-            satellite.discover_neighbor(neighbor_ip, int(neighbor_port))
+            success = satellite.discover_neighbor(neighbor_ip, int(neighbor_port))
+            if success:
+                print(f"   ✅ 成功连接到 {neighbor_ip}:{neighbor_port}")
+            else:
+                print(f"   ❌ 连接失败 {neighbor_ip}:{neighbor_port}")
             time.sleep(0.5)
+
+        # 打印网络拓扑
+        time.sleep(1)
+        satellite.print_network_info()
 
     # 保持运行
     try:

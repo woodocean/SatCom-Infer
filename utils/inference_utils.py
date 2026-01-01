@@ -16,15 +16,40 @@ from models.MobileNet import MobileNet
 from .excel_utils import *
 
 
+# 修改 inference_utils.py 中的 get_dnn_model 函数
 def get_dnn_model(arg: str):
     """
     获取DNN模型
     :param arg: 模型名字
-    :return: 对应的名字
+    :return: 对应的模型
     """
     input_channels = 3
     if arg == "alex_net":
-        return AlexNet(input_channels=input_channels)
+        # 创建模型
+        model = AlexNet(input_channels=input_channels, num_classes=10)
+
+        # 加载第115个epoch的检查点
+        checkpoint_path = 'checkpoints/alexnet_cifar10_epoch_115.pth'
+        if os.path.exists(checkpoint_path):
+            try:
+                checkpoint = torch.load(checkpoint_path, map_location='cpu', weights_only=False)
+
+                # 加载模型权重
+                model.load_state_dict(checkpoint['model_state_dict'])
+                model.eval()
+
+                print(f"✅ 成功加载检查点模型: {checkpoint_path}")
+                print(f"📊 训练精度: {checkpoint.get('train_accuracy', 'N/A')}%")
+                print(f"📊 测试精度: {checkpoint.get('test_accuracy', 'N/A')}%")
+
+            except Exception as e:
+                print(f"❌ 加载模型失败: {e}")
+                print("⚠️  使用随机初始化模型")
+        else:
+            print("⚠️  未找到检查点文件，使用随机初始化")
+
+        return model
+
     elif arg == "vgg_net":
         return vgg16_bn(input_channels=input_channels)
     elif arg == "le_net":
@@ -33,7 +58,6 @@ def get_dnn_model(arg: str):
         return MobileNet(input_channels=input_channels)
     else:
         raise RuntimeError("没有对应的DNN模型")
-
 
 
 def model_partition(model, index):
