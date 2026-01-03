@@ -74,7 +74,7 @@ def train_alexnet_cifar10(resume_epoch=None, total_epochs=80):
 
     # 如果从检查点恢复
     if resume_epoch is not None:
-        checkpoint_path = f'checkpoints/alexnet_cifar10_epoch_{resume_epoch}.pth'
+        checkpoint_path = f'../../checkpoints/alexnet_cifar10_epoch_{resume_epoch}.pth'
         if os.path.exists(checkpoint_path):
             checkpoint = torch.load(checkpoint_path)
 
@@ -193,8 +193,8 @@ def save_checkpoint_with_history(model, epoch, train_acc, test_acc, train_losses
         'test_accuracies': test_accuracies
     }
 
-    os.makedirs('checkpoints', exist_ok=True)
-    filename = f'checkpoints/alexnet_cifar10_epoch_{epoch + 1}.pth'
+    os.makedirs('../../checkpoints', exist_ok=True)
+    filename = f'../../checkpoints/alexnet_cifar10_epoch_{epoch + 1}.pth'
     torch.save(checkpoint, filename)
     print(f"检查点已保存: {filename}")
 
@@ -235,15 +235,15 @@ def save_checkpoint(model, epoch, train_acc, test_acc):
         'test_accuracy': test_acc
     }
 
-    os.makedirs('checkpoints', exist_ok=True)
-    filename = f'checkpoints/alexnet_cifar10_epoch_{epoch + 1}.pth'
+    os.makedirs('../../checkpoints', exist_ok=True)
+    filename = f'../../checkpoints/alexnet_cifar10_epoch_{epoch + 1}.pth'
     torch.save(checkpoint, filename)
     print(f"检查点已保存: {filename}")
 
 
 def save_final_model(model, test_acc):
     """保存最终模型"""
-    os.makedirs('trained_models', exist_ok=True)
+    os.makedirs('../../trained_models', exist_ok=True)
 
     # 如果是DataParallel，保存原始模型
     if isinstance(model, nn.DataParallel):
@@ -252,12 +252,12 @@ def save_final_model(model, test_acc):
         model_state_dict = model.state_dict()
 
     # 保存完整模型
-    model_path = 'trained_models/alexnet_cifar10_final.pth'
+    model_path = '../../trained_models/alexnet_cifar10_final.pth'
     torch.save(model_state_dict, model_path)
     print(f"最终模型已保存: {model_path}, 测试精度: {test_acc:.2f}%")
 
     # 保存用于卫星系统的模型
-    satellite_model_path = 'trained_models/alexnet_cifar10_satellite.pth'
+    satellite_model_path = '../../trained_models/alexnet_cifar10_satellite.pth'
     torch.save({
         'model_state_dict': model_state_dict,
         'num_classes': 10,
@@ -307,7 +307,7 @@ def test_trained_model():
 
     # 加载模型
     model = AlexNet(input_channels=3, num_classes=10)
-    model_path = 'trained_models/alexnet_cifar10_final.pth'
+    model_path = '../../trained_models/alexnet_cifar10_final.pth'
 
     if os.path.exists(model_path):
         model.load_state_dict(torch.load(model_path, map_location='cpu'))

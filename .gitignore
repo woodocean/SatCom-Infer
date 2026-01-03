@@ -17,3 +17,9 @@ data/*.tar.gz
 .vscode/
 .idea/
 
+*.pth
+*.tar.gz
+__pycache__/
+waste/temp_py/data/
+waste/temp_py/checkpoints/
+waste/temp_py/trained_models/
