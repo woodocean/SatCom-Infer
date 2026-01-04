@@ -30,16 +30,20 @@ class InferenceManager:
             self.model = AlexNet(input_channels=3, num_classes=10)
 
             # 尝试加载权重 (可选)
-            checkpoint_path = os.path.join(parent_dir, 'checkpoints/alexnet_cifar10_epoch_115.pth')
+            checkpoint_path = 'checkpoints/alexnet_cifar10_epoch_115.pth'
             if os.path.exists(checkpoint_path):
                 try:
                     checkpoint = torch.load(checkpoint_path, map_location=self.device)
-                    self.model.load_state_dict(checkpoint['model_state_dict'])
-                    print(f"  成功加载权重: {checkpoint_path}")
+                    # 兼容性处理：有些保存时多套了一层 'model_state_dict'，有些直接存的 state_dict
+                    if 'model_state_dict' in checkpoint:
+                        self.model.load_state_dict(checkpoint['model_state_dict'])
+                    else:
+                        self.model.load_state_dict(checkpoint)
+                    print(f"[Inference] 成功加载权重: {checkpoint_path}")
                 except Exception as e:
-                    print(f"   权重加载失败: {e}")
+                    print(f"权重加载出错: {e}")
             else:
-                print("   未找到权重文件，使用随机初始化")
+                print(f" 警告: 找不到权重文件 {checkpoint_path}，将使用随机参数！")
 
         elif self.model_name == "vgg16":
             self.model = vgg16_bn(input_channels=3, num_classes=10)

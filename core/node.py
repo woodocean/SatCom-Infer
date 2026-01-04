@@ -3,6 +3,11 @@ from .communicate import CommManager
 import threading
 import uuid
 from .inference import InferenceManager
+from utils.data_utils import decode_prediction
+import torch
+from utils.data_utils import decode_prediction, save_result_image
+
+
 class SatelliteNode:
     def __init__(self, node_id, ip, port, role="leo_computing"):
         self.node_id = node_id
@@ -13,6 +18,7 @@ class SatelliteNode:
         self.infer = InferenceManager()
         # 注册基础消息处理
         self.comms.register_handler("PING", self._handle_ping)
+        # 注册任务消息处理
         self.comms.register_handler("PIPLINE", self._handle_pip_infer)
         self.comms.register_handler("Para_infer", self._handle_para_infer)
         self.comms.register_handler("Para_agg", self._handle_para_agg)
@@ -44,7 +50,7 @@ class SatelliteNode:
 
     # ---------并行推理功能---------------
     # 这个函数可以作为启动并行推理的原型函数
-    def start_para_task(self, distribute_map, agg_dest="GS"):
+    def start_para_task(self, distribute_map, agg_dest="SAT_AGG", destination="GS"):
         """
                 发起并行任务
                 :param distribute_map: 字典 { "SAT-01": "上半图数据", "SAT-02": "下半图数据" }
@@ -62,13 +68,14 @@ class SatelliteNode:
         task_id = str(uuid.uuid4())[:8]
         total_parts = len(distribute_map)
 
-        print(f"[{self.node_id}] 启动并行任务 Task[{task_id}] -> 汇聚于 {agg_dest}")
+        print(f"[{self.node_id}] 启动并行任务 Task[{task_id}] -> 汇聚于 {agg_dest},最终回传到{destination}")
 
         def send_target(target, data):
             payload = {
                 "task_id": task_id,
                 "data": data,
                 "agg_dest": agg_dest,
+                "dest":destination,
                 "total_parts": total_parts,
                 "timestamp": time.time()
             }
@@ -92,15 +99,16 @@ class SatelliteNode:
         data = payload['data']
         agg_dest = payload['agg_dest']
         task_id = payload['task_id']
-
+        destination = payload['dest']
         # 这里可以写处理数据的逻辑
-        data, cost = self.infer.exec_full(data)
-
+        output_tensor, cost = self.infer.exec_full(data)
+        print(f"[{self.node_id}] 推理完成，耗时 {cost:.2f}ms，输出形状 {output_tensor.shape}")
         # 构造发送给聚合卫星的数据包
         result_pack = {
             "task_id": task_id,
-            "data": data,
+            "data": output_tensor,
             "source": self.node_id,
+            "dest":destination,
             "total_parts": payload['total_parts']
         }
 
@@ -115,6 +123,7 @@ class SatelliteNode:
         result_part = payload['data']
         total_parts = payload['total_parts']
         source = payload['source']
+        destination = payload['dest']
 
         print(f"[{self.node_id}] 收到 Task[{task_id}] 结果 (来自 {source})")
 
@@ -127,29 +136,53 @@ class SatelliteNode:
         current_count = len(self.task_buffer[task_id])
         if current_count == total_parts:
             print(f"[{self.node_id}] Task[{task_id}] 全部收齐! ({current_count}/{total_parts})")
-            final_output = " + ".join(self.task_buffer[task_id])
-            print(f"最终落盘数据: [{final_output}]")
+            # 1. 拼接结果: [Batch_A, 10] + [Batch_B, 10] -> [Total_Batch, 10]
+            # 注意：task_buffer 里存的是 Tensor
+            final_tensor = torch.cat(self.task_buffer[task_id], dim=0)
 
-            self.comms.send_message("GS","Para_GS", final_output)
-            # 清理内存，防止内存泄漏
+            # 2. 解码结果
+            pred_names = decode_prediction(final_tensor)
+
+            print("=" * 30)
+            print(f"最终识别结果: {pred_names}")
+            print("=" * 30)
+
+            # img_name = f"result_{task_id}.png"
+            # save_result_image(final_tensor, pred_names, filename=img_name)
+
+            payload={
+                "task_id": task_id,
+                "data": pred_names,
+                "timestamp": time.time()
+            }
+            self.comms.send_message(destination, "Para_GS", payload)
             del self.task_buffer[task_id]
         else:
-            print(f"   ⏳ 等待其他分片... ({current_count}/{total_parts})")
+            print(f"    等待其他分片... ({current_count}/{total_parts})")
 
+    # 这个函数可以作为并行推理地面节点的原型函数
     def _handle_para_GS(self, message):
-        data = message['payload']
-        print(data)
+        payload = message['payload']
+        pred_names = payload['data']
+
+        print("=" * 30)
+        print(f"最终识别结果: {pred_names}")
+        print("=" * 30)
 
     # --------流水线推理功能--------------
     # 这个函数可以作为启动流水线推理的原型函数
-    def start_pip_task(self, route_list):
+    def start_pip_task(self, route_list,input_data):
         if self.role != 'remote_sensing':
             print(f" [{self.node_id}] 我不是遥感卫星，不能发起任务")
             return
-
         if not route_list:
             print(" 路由列表为空")
             return
+
+        # 生成任务ID
+        task_id = str(uuid.uuid4())[:8]
+
+        split_point = 10
 
         # 获取下一跳
         next_hop = route_list[0]
@@ -157,28 +190,60 @@ class SatelliteNode:
         remain_list = route_list[1:]
         # 数据包及其路由
         pay_load = {
-            "data":"这是遥感图像数据",
-            "route":remain_list
+            "task_id": task_id,
+            "data": input_data,
+            "route": remain_list,
+            "start_layer": 0,
+            "end_layer": split_point
         }
         # 发送数据
         self.comms.send_message(next_hop, "PIPLINE", payload=pay_load)
 
     # 这个函数可以作为流水线推理中继节点的原型函数
     def _handle_pip_infer(self, message):
-        route_list = message["payload"]["route"]
+        """
+                流水线节点逻辑：接收中间结果 -> 执行指定层 -> 转发给下一跳
+                """
+        payload = message["payload"]
+        task_id = payload["task_id"]
+        data = payload["data"]
+        route_list = payload["route"]
+
+        # 获取这一跳该跑的层范围
+        start = payload.get("start_layer", 0)
+        end = payload.get("end_layer", 999)  # 999代表跑到最后
+
+        # 1. 真正的推理 (Inference)
+        # 注意：这里的 data 可能是原始图片(第一跳)，也可能是中间特征图(Feature Map)
+        print(f"[{self.node_id}] 流水线计算: Layer {start} -> {end} ...")
+
+        # 调用 InferenceManager 执行切片
+        output_tensor, cost = self.infer.exec_layers(data, start, end)
+        print(f"   耗时: {cost:.2f}ms | 输出形状: {output_tensor.shape}")
+
         if not route_list:
             print(f" 路由列表为空,本跳{self.node_id}为终点")
-            print(f"测试传输的数据为{message['payload']['data']}")
+            preds = decode_prediction(output_tensor)
+            print("=" * 30)
+            print(f"最终预测: {preds}")
+            print("=" * 30)
+
             return
         else:
             # 获取下一跳
             next_hop = route_list[0]
             # 剩余路由
             remain_list = route_list[1:]
+            next_start = end
+            next_end = 999
+            print(f" [{self.node_id}] 传递中间结果 -> {next_hop} (Layer {next_start}-End)")
             # 数据包及其路由
             pay_load = {
-                "data": message["payload"]["data"],
-                "route": remain_list
+                "data": output_tensor,
+                "route": remain_list,
+                "start_layer": next_start,
+                "end_layer": next_end,
+                "task_id": task_id
             }
             # 发送数据
             self.comms.send_message(next_hop, "PIPLINE", payload=pay_load)

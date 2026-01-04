@@ -1,0 +1,21 @@
+{
+  "parallel_task_demo": {
+    "type": "parallel",
+    "agg_node": "SAT-AGG",
+    "distribution": {
+      "SAT-01": [0, 4],
+      "SAT-02": [4, 8]
+    },
+    "destination": "GS",
+    "desc": "将8张图的前4张给01，后4张给02，结果汇聚到聚合星"
+  },
+  "pipeline_task_demo": {
+    "type": "pipeline",
+    "route": ["SAT-01", "SAT-02", "GS"],
+    "split_schedule": {
+        "SAT-01": [0, 10],
+        "SAT-02": [10, 999]
+    },
+    "desc": "流水线：01跑前10层，02跑剩余层，GS收结果"
+  }
+}

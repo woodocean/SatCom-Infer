@@ -1,0 +1,34 @@
+{
+  "nodes": {
+    "RS": {
+      "ip": "127.0.0.1",
+      "port": 8000,
+      "role": "remote_sensing",
+      "neighbors": ["SAT-01", "SAT-02"]
+    },
+    "SAT-01": {
+      "ip": "127.0.0.1",
+      "port": 8001,
+      "role": "leo_computing",
+      "neighbors": ["SAT-02", "SAT-AGG"]
+    },
+    "SAT-02": {
+      "ip": "127.0.0.1",
+      "port": 8002,
+      "role": "leo_computing",
+      "neighbors": ["SAT-AGG","GS"]
+    },
+    "SAT-AGG": {
+      "ip": "127.0.0.1",
+      "port": 8004,
+      "role": "leo_computing",
+      "neighbors": ["GS"]
+    },
+    "GS": {
+      "ip": "127.0.0.1",
+      "port": 8003,
+      "role": "ground_station",
+      "neighbors": []
+    }
+  }
+}
