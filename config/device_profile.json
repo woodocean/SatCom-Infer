@@ -1,0 +1,30 @@
+{
+  "RS": {
+    "role": "remote_sensing",
+    "device_type": "PC",
+    "compute_gflops": 9500,
+    "memory_mb": 32768,
+    "power_budget_w": 250
+  },
+  "SAT-01": {
+    "role": "leo_computing",
+    "device_type": "Jetson_Orin",
+    "compute_gflops": 275,
+    "memory_mb": 16384,
+    "power_budget_w": 25
+  },
+  "SAT-02": {
+    "role": "leo_computing",
+    "device_type": "Jetson_Orin",
+    "compute_gflops": 275,
+    "memory_mb": 16384,
+    "power_budget_w": 25
+  },
+  "GS": {
+    "role": "ground_station",
+    "device_type": "PC",
+    "compute_gflops": 9500,
+    "memory_mb": 32768,
+    "power_budget_w": 250
+  }
+}

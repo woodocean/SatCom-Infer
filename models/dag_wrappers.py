@@ -1,0 +1,357 @@
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+import timm
+from ultralytics import YOLO
+from torchvision.models import (
+    resnet18, resnet50, resnet101, 
+    ResNet18_Weights, ResNet50_Weights, ResNet101_Weights,
+    vgg19, VGG19_Weights,
+    mobilenet_v2, MobileNet_V2_Weights
+)
+
+# === 1. YOLOv5 ===
+class YOLOv5_DAG_Wrapper(nn.Module):
+    def __init__(self, model_path='checkpoints/yolov5nu.pt', device='cuda'):
+        super().__init__()
+        self.device = device
+        print(f"[Wrapper] YOLOv5 ({model_path})...")
+        self.yolo_wrapper = YOLO(model_path)
+        self.model = self.yolo_wrapper.model.to(device)
+        self.model.eval()
+        self.layers = list(self.model.model.children())
+        self.len = len(self.layers)
+        self.save_indices = getattr(self.model, 'save', [])
+        self.feature_cache = {}
+
+    def __len__(self): 
+        return self.len
+    
+    def reset_cache(self): 
+        self.feature_cache = {}
+
+    def forward_slice(self, input_pack, start_idx, end_idx):
+        if isinstance(input_pack, torch.Tensor):
+            current_input = input_pack
+            if start_idx == 0: 
+                self.reset_cache()
+        elif isinstance(input_pack, dict):
+            current_input = input_pack['main']
+            self.feature_cache.update(input_pack.get('cache', {}))
+        else:
+            raise ValueError(f"Type error: {type(input_pack)}")
+
+        for i, m in enumerate(self.layers):
+            if i < start_idx: 
+                continue
+            if i >= end_idx: 
+                break
+            
+            if hasattr(m, 'f') and m.f != -1: 
+                if isinstance(m.f, int):
+                    required_idx = m.f if m.f >= 0 else i + m.f
+                    x = self.feature_cache.get(required_idx, current_input) if required_idx != i - 1 else current_input
+                else:
+                    x = [self.feature_cache.get(idx if idx >= 0 else i + idx, current_input) 
+                         if (idx if idx >= 0 else i + idx) != i - 1 else current_input for idx in m.f]
+            else:
+                x = current_input
+
+            try:
+                current_output = m(x)
+            except Exception as e:
+                # 对于特殊层（如Detect），可能需要特殊处理
+                if 'Detect' in str(type(m)):
+                    # Detect层通常需要模型参数，这里简化处理
+                    current_output = current_input
+                else:
+                    print(f"Warning: Layer {i} ({type(m)}) failed: {e}")
+                    current_output = current_input
+
+            if i in self.save_indices:
+                self.feature_cache[i] = current_output
+            current_input = current_output
+
+        return {'main': current_output, 'cache': self.feature_cache}
+
+# === 2. ResNet ===
+class ResNet_DAG_Wrapper(nn.Module):
+    def __init__(self, version='50', device='cuda'):
+        super().__init__()
+        self.device = device
+        print(f"[Wrapper] ResNet-{version}...")
+        
+        if str(version) == '18':
+            raw = resnet18(weights=ResNet18_Weights.DEFAULT).to(device)
+        elif str(version) == '50':
+            raw = resnet50(weights=ResNet50_Weights.DEFAULT).to(device)
+        elif str(version) == '101':
+            raw = resnet101(weights=ResNet101_Weights.DEFAULT).to(device)
+        else:
+            raw = resnet50(weights=ResNet50_Weights.DEFAULT).to(device)
+        raw.eval()
+        
+        self.layers = nn.ModuleList()
+        self.layers.append(nn.Sequential(raw.conv1, raw.bn1, raw.relu, raw.maxpool))
+        for block in raw.layer1: 
+            self.layers.append(block)
+        for block in raw.layer2: 
+            self.layers.append(block)
+        for block in raw.layer3: 
+            self.layers.append(block)
+        for block in raw.layer4: 
+            self.layers.append(block)
+        self.layers.append(nn.Sequential(raw.avgpool, nn.Flatten(), raw.fc))
+        
+        self.len = len(self.layers)
+        self.save_indices = []
+
+    def __len__(self): 
+        return self.len
+
+    def forward_slice(self, input_pack, start_idx, end_idx):
+        if isinstance(input_pack, dict): 
+            x = input_pack['main']
+        else: 
+            x = input_pack
+        
+        for i in range(start_idx, end_idx): 
+            x = self.layers[i](x)
+        
+        return {'main': x, 'cache': {}}
+
+# === 3. VGG-19 ===
+class VGG19_DAG_Wrapper(nn.Module):
+    def __init__(self, device='cuda'):
+        super().__init__()
+        self.device = device
+        print(f"[Wrapper] 正在加载 VGG-19 ...")
+        self.raw_model = vgg19(weights=VGG19_Weights.DEFAULT).to(device)
+        self.raw_model.eval()
+        self.layers = nn.ModuleList()
+        for layer in self.raw_model.features: 
+            self.layers.append(layer)
+        self.layers.append(self.raw_model.avgpool)
+        self.layers.append(nn.Flatten())
+        for layer in self.raw_model.classifier: 
+            self.layers.append(layer)
+        self.len = len(self.layers)
+        self.save_indices = []
+
+    def __len__(self): 
+        return self.len
+    
+    def forward_slice(self, input_pack, start_idx, end_idx):
+        if isinstance(input_pack, dict): 
+            x = input_pack['main']
+        else: 
+            x = input_pack
+        
+        for i in range(start_idx, end_idx): 
+            x = self.layers[i](x)
+        
+        return {'main': x, 'cache': {}}
+
+# === 4. MobileNet V2 ===
+class MobileNetV2_DAG_Wrapper(nn.Module):
+    def __init__(self, device='cuda'):
+        super().__init__()
+        self.device = device
+        print(f"[Wrapper] 正在加载 MobileNet V2 ...")
+        self.raw_model = mobilenet_v2(weights=MobileNet_V2_Weights.DEFAULT).to(device)
+        self.raw_model.eval()
+        self.layers = nn.ModuleList()
+        for layer in self.raw_model.features: 
+            self.layers.append(layer)
+        self.layers.append(nn.AdaptiveAvgPool2d(1))
+        self.layers.append(nn.Flatten())
+        self.layers.append(self.raw_model.classifier)
+        self.len = len(self.layers)
+        self.save_indices = []
+
+    def __len__(self): 
+        return self.len
+    
+    def forward_slice(self, input_pack, start_idx, end_idx):
+        if isinstance(input_pack, dict): 
+            x = input_pack['main']
+        else: 
+            x = input_pack
+        
+        for i in range(start_idx, end_idx): 
+            x = self.layers[i](x)
+        
+        return {'main': x, 'cache': {}}
+
+# === 5. ViT Huge ===
+class ViT_Huge_DAG_Wrapper(nn.Module):
+    def __init__(self, device='cuda', img_size=224):
+        super().__init__()
+        self.device = device
+        print(f"[Wrapper] 正在加载 ViT-Base (No Pretrain, Size={img_size})...")
+        self.raw_model = timm.create_model('vit_base_patch16_224', pretrained=False, img_size=img_size).to(device)
+        self.raw_model.eval()
+        self.layers = nn.ModuleList()
+        self.layers.append(self.raw_model.patch_embed)
+        for block in self.raw_model.blocks: 
+            self.layers.append(block)
+        self.layers.append(self.raw_model.norm)
+        
+        # 自定义 Head 处理 CLS token
+        class CLSHead(nn.Module):
+            def __init__(self, original_head):
+                super().__init__()
+                self.original_head = original_head
+            def forward(self, x):
+                return self.original_head(x[:, 0])  # 取 CLS token
+        
+        self.layers.append(CLSHead(self.raw_model.head))
+        self.len = len(self.layers)
+        self.save_indices = []
+
+    def __len__(self): 
+        return self.len
+    
+    def forward_slice(self, input_pack, start_idx, end_idx):
+        if isinstance(input_pack, dict): 
+            x = input_pack['main']
+        else: 
+            x = input_pack
+        
+        for i in range(start_idx, end_idx): 
+            x = self.layers[i](x)
+        
+        return {'main': x, 'cache': {}}
+
+# === 6. Swin Transformer ===
+class Swin_Base_DAG_Wrapper(nn.Module):
+    def __init__(self, device='cuda', img_size=224):
+        super().__init__()
+        self.device = device
+        print(f"[Wrapper] 正在加载 Swin-Base (No Pretrain, Size={img_size})...")
+        self.raw_model = timm.create_model('swin_base_patch4_window7_224', pretrained=False, img_size=img_size).to(device)
+        self.raw_model.eval()
+        self.layers = nn.ModuleList()
+        self.layers.append(self.raw_model.patch_embed)
+        for layer in self.raw_model.layers: 
+            self.layers.append(layer)
+        self.layers.append(self.raw_model.norm)
+        self.layers.append(self.raw_model.head)
+        self.len = len(self.layers)
+        self.save_indices = []
+
+    def __len__(self): 
+        return self.len
+    
+    def forward_slice(self, input_pack, start_idx, end_idx):
+        if isinstance(input_pack, dict): 
+            x = input_pack['main']
+        else: 
+            x = input_pack
+        
+        for i in range(start_idx, end_idx): 
+            x = self.layers[i](x)
+        
+        return {'main': x, 'cache': {}}
+
+# === 7. U-Net ===
+class DoubleConv(nn.Module):
+    def __init__(self, in_channels, out_channels, mid_channels=None):
+        super().__init__()
+        if not mid_channels: 
+            mid_channels = out_channels
+        self.double_conv = nn.Sequential(
+            nn.Conv2d(in_channels, mid_channels, kernel_size=3, padding=1, bias=False),
+            nn.BatchNorm2d(mid_channels),
+            nn.ReLU(inplace=True),
+            nn.Conv2d(mid_channels, out_channels, kernel_size=3, padding=1, bias=False),
+            nn.BatchNorm2d(out_channels),
+            nn.ReLU(inplace=True)
+        )
+    
+    def forward(self, x): 
+        return self.double_conv(x)
+
+class Down(nn.Module):
+    def __init__(self, in_channels, out_channels):
+        super().__init__()
+        self.maxpool_conv = nn.Sequential(
+            nn.MaxPool2d(2), 
+            DoubleConv(in_channels, out_channels)
+        )
+    
+    def forward(self, x): 
+        return self.maxpool_conv(x)
+
+class Up(nn.Module):
+    def __init__(self, in_channels, out_channels):
+        super().__init__()
+        self.up = nn.Upsample(scale_factor=2, mode='bilinear', align_corners=True)
+        self.conv = DoubleConv(in_channels, out_channels)
+    
+    def forward(self, x1, x2):
+        x1 = self.up(x1)
+        diffY = x2.size()[2] - x1.size()[2]
+        diffX = x2.size()[3] - x1.size()[3]
+        x1 = F.pad(x1, [diffX // 2, diffX - diffX // 2, 
+                        diffY // 2, diffY - diffY // 2])
+        x = torch.cat([x2, x1], dim=1)
+        return self.conv(x)
+
+class OutConv(nn.Module):
+    def __init__(self, in_channels, out_channels):
+        super().__init__()
+        self.conv = nn.Conv2d(in_channels, out_channels, kernel_size=1)
+    
+    def forward(self, x): 
+        return self.conv(x)
+
+class UNet_DAG_Wrapper(nn.Module):
+    def __init__(self, device='cuda'):
+        super().__init__()
+        self.device = device
+        print("[Wrapper] 正在加载 U-Net ...")
+        self.layers = nn.ModuleList([
+            DoubleConv(3, 64),       # 0
+            Down(64, 128),           # 1
+            Down(128, 256),          # 2
+            Down(256, 512),          # 3
+            Down(512, 1024),         # 4
+            Up(1024 + 512, 512),     # 5
+            Up(512 + 256, 256),      # 6
+            Up(256 + 128, 128),      # 7
+            Up(128 + 64, 64),        # 8
+            OutConv(64, 2)           # 9
+        ])
+        self.to(device)
+        self.eval()
+        self.len = len(self.layers)
+        self.skip_map = {5: 3, 6: 2, 7: 1, 8: 0}
+        self.save_indices = list(self.skip_map.values())
+
+    def __len__(self): 
+        return self.len
+
+    def forward_slice(self, input_pack, start_idx, end_idx):
+        if isinstance(input_pack, dict): 
+            x = input_pack['main']
+            cache = input_pack.get('cache', {})
+        else: 
+            x = input_pack
+            cache = {}
+        
+        for i in range(start_idx, end_idx):
+            layer = self.layers[i]
+            if i in self.skip_map:
+                required_idx = self.skip_map[i]
+                skip_tensor = cache.get(required_idx)
+                if skip_tensor is None: 
+                    skip_tensor = x  # 容错
+                x = layer(x, skip_tensor)
+            else:
+                x = layer(x)
+            
+            if i in self.save_indices:
+                cache[i] = x
+        
+        return {'main': x, 'cache': cache}

@@ -1,0 +1,36 @@
+# ==================== Python 编译文件 ====================
+*.pyc
+__pycache__/
+
+# ==================== 模型权重和大文件（关键！保护 YOLO）================
+checkpoints/*.pth
+checkpoints/*.pt
+checkpoints/*.onnx
+trained_models/*.pth
+trained_models/*.pt
+*.bin
+
+# ==================== 数据集和结果文件 ====================
+data/
+results_plots/
+*.tar.gz
+*.zip
+*.csv
+*.png
+*.jpg
+*.jpeg
+
+# ==================== 日志和临时文件 ====================
+*.log
+profile_*.json
+advanced_profile_*.csv
+calibration_result.png
+
+# ==================== IDE 配置 ====================
+.vscode/
+.idea/
+
+# ==================== 项目特定 waste 文件夹 ====================
+waste/temp_py/data/
+waste/temp_py/checkpoints/
+waste/temp_py/trained_models/

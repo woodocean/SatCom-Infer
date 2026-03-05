@@ -1,0 +1,28 @@
+{
+  "nodes": {
+    "RS": {
+      "ip": "192.168.0.100",
+      "port": 5000,
+      "role": "remote_sensing",
+      "neighbors": ["SAT-01", "SAT-02"]
+    },
+    "SAT-01": {
+      "ip": "100.99.218.28",
+      "port": 5001,
+      "role": "leo_computing",
+      "neighbors": ["RS", "SAT-02", "GS"]
+    },
+    "SAT-02": {
+      "ip": "100.89.113.58",
+      "port": 5002,
+      "role": "leo_computing",
+      "neighbors": ["RS", "SAT-01", "GS"]
+    },
+    "GS": {
+      "ip": "192.168.0.100",
+      "port": 5003,
+      "role": "ground_station",
+      "neighbors": ["SAT-01", "SAT-02"]
+    }
+  }
+}
