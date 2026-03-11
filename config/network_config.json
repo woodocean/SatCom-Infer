@@ -1,28 +1,59 @@
 {
   "nodes": {
     "RS": {
-      "ip": "192.168.0.100",
-      "port": 5000,
+      "ip": "192.168.0.103",
+      "port": 8000,
       "role": "remote_sensing",
-      "neighbors": ["SAT-01", "SAT-02"]
+      "device": "PC",
+      "neighbors": ["SAT-01", "SAT-02", "SAT-03", "GS"]
     },
     "SAT-01": {
-      "ip": "100.99.218.28",
-      "port": 5001,
+      "ip": "192.168.0.105",
+      "port": 8001,
       "role": "leo_computing",
-      "neighbors": ["RS", "SAT-02", "GS"]
+      "device": "Jetson_1",
+      "neighbors": ["RS", "SAT-03"]
     },
     "SAT-02": {
-      "ip": "100.89.113.58",
-      "port": 5002,
+      "ip": "192.168.0.106",
+      "port": 8002,
       "role": "leo_computing",
-      "neighbors": ["RS", "SAT-01", "GS"]
+      "device": "Jetson_2",
+      "neighbors": ["RS", "SAT-03"]
+    },
+    "SAT-03": {
+      "ip": "192.168.0.105", 
+      "port": 8003,
+      "role": "leo_computing",
+      "device": "Jetson_1",
+      "is_aggregator": true,
+      "neighbors": ["RS", "SAT-01", "SAT-02", "SAT-04"]
+    },
+    "SAT-04": {
+      "ip": "192.168.0.106",
+      "port": 8004,
+      "role": "leo_computing",
+      "device": "Jetson_2",
+      "neighbors": ["SAT-03", "SAT-05"]
+    },
+    "SAT-05": {
+      "ip": "192.168.0.105",
+      "port": 8005,
+      "role": "leo_computing",
+      "device": "Jetson_1",
+      "neighbors": ["SAT-04", "GS"]
     },
     "GS": {
-      "ip": "192.168.0.100",
-      "port": 5003,
+      "ip": "192.168.0.103",
+      "port": 8006,
       "role": "ground_station",
-      "neighbors": ["SAT-01", "SAT-02"]
+      "device": "PC",
+      "neighbors": ["RS", "SAT-05"]
     }
+  },
+  "simulation_paths": {
+    "pipeline": ["RS", "SAT-03", "SAT-04", "SAT-05", "GS"],
+    "parallel_candidates": ["SAT-01", "SAT-02", "SAT-03"],
+    "parallel_aggregator": "SAT-03"
   }
 }
