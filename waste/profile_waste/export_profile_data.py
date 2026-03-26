@@ -94,7 +94,7 @@ def profile_single_model(name, builder, input_size, device):
             with torch.no_grad():
                 output_pack = model.forward_slice(current_pack, i, i+1)
         except Exception as e:
-            print(f"   ❌ Layer {i} ({layer_type}) Forward Error: {e}")
+            print(f"    Layer {i} ({layer_type}) Forward Error: {e}")
             break
 
         # 4. Output + Cache

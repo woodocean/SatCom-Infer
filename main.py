@@ -1,202 +1,188 @@
 import argparse
 import time
-import os
-import sys
 import json
+import logging
+from core.node import ComputeNode
+import sys
+import os
 import torch
+import random  # <--- 新增随机库，用于生成多样化任务
 
 sys.path.append(os.getcwd())
 
-from core.node import SatelliteNode
-from utils.data_utils import get_cifar10_batch
-
 def load_config(path):
-    with open(path, 'r', encoding='utf-8') as f:
+    with open(path, 'r') as f:
         return json.load(f)
 
+def update_network_topology(config_path):
+    try:
+        config = load_config(config_path)
+        
+        for link_name, info in config['links'].items():
+            if "GS" in link_name: 
+                new_bw = random.randint(100, 500)
+            else:
+                new_bw = random.randint(1000, 20000)
+            info['bandwidth_mbps'] = new_bw
+            
+        tmp_path = config_path + ".tmp"
+        with open(tmp_path, 'w') as f:
+            json.dump(config, f, indent=2)
+            
+        # =================【加入写冲突重试机制】=================
+        for _ in range(10):  # 最多重试10次
+            try:
+                os.replace(tmp_path, config_path)
+                break  # 替换成功，跳出循环
+            except PermissionError:
+                # 在Windows上，如果恰好别的节点在读，会报 PermissionError，稍微等几毫秒
+                time.sleep(0.02)
+        # ========================================================
+        
+    except Exception as e:
+        print(f"更新带宽配置失败: {e}")
+
 def main():
-    parser = argparse.ArgumentParser(description='卫星协同推理 - PC/Jetson联合仿真')
-
-    # 基础参数
-    parser.add_argument('--id', required=True, help='节点ID (RS, SAT-01, SAT-02, GS)')
-    parser.add_argument('--net_cfg', default='config/network_config.json')
-    parser.add_argument('--task_cfg', default='config/task_config.json')
-    parser.add_argument('--dev_cfg', default='config/device_profile.json')
-
-    # 运行模式
-    parser.add_argument('--run_task', required=False, help='手动模式: 运行指定任务名')
-    parser.add_argument('--algo', choices=['dp', 'lawa', 'ga', 'selector', 'baseline'],
-                        default=None, help='自动模式: 选择调度算法')
-    parser.add_argument('--auto', action='store_true', help='自动模式开关(兼容旧版)')
-    parser.add_argument('--model', default='alexnet', help='模型名称')
-    parser.add_argument('--profile', action='store_true', help='运行设备性能测试')
-    parser.add_argument('--simulate_bw', action='store_true', help='模拟带宽限制')
-
+    parser = argparse.ArgumentParser(description="Distributed Satellite Node")
+    parser.add_argument('--id', type=str, required=True, help="节点ID，如 Sat_1, RS, GS")
+    # 删除了冗余的 net_cfg, dev_cfg, task_cfg 参数
     args = parser.parse_args()
 
-    # ========== 1. 加载配置 ==========
+    # 1. 直接固定加载网络拓扑配置
+    net_config_path = 'config/network_config.json'
     try:
-        net_config = load_config(args.net_cfg)
-        my_config = net_config['nodes'][args.id]
-    except KeyError:
-        print(f"[错误] 节点 [{args.id}] 未在 {args.net_cfg} 中定义!")
-        print(f"  可用节点: {list(net_config['nodes'].keys())}")
-        return
+        net_config = load_config(net_config_path)
     except FileNotFoundError:
-        print(f"[错误] 找不到配置文件 {args.net_cfg}")
+        print(f"Error: 找不到网络配置文件 {net_config_path}")
+        return
+    
+    if args.id not in net_config['nodes']:
+        print(f"Error: 节点 {args.id} 不在网络配置中！")
         return
 
-    # 加载设备profile (可选)
-    device_profiles = {}
-    if os.path.exists(args.dev_cfg):
-        device_profiles = load_config(args.dev_cfg)
+    my_net_info = net_config['nodes'][args.id]
 
-    print("=" * 60)
-    print(f"  节点 [{args.id}] 启动中...")
-    print(f"  角色: {my_config['role']}")
-    print(f"  地址: {my_config['ip']}:{my_config['port']}")
-    print(f"  CUDA: {'可用 - ' + torch.cuda.get_device_name(0) if torch.cuda.is_available() else '不可用(CPU模式)'}")
-    print("=" * 60)
+    print(f"--- 正在启动节点: {args.id} ---")
 
-    # ========== 2. 设备性能测试模式 ==========
-    if args.profile:
-        from predictor.profiler import DeviceProfiler
-        profiler = DeviceProfiler(args.id)
-        hw = profiler.detect_hardware()
-        print(f"\n[硬件检测]\n{json.dumps(hw, indent=2, ensure_ascii=False)}")
-
-        bench = profiler.benchmark_model(args.model)
-        print(f"\n[推理性能]\n{json.dumps(bench, indent=2)}")
-
-        layers = profiler.profile_layers(args.model)
-        out_path = f'profile_{args.id}.json'
-        with open(out_path, 'w', encoding='utf-8') as f:
-            json.dump(layers, f, indent=2, ensure_ascii=False)
-        print(f"\n[层级Profile] 已保存到 {out_path}, 共 {len(layers)} 层")
-        return
-
-    # ========== 3. 创建节点并组网 ==========
-    node = SatelliteNode(
-        node_id=args.id,
-        ip=my_config['ip'],
-        port=my_config['port'],
-        role=my_config['role'],
-        device_profiles=device_profiles,
-        simulate_bw=args.simulate_bw
+    # ==========================================================
+    # 2. 一键实例化 ComputeNode 
+    # ==========================================================
+    node = ComputeNode(
+        node_id=args.id, 
+        ip=my_net_info['ip'],               
+        port=my_net_info['port'],           
+        role=my_net_info.get('role', 'Sat')
+        # 移除了单调写死的 model_name=model_name，交给后续按任务动态处理
     )
 
-    # 组网: 注册邻居
-    if my_config.get('neighbors'):
-        neighbors_parsed = []
-        for n_id in my_config['neighbors']:
-            if n_id not in net_config['nodes']:
-                print(f"  [警告] 邻居 [{n_id}] 未在配置中定义, 跳过")
-                continue
-            n_info = net_config['nodes'][n_id]
-            neighbors_parsed.append((n_id, n_info['ip'], n_info['port']))
-        node.join_network(neighbors_parsed)
+    # 3. 加载计算引擎 (RS 节点本身不需要真跑模型)
+    if "RS" not in args.id:
+        print(f"[{args.id}] 检测为工作节点/地面站，初始化推理引擎...")
+        node.load_model() # 如果你的引擎支持动态换模型，这里可能只需要预热                                        
+    else:
+        print(f"[{args.id}] 检测为遥感卫星RS，仅作为任务源。")
 
-    # ========== 4. 启动监听 ==========
+    # 4. 查表组网 (调用 node 内置的组网函数)
+    print(f"[{args.id}] 正在构建邻居路由表...")
+    neighbors_parsed = []
+    if "neighbors" in my_net_info:
+        for neighbor_id in my_net_info["neighbors"]:
+            if neighbor_id in net_config["nodes"]:
+                n_info = net_config["nodes"][neighbor_id]
+                neighbors_parsed.append((neighbor_id, n_info["ip"], n_info["port"]))
+            else:
+                print(f"  [警告] 邻居 {neighbor_id} 未在配置中定义！")
+    
+    node.join_network(neighbors_parsed)  # 批量注册邻居
+
+    # 5. 启动网络监听
     node.start()
 
-    # ========== 5. 任务触发 (仅 RS 节点) ==========
-    is_trigger = my_config['role'] == 'remote_sensing'
-    has_task = args.auto or args.algo or args.run_task
+    # ==========================================================
+    # 6. 任务触发逻辑 (仅遥感卫星 RS 执行)
+    # ==========================================================
+    if args.id == "RS":
+        time.sleep(3) # 等待网络环境稳定
+        print("\n" + "="*50)
+        print("--- 发起 PMP 动态带宽对比实验 (100个任务) ---")
+        print("="*50)
+        
+        from core.scheduler import Scheduler
+        
+        model_pool = ["vgg19"] # 这里可以扩展模型
+        batch_pool = [1]       # 锁死 Batch=1 观察带宽影响
+        
+        for i in range(1, 101):
+            task_id = f"Task_{i:03d}"
+            
+            # --- 步骤 A: 环境动态演进 ---
+            # 每一轮任务前随机修改带宽配置文件
+            update_network_topology(net_config_path)
+            
+            # --- 步骤 B: 调度器感知更新 ---
+            # 必须重新实例化，Scheduler 内部才会读取刚才被修改的 JSON
+            scheduler = Scheduler(
+                net_config_path=net_config_path, 
+                models_config_path="config/model_profiles.json",
+                sizes_fit_path="config/model_profiles_sizes.json"
+            )
 
-    if is_trigger and has_task:
-        print(f"\n[{args.id}] 等待 5秒 让其他节点就绪...")
-        time.sleep(5)
+            chosen_model = random.choice(model_pool)
+            chosen_bs = random.choice(batch_pool)
+            
+            print(f"\n[任务生成] {task_id} | 模型: {chosen_model} | 尺寸: 224×224")
+            
+            # 计算方案
+            fake_img = torch.randn(chosen_bs, 3, 224, 224)
+            plans = scheduler.generate_task_and_schedule(task_id=task_id, model_name=chosen_model)
+            
+        #     # 依次执行三种算法进行对比
+        #     for alg, plan in plans.items():
+        #         ordered_route = scheduler.net_config["simulation_paths"]["pipeline"][1:] 
 
-        # 准备输入数据
-        print(f"[{args.id}] 正在加载输入数据...")
-        images = _load_input_data(args.model)
+        #         # --- 步骤 C: 流控阻塞 ---
+        #         # 检查 node.py 中定义的 task_ack_event，确保管道清空
+        #         if not node.task_ack_event.is_set():
+        #             print(f"[RS] 🛑 阻塞排队: 等待前序算法 [{alg}] 的 ACK 应答...")
+                
+        #         node.task_ack_event.wait()   # 等待置位
+        #         node.task_ack_event.clear()  # 手动复位（关门）
+                
+        #         # 微调睡眠确保 Socket 缓冲区就绪
+        #         # time.sleep(0.3)
+                
+        #         print(f"[RS] 🚀 下发 {task_id} | 算法: {alg}")
+        #         # print(f"     -> [带宽路由]: {ordered_route}")
+                
+        #         rs_payload = {
+        #             'mode': 'PMP',
+        #             'task_id': task_id,
+        #             'algorithm': alg,
+        #             'model_name': chosen_model,
+        #             'accumulated_latency': 0.0,
+        #             'tensor': fake_img, 
+        #             'batch': chosen_bs,   
+        #             'route': ordered_route,   
+        #             'layer_plan': plan     
+        #         }
 
-        # -------- 分支A: 算法模式 --------
-        if args.algo:
-            _run_algorithm(args, node, images, net_config, device_profiles)
+        #         # 模拟系统触发，正式流进计算管道
+        #         node.handle_message({
+        #             'type': 'NEW_TASK',
+        #             'src': 'system_trigger',
+        #             'payload': rs_payload
+        #         })
 
-        # -------- 分支B: 自动GA调度 (兼容旧版) --------
-        elif args.auto:
-            print(f"[{args.id}] 自动GA调度模式")
-            node.run_auto_schedule(images, net_config)
+        # print("\n[RS] 所有对比实验任务已配给完毕。")
 
-        # -------- 分支C: 手动任务 --------
-        elif args.run_task:
-            _run_manual_task(args, node, images, net_config)
-
-    # ========== 6. 保持运行 ==========
-    print(f"\n[{args.id}] 节点运行中... (Ctrl+C退出)")
+    # ========== 7. 保持运行 ==========
     try:
         while True:
             time.sleep(1)
     except KeyboardInterrupt:
-        print(f"\n[{args.id}] 正在关闭...")
+        print(f"\n[{args.id}] 正在安全关闭...")
         node.stop()
-
-def _load_input_data(model_name):
-    """加载/生成输入数据"""
-    data_path = './data/cifar-10-batches-py'
-    try:
-        images, labels = get_cifar10_batch(data_path, batch_size=16)
-        print(f"  真实数据加载成功: {images.shape}")
-        return images
-    except Exception as e:
-        print(f"  数据加载失败({e}), 使用随机数据...")
-        if model_name in ['alexnet', 'lenet']:
-            return torch.randn(1, 3, 32, 32)
-        else:
-            return torch.randn(1, 3, 224, 224)
-
-def _run_algorithm(args, node, images, net_config, device_profiles):
-    """算法调度模式"""
-    algo = args.algo
-
-    if algo == 'baseline':
-        print(f"[Baseline] 本地完整推理...")
-        node.run_baseline(images)
-
-    elif algo == 'selector':
-        print(f"[Selector] 多因子推理模式选择...")
-        node.run_selector(images, net_config, device_profiles)
-
-    elif algo == 'dp':
-        print(f"[DP] 流水线优化调度...")
-        node.run_dp_schedule(images, net_config, device_profiles)
-
-    elif algo == 'lawa':
-        print(f"[LAWA] 链路感知加权并行...")
-        node.run_lawa_schedule(images, net_config, device_profiles)
-
-    elif algo == 'ga':
-        print(f"[GA] 遗传算法调度...")
-        node.run_auto_schedule(images, net_config)
-
-def _run_manual_task(args, node, images, net_config):
-    """手动任务模式"""
-    task_config = load_config(args.task_cfg)
-    if args.run_task not in task_config:
-        print(f"[错误] 任务 '{args.run_task}' 未在 task_config.json 中定义")
-        return
-
-    task = task_config[args.run_task]
-    if task['type'] == 'pipeline':
-        route = task['route']
-        split = task.get('split_point', 10)
-        if route and route[0] == args.id:
-            route = route[1:]
-        node.start_pip_task(route, images, split_point=split)
-
-    elif task['type'] == 'parallel':
-        dist_map = {}
-        workers = task.get('workers', [])
-        batch = images.shape[0]
-        per = max(1, batch // len(workers))
-        for i, w_id in enumerate(workers):
-            start = i * per
-            end = min((i + 1) * per, batch)
-            dist_map[w_id] = (start, end)
-        aggregator = task.get('aggregator', 'GS')
-        node.start_para_task(dist_map, images, aggregator)
-
-if __name__ == '__main__':
+        
+if __name__ == "__main__":
+    logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(message)s')
     main()

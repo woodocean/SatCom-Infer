@@ -1,3 +1,5 @@
+import os
+os.environ['HF_ENDPOINT'] = 'https://hf-mirror.com'
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -9,45 +11,64 @@ from torchvision.models import (
     vgg19, VGG19_Weights,
     mobilenet_v2, MobileNet_V2_Weights
 )
+from torchvision.models import alexnet, AlexNet_Weights
 
+# === 1. YOLOv5 ===
 # === 1. YOLOv5 ===
 class YOLOv5_DAG_Wrapper(nn.Module):
     def __init__(self, model_path='checkpoints/yolov5nu.pt', device='cuda'):
         super().__init__()
         self.device = device
         print(f"[Wrapper] YOLOv5 ({model_path})...")
-        self.yolo_wrapper = YOLO(model_path)
-        self.model = self.yolo_wrapper.model.to(device)
-        self.model.eval()
-        self.layers = list(self.model.model.children())
+        
+        # 1. 使用临时变量加载，避免污染 self 命名空间，防止被框架的任何 hook 误触！
+        temp_yolo = YOLO(model_path)
+        
+        # 2. 提取最纯净的 PyTorch 底层计算模型 (DetectionModel)
+        self.model = temp_yolo.model.to(device)
+        self.model.eval()                                   # 设置为推理模式
+        
+        # 3. 彻底锁死所有参数梯度，节约大量显存并斩断训练可能
+        for param in self.model.parameters():
+            param.requires_grad = False
+            
+        self.layers = list(self.model.model.children())     # 将YOLO模型的子层转为可索引的list
+        
         self.len = len(self.layers)
-        self.save_indices = getattr(self.model, 'save', [])
-        self.feature_cache = {}
+        self.save_indices = getattr(self.model, 'save', []) # 获取需要缓存输出的层索引
+        
+        # 4. 彻底删除临时的高级包装器对象，切断后续触发下载数据集的隐患
+        del temp_yolo
+        
+        self.feature_cache = {}             # 用于缓存需要保存的层的输出张量
 
     def __len__(self): 
         return self.len
     
     def reset_cache(self): 
-        self.feature_cache = {}
+        self.feature_cache = {}             # 清空缓存张量
 
+    # 基于yolo模型的层级切分 
+    # input_pack 输入数据 start_idx, end_idx 始末层序号
     def forward_slice(self, input_pack, start_idx, end_idx):
-        if isinstance(input_pack, torch.Tensor):
+        if isinstance(input_pack, torch.Tensor):    # 输入数据只是张量的话 说明不需要处理缓存数据
             current_input = input_pack
             if start_idx == 0: 
                 self.reset_cache()
-        elif isinstance(input_pack, dict):
-            current_input = input_pack['main']
-            self.feature_cache.update(input_pack.get('cache', {}))
+        elif isinstance(input_pack, dict):          # 输入数据是字典 说明有前级模块需要传递的缓存数据
+            current_input = input_pack['main']      # 提取‘main’部分作为层级输入
+            self.feature_cache.update(input_pack.get('cache', {}))  # 提取cache部分作为这个yolo包装器对象的缓存
         else:
             raise ValueError(f"Type error: {type(input_pack)}")
 
+        # 遍历从start_idx到end_idx的层 i为索引层序号 m为层对象
         for i, m in enumerate(self.layers):
             if i < start_idx: 
                 continue
             if i >= end_idx: 
                 break
             
-            if hasattr(m, 'f') and m.f != -1: 
+            if hasattr(m, 'f') and m.f != -1:       # 判断该层对象是否需要合并之前的特征图
                 if isinstance(m.f, int):
                     required_idx = m.f if m.f >= 0 else i + m.f
                     x = self.feature_cache.get(required_idx, current_input) if required_idx != i - 1 else current_input
@@ -73,7 +94,7 @@ class YOLOv5_DAG_Wrapper(nn.Module):
             current_input = current_output
 
         return {'main': current_output, 'cache': self.feature_cache}
-
+    
 # === 2. ResNet ===
 class ResNet_DAG_Wrapper(nn.Module):
     def __init__(self, version='50', device='cuda'):
@@ -89,7 +110,7 @@ class ResNet_DAG_Wrapper(nn.Module):
             raw = resnet101(weights=ResNet101_Weights.DEFAULT).to(device)
         else:
             raw = resnet50(weights=ResNet50_Weights.DEFAULT).to(device)
-        raw.eval()
+        raw.eval()      
         
         self.layers = nn.ModuleList()
         self.layers.append(nn.Sequential(raw.conv1, raw.bn1, raw.relu, raw.maxpool))
@@ -116,8 +137,10 @@ class ResNet_DAG_Wrapper(nn.Module):
             x = input_pack
         
         for i in range(start_idx, end_idx): 
+            # print(f"[层 {i}] 输入形状: {x.shape}")
             x = self.layers[i](x)
-        
+            # print(f"[层 {i}] 输出形状: {x.shape}")
+
         return {'main': x, 'cache': {}}
 
 # === 3. VGG-19 ===
@@ -188,8 +211,8 @@ class ViT_Huge_DAG_Wrapper(nn.Module):
     def __init__(self, device='cuda', img_size=224):
         super().__init__()
         self.device = device
-        print(f"[Wrapper] 正在加载 ViT-Base (No Pretrain, Size={img_size})...")
-        self.raw_model = timm.create_model('vit_base_patch16_224', pretrained=False, img_size=img_size).to(device)
+        print(f"[Wrapper] 正在加载 ViT-Huge (NO Pretrain, Size={img_size})...")
+        self.raw_model = timm.create_model('vit_huge_patch14_224', pretrained=False, img_size=img_size).to(device)
         self.raw_model.eval()
         self.layers = nn.ModuleList()
         self.layers.append(self.raw_model.patch_embed)
@@ -228,7 +251,7 @@ class Swin_Base_DAG_Wrapper(nn.Module):
     def __init__(self, device='cuda', img_size=224):
         super().__init__()
         self.device = device
-        print(f"[Wrapper] 正在加载 Swin-Base (No Pretrain, Size={img_size})...")
+        print(f"[Wrapper] 正在加载 Swin-Base (NO Pretrain, Size={img_size})...")
         self.raw_model = timm.create_model('swin_base_patch4_window7_224', pretrained=False, img_size=img_size).to(device)
         self.raw_model.eval()
         self.layers = nn.ModuleList()
@@ -307,6 +330,7 @@ class OutConv(nn.Module):
         return self.conv(x)
 
 class UNet_DAG_Wrapper(nn.Module):
+
     def __init__(self, device='cuda'):
         super().__init__()
         self.device = device
@@ -355,3 +379,36 @@ class UNet_DAG_Wrapper(nn.Module):
                 cache[i] = x
         
         return {'main': x, 'cache': cache}
+    
+
+# === 8. AlexNet ===
+class AlexNet_DAG_Wrapper(nn.Module):
+    def __init__(self, device='cuda'):
+        super().__init__()
+        self.device = device
+        print(f"[Wrapper] 正在加载 AlexNet ...")
+        self.raw_model = alexnet(weights=AlexNet_Weights.DEFAULT).to(device)
+        self.raw_model.eval()
+        self.layers = nn.ModuleList()
+        for layer in self.raw_model.features: 
+            self.layers.append(layer)
+        self.layers.append(self.raw_model.avgpool)
+        self.layers.append(nn.Flatten())
+        for layer in self.raw_model.classifier: 
+            self.layers.append(layer)
+        self.len = len(self.layers)
+        self.save_indices = []
+
+    def __len__(self): 
+        return self.len
+    
+    def forward_slice(self, input_pack, start_idx, end_idx):
+        if isinstance(input_pack, dict): 
+            x = input_pack['main']
+        else: 
+            x = input_pack
+        
+        for i in range(start_idx, end_idx): 
+            x = self.layers[i](x)
+        
+        return {'main': x, 'cache': {}}

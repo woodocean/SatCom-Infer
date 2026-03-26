@@ -15,18 +15,19 @@ class Communicator:
         self.node_id = node_id
         self.listen_ip = listen_ip
         self.listen_port = listen_port
-        self.simulate_bw = simulate_bw
+        self.simulate_bw = simulate_bw          # 这里是模拟的与邻居的带宽值，硬件的带宽是可以改，但目前是只能在路由器改，没有必要，
+                                                # 直接在这里按比例缩放传输时延即可
 
-        self.peers = {}            # {peer_id: (ip, port)}
-        self.simulated_bw = {}     # {peer_id: Mbps}
-        self.server_socket = None
-        self.running = False
-        self.handler = None        # 外部注册的消息回调
+        self.peers = {}            # {peer_id: (ip, port)}  邻居的套接字
+        self.simulated_bw = {}     # {peer_id: Mbps}        与邻居的信道带宽
+        self.server_socket = None                           
+        self.running = False                                # 该节点的通信模块是否运行中
+        self.handler = None        # 外部注册的消息回调函数    
 
     # ===================== 组网 =====================
     def register_peer(self, peer_id, ip, port):
         self.peers[peer_id] = (ip, port)
-        # 公网带宽模型
+        # 公网带宽模型，这个模型一定要调研具体带宽并修改的，目前ISL其实可以定为1Gbps - 20Gbps 看到文献是这么大 应该没问题 GSL还需要调研
         if self.simulate_bw:
             self.simulated_bw[peer_id] = self._estimate_link_bw(peer_id)
 
@@ -116,21 +117,21 @@ class Communicator:
         self.handler = handler_callback
         self.running = True
 
-        self.server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        self.server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        self.server_socket.bind(('0.0.0.0', self.listen_port))
+        self.server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)         #创建套接字对象
+        self.server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)       
+        self.server_socket.bind(('0.0.0.0', self.listen_port))                          #监听本机的接收端口
         self.server_socket.listen(10)
 
-        thread = threading.Thread(target=self._listen_loop, daemon=True)
-        thread.start()
+        thread = threading.Thread(target=self._listen_loop, daemon=True)                
+        thread.start()                                                                 #创建持续监听的线程，
         print(f"[{self.node_id}] 监听启动 @ 0.0.0.0:{self.listen_port}")
 
     def _listen_loop(self):
         while self.running:
             try:
                 self.server_socket.settimeout(2.0)
-                conn, addr = self.server_socket.accept()
-                t = threading.Thread(target=self._handle_conn, args=(conn, addr), daemon=True)
+                conn, addr = self.server_socket.accept()                                # 一旦建立TCP连接并接收到信息，就返回tcp连接对象 以及 连接对象的地址（套接字）
+                t = threading.Thread(target=self._handle_conn, args=(conn, addr), daemon=True) # 同时创建并启动解读信息的线程，该函数内有接收消息的回调函数
                 t.start()
             except socket.timeout:
                 continue
@@ -156,7 +157,7 @@ class Communicator:
             # 反序列化并回调
             message = pickle.loads(raw_data)
             if self.handler:
-                self.handler(message)
+                self.handler(message)       
 
         except Exception as e:
             print(f"  [COMM] 接收处理异常: {e}")

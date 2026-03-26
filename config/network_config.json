@@ -1,59 +1,158 @@
 {
+  "global_settings": {
+    "base_gpu_speed_gflops_per_ms": 100.0
+  },
   "nodes": {
     "RS": {
-      "ip": "192.168.0.103",
+      "ip": "127.0.0.1",
       "port": 8000,
       "role": "remote_sensing",
       "device": "PC",
-      "neighbors": ["SAT-01", "SAT-02", "SAT-03", "GS"]
+      "neighbors": [
+        "SAT-01",
+        "SAT-02",
+        "SAT-03",
+        "GS"
+      ],
+      "hardware": {
+        "compute_speed_gflops_per_ms": 0.0,
+        "memory_mb": 0
+      }
     },
     "SAT-01": {
-      "ip": "192.168.0.105",
+      "ip": "127.0.0.1",
       "port": 8001,
       "role": "leo_computing",
       "device": "Jetson_1",
-      "neighbors": ["RS", "SAT-03"]
+      "neighbors": [
+        "RS",
+        "SAT-03",
+        "GS"
+      ],
+      "hardware": {
+        "compute_speed_gflops_per_ms": 100.0,
+        "memory_mb": 4096
+      }
     },
     "SAT-02": {
-      "ip": "192.168.0.106",
+      "ip": "127.0.0.1",
       "port": 8002,
       "role": "leo_computing",
       "device": "Jetson_2",
-      "neighbors": ["RS", "SAT-03"]
+      "neighbors": [
+        "RS",
+        "SAT-03"
+      ],
+      "hardware": {
+        "compute_speed_gflops_per_ms": 100.0,
+        "memory_mb": 2048
+      }
     },
     "SAT-03": {
-      "ip": "192.168.0.105", 
+      "ip": "127.0.0.1",
       "port": 8003,
       "role": "leo_computing",
       "device": "Jetson_1",
       "is_aggregator": true,
-      "neighbors": ["RS", "SAT-01", "SAT-02", "SAT-04"]
+      "neighbors": [
+        "RS",
+        "SAT-01",
+        "SAT-02",
+        "SAT-04"
+      ],
+      "hardware": {
+        "compute_speed_gflops_per_ms": 100.0,
+        "memory_mb": 4096
+      }
     },
     "SAT-04": {
-      "ip": "192.168.0.106",
+      "ip": "127.0.0.1",
       "port": 8004,
       "role": "leo_computing",
       "device": "Jetson_2",
-      "neighbors": ["SAT-03", "SAT-05"]
+      "neighbors": [
+        "SAT-03",
+        "SAT-05"
+      ],
+      "hardware": {
+        "compute_speed_gflops_per_ms": 100.0,
+        "memory_mb": 2048
+      }
     },
     "SAT-05": {
-      "ip": "192.168.0.105",
+      "ip": "127.0.0.1",
       "port": 8005,
       "role": "leo_computing",
       "device": "Jetson_1",
-      "neighbors": ["SAT-04", "GS"]
+      "neighbors": [
+        "SAT-04",
+        "GS"
+      ],
+      "hardware": {
+        "compute_speed_gflops_per_ms": 100.0,
+        "memory_mb": 4096
+      }
     },
     "GS": {
-      "ip": "192.168.0.103",
+      "ip": "127.0.0.1",
       "port": 8006,
       "role": "ground_station",
       "device": "PC",
-      "neighbors": ["RS", "SAT-05"]
+      "neighbors": [
+        "RS",
+        "SAT-05"
+      ],
+      "hardware": {
+        "compute_speed_gflops_per_ms": 1000.0,
+        "memory_mb": 64000
+      }
+    }
+  },
+  "links": {
+    "RS_to_SAT-01": {
+      "bandwidth_mbps": 4818
+    },
+    "RS_to_SAT-02": {
+      "bandwidth_mbps": 15217
+    },
+    "RS_to_SAT-03": {
+      "bandwidth_mbps": 9894
+    },
+    "RS_to_GS": {
+      "bandwidth_mbps": 164
+    },
+    "SAT-01_to_SAT-03": {
+      "bandwidth_mbps": 15630
+    },
+    "SAT-01_to_GS": {
+      "bandwidth_mbps": 191
+    },
+    "SAT-02_to_SAT-03": {
+      "bandwidth_mbps": 14943
+    },
+    "SAT-03_to_SAT-04": {
+      "bandwidth_mbps": 14586
+    },
+    "SAT-04_to_SAT-05": {
+      "bandwidth_mbps": 14863
+    },
+    "SAT-05_to_GS": {
+      "bandwidth_mbps": 395
     }
   },
   "simulation_paths": {
-    "pipeline": ["RS", "SAT-03", "SAT-04", "SAT-05", "GS"],
-    "parallel_candidates": ["SAT-01", "SAT-02", "SAT-03"],
+    "pipeline": [
+      "RS",
+      "SAT-03",
+      "SAT-04",
+      "SAT-05",
+      "GS"
+    ],
+    "parallel_candidates": [
+      "SAT-01",
+      "SAT-02",
+      "SAT-03"
+    ],
     "parallel_aggregator": "SAT-03"
   }
 }
