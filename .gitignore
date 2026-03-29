@@ -9,6 +9,8 @@ checkpoints/*.onnx
 trained_models/*.pth
 trained_models/*.pt
 *.bin
+*.pth
+*.pt
 
 # ==================== 数据集和结果文件 ====================
 data/
@@ -34,3 +36,5 @@ calibration_result.png
 waste/temp_py/data/
 waste/temp_py/checkpoints/
 waste/temp_py/trained_models/
+waste/models
+models/checkpoints

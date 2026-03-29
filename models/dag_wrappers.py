@@ -93,6 +93,24 @@ class YOLOv5_DAG_Wrapper(nn.Module):
                 self.feature_cache[i] = current_output
             current_input = current_output
 
+        active_cache = {}
+        # 扫描在切分点 (end_idx) 之后的所有层，看看它们还需要前面产生的哪些特征图
+        for future_i in range(end_idx, self.len):
+            future_m = self.layers[future_i]
+            if hasattr(future_m, 'f') and future_m.f != -1:
+                refs = future_m.f if isinstance(future_m.f, list) else [future_m.f]
+                for ref in refs:
+                    req_idx = ref if ref >= 0 else future_i + ref
+                    
+                    # 规则 A: 依赖项必须在切分点及之前产生（即小于等于我们刚执行完的那一层）
+                    # 修正：将 < end_idx - 1 改为 < end_idx，救活刚刚产生的 Cache！
+                    if req_idx < end_idx and req_idx in self.feature_cache:
+                        active_cache[req_idx] = self.feature_cache[req_idx]
+
+        # 更新自身的缓存为“已净化”版本
+        self.feature_cache = active_cache
+
+
         return {'main': current_output, 'cache': self.feature_cache}
     
 # === 2. ResNet ===

@@ -54,7 +54,7 @@ class InferenceEngine:
             # 优先尝试 DAG Wrapper 模型
             # ==============================
             if self.model_name == 'yolov5':
-                self.model = YOLOv5_DAG_Wrapper(model_path='checkpoints/yolov5nu.pt', device=self.device)
+                self.model = YOLOv5_DAG_Wrapper(model_path='models/checkpoints/yolov5nu.pt', device=self.device)
                 self.is_dag_wrapper = True
             elif 'resnet' in self.model_name:
                 version = self.model_name.replace('resnet', '').strip()
@@ -140,7 +140,8 @@ class InferenceEngine:
         else:
             x = input_data
 
-        start_time = time.time()
+        torch.cuda.synchronize()
+        start_time = time.perf_counter()
         with torch.no_grad():
             if self.is_dag_wrapper:
                 # 关键：DAG Wrapper 必须用其 own forward_slice
@@ -156,7 +157,8 @@ class InferenceEngine:
                         layer = self.layers[i]
                     x = layer(x)
 
-        end_time = time.time()
+        torch.cuda.synchronize()
+        end_time = time.perf_counter()
         cost_ms = (end_time - start_time) * 1000
         return x, cost_ms
 

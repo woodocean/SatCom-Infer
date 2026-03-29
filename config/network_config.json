@@ -110,34 +110,34 @@
   },
   "links": {
     "RS_to_SAT-01": {
-      "bandwidth_mbps": 4818
+      "bandwidth_mbps": 4272
     },
     "RS_to_SAT-02": {
-      "bandwidth_mbps": 15217
+      "bandwidth_mbps": 7703
     },
     "RS_to_SAT-03": {
-      "bandwidth_mbps": 9894
+      "bandwidth_mbps": 11727
     },
     "RS_to_GS": {
-      "bandwidth_mbps": 164
+      "bandwidth_mbps": 142
     },
     "SAT-01_to_SAT-03": {
-      "bandwidth_mbps": 15630
+      "bandwidth_mbps": 12851
     },
     "SAT-01_to_GS": {
-      "bandwidth_mbps": 191
+      "bandwidth_mbps": 184
     },
     "SAT-02_to_SAT-03": {
-      "bandwidth_mbps": 14943
+      "bandwidth_mbps": 2988
     },
     "SAT-03_to_SAT-04": {
-      "bandwidth_mbps": 14586
+      "bandwidth_mbps": 18774
     },
     "SAT-04_to_SAT-05": {
-      "bandwidth_mbps": 14863
+      "bandwidth_mbps": 15759
     },
     "SAT-05_to_GS": {
-      "bandwidth_mbps": 395
+      "bandwidth_mbps": 189
     }
   },
   "simulation_paths": {
