@@ -4,7 +4,7 @@
   },
   "nodes": {
     "RS": {
-      "ip": "127.0.0.1",
+      "ip": "192.168.0.101",
       "port": 8000,
       "role": "remote_sensing",
       "device": "PC",
@@ -49,7 +49,7 @@
       }
     },
     "SAT-03": {
-      "ip": "127.0.0.1",
+      "ip": "192.168.0.105",
       "port": 8003,
       "role": "leo_computing",
       "device": "Jetson_1",
@@ -61,40 +61,40 @@
         "SAT-04"
       ],
       "hardware": {
-        "compute_speed_gflops_per_ms": 50.0,
+        "compute_speed_gflops_per_ms": 100.0,
         "memory_mb": 4096
       }
     },
     "SAT-04": {
-      "ip": "127.0.0.1",
+      "ip": "192.168.0.101",
       "port": 8004,
       "role": "leo_computing",
-      "device": "Jetson_2",
+      "device": "PC",
       "neighbors": [
         "SAT-03",
         "SAT-05"
       ],
       "hardware": {
-        "compute_speed_gflops_per_ms": 200.0,
+        "compute_speed_gflops_per_ms": 100.0,
         "memory_mb": 2048
       }
     },
     "SAT-05": {
-      "ip": "127.0.0.1",
+      "ip": "192.168.0.106",
       "port": 8005,
       "role": "leo_computing",
-      "device": "Jetson_1",
+      "device": "Jetson_2",
       "neighbors": [
         "SAT-04",
         "GS"
       ],
       "hardware": {
-        "compute_speed_gflops_per_ms": 300.0,
+        "compute_speed_gflops_per_ms": 100.0,
         "memory_mb": 4096
       }
     },
     "GS": {
-      "ip": "127.0.0.1",
+      "ip": "192.168.0.101",
       "port": 8006,
       "role": "ground_station",
       "device": "PC",
