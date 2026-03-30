@@ -82,11 +82,13 @@ class PMPSolver:
         if start >= end:
             return 0.0
         comp_latency = self.prefix_latency[end] - self.prefix_latency[start]
-        node_f = self.nodes[node_idx].get('compute_speed_gflops_per_ms', 1.0)
+        node_f = self.nodes[node_idx]['hardware'].get('compute_speed_gflops_per_ms', 1.0)
+        # print(f"节点{self.nodes[node_idx]['id']}算力为{node_f}")
         if node_f <= 0:
             return float('inf')
-        # return comp_latency * (self.F_REF / node_f)
-        return comp_latency
+        return comp_latency * (self.F_REF / node_f)
+        
+        # return comp_latency
 
     # =================== 1. LA-DP (负载感知动态规划) ===================
     def solve_la_dp(self) -> Tuple[float, Dict]:

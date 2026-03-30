@@ -126,13 +126,13 @@ class Scheduler:
             print(f"| {name.ljust(15)} | 预计时延: {lat_str.ljust(12)} | 层级决策: {data['plan']}")
 
         # 记录到 CSV 中
-        csv_file = "experiment_results.csv"
+        csv_file = "theoretical_results.csv"
         file_exists = os.path.isfile(csv_file)
         with open(csv_file, 'a', newline='') as f:
             writer = csv.writer(f)
-            if not file_exists:
-                writer.writerow(["TaskID", "Model", "Config", "Algorithm", "Latency_ms"])
+            # if not file_exists:
+            #     writer.writerow(["TaskID", "Model", "Algorithm", "Latency_ms"])
             for name, data in plans.items():
-                writer.writerow([task_id, model_name, config_key, name, data['latency']])
+                writer.writerow([task_id,name, data['latency']])
 
         return {k: v['plan'] for k, v in plans.items()}

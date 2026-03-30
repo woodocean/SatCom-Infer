@@ -44,7 +44,7 @@
         "SAT-03"
       ],
       "hardware": {
-        "compute_speed_gflops_per_ms": 100.0,
+        "compute_speed_gflops_per_ms": 200.0,
         "memory_mb": 2048
       }
     },
@@ -61,7 +61,7 @@
         "SAT-04"
       ],
       "hardware": {
-        "compute_speed_gflops_per_ms": 100.0,
+        "compute_speed_gflops_per_ms": 50.0,
         "memory_mb": 4096
       }
     },
@@ -75,7 +75,7 @@
         "SAT-05"
       ],
       "hardware": {
-        "compute_speed_gflops_per_ms": 100.0,
+        "compute_speed_gflops_per_ms": 200.0,
         "memory_mb": 2048
       }
     },
@@ -89,7 +89,7 @@
         "GS"
       ],
       "hardware": {
-        "compute_speed_gflops_per_ms": 100.0,
+        "compute_speed_gflops_per_ms": 300.0,
         "memory_mb": 4096
       }
     },
@@ -110,34 +110,34 @@
   },
   "links": {
     "RS_to_SAT-01": {
-      "bandwidth_mbps": 4272
+      "bandwidth_mbps": 19586
     },
     "RS_to_SAT-02": {
-      "bandwidth_mbps": 7703
+      "bandwidth_mbps": 10955
     },
     "RS_to_SAT-03": {
-      "bandwidth_mbps": 11727
+      "bandwidth_mbps": 4076
     },
     "RS_to_GS": {
-      "bandwidth_mbps": 142
+      "bandwidth_mbps": 218
     },
     "SAT-01_to_SAT-03": {
-      "bandwidth_mbps": 12851
+      "bandwidth_mbps": 18018
     },
     "SAT-01_to_GS": {
-      "bandwidth_mbps": 184
+      "bandwidth_mbps": 296
     },
     "SAT-02_to_SAT-03": {
-      "bandwidth_mbps": 2988
+      "bandwidth_mbps": 3180
     },
     "SAT-03_to_SAT-04": {
-      "bandwidth_mbps": 18774
+      "bandwidth_mbps": 18595
     },
     "SAT-04_to_SAT-05": {
-      "bandwidth_mbps": 15759
+      "bandwidth_mbps": 9465
     },
     "SAT-05_to_GS": {
-      "bandwidth_mbps": 189
+      "bandwidth_mbps": 467
     }
   },
   "simulation_paths": {

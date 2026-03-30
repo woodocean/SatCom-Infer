@@ -17,7 +17,7 @@ class ComputeNode:
     融合了原版高稳定性的路由接力与缓冲区设计
     """
 
-    def __init__(self, node_id, ip, port, role="compute_node", model_name='vgg19', simulate_bw=False):
+    def __init__(self, node_id, ip, port, role="compute_node", model_name='swin_base', simulate_bw=False):
         self.node_id = node_id
         self.role = role
 
@@ -160,13 +160,13 @@ class ComputeNode:
                 output, ms = self.engine.exec_layers(input_data, my_start, my_end)
                 
                 # --- 模拟计算时延换算 ---
-                # sim_comp_ms = ms * (PC_BASE_GFLOPS / my_gflops)
-                # acc_lat += sim_comp_ms
-                # history = [(self.node_id, my_start, my_end, sim_comp_ms)]
-                # print(f"  -> 真实耗时: {ms:.2f}ms | 模拟耗时: {sim_comp_ms:.2f}ms")
-                acc_lat += ms
-                history = [(self.node_id, my_start, my_end, ms)]
-                print(f"  -> 真实耗时: {ms:.2f}ms ")
+                sim_comp_ms = ms * (PC_BASE_GFLOPS / my_gflops)
+                acc_lat += sim_comp_ms
+                history = [(self.node_id, my_start, my_end, sim_comp_ms)]
+                print(f"  -> 真实耗时: {ms:.2f}ms | 模拟耗时: {sim_comp_ms:.2f}ms")
+                # acc_lat += ms
+                # history = [(self.node_id, my_start, my_end, ms)]
+                # print(f"  -> 真实耗时: {ms:.2f}ms ")
             else:
                 print(f"[{self.node_id}] [PIP] 首发节点作为纯数据源，直接派发数据...")
                 output, ms = input_data, 0.0
@@ -268,14 +268,14 @@ class ComputeNode:
             # =========================================================
             
             # --- 模拟计算时延换算 ---
-            # sim_comp_ms = ms * (PC_BASE_GFLOPS / my_gflops)
-            # acc_lat += sim_comp_ms
-            # history.append((self.node_id, start, end, sim_comp_ms))
-            # print(f"  -> 真实耗时: {ms:.2f}ms | 模拟耗时: {sim_comp_ms:.2f}ms")
+            sim_comp_ms = ms * (PC_BASE_GFLOPS / my_gflops)
+            acc_lat += sim_comp_ms
+            history.append((self.node_id, start, end, sim_comp_ms))
+            print(f"  -> 真实耗时: {ms:.2f}ms | 模拟耗时: {sim_comp_ms:.2f}ms")
 
-            acc_lat += ms
-            history.append((self.node_id, start, end, ms))
-            print(f"  -> 真实耗时: {ms:.2f}ms")
+            # acc_lat += ms
+            # history.append((self.node_id, start, end, ms))
+            # print(f"  -> 真实耗时: {ms:.2f}ms")
 
             if route: # 如果还有下一跳
                 next_hop = route[0]

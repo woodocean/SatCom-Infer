@@ -24,27 +24,27 @@ def process_data(csv_path):
     
     # 2. 按任务编号范围分类模型
     def assign_model(num):
-        if 0 <= num <= 100:
+        if 0 <= num <= 20:
             return 'VGG19'
-        elif 101 <= num <= 200:
+        elif 21 <= num <= 40:
             return 'ResNet101'
-        elif 201 <= num <= 300:
+        elif 41 <= num <= 60:
             return 'YOLOv5'
-        elif 301 <= num <= 400:
+        elif 61 <= num <= 80:
             return 'Swin_Base'
         else:
             return 'Other'
             
     df_pivot['Model'] = df_pivot['Task_Num'].apply(assign_model)
     
-    # 3. 计算归一化时延比值周（vs BentPipe = 1.0）
-    required_algs = ['LA-DP', 'Greedy', 'BentPipe', 'Random', 'GA']
+    # 3. 计算归一化时延比值周（vs Bent-Pipe = 1.0）
+    required_algs = ['LA-DP', 'Greedy', 'Bent-Pipe', 'Random', 'GA']
     for alg in required_algs:
         if alg not in df_pivot.columns:
             raise ValueError(f"文件 {csv_path} 缺失算法列: {alg}")
     
     for alg in required_algs:
-        df_pivot[f'{alg}_Ratio'] = df_pivot[alg] / df_pivot['BentPipe']
+        df_pivot[f'{alg}_Ratio'] = df_pivot[alg] / df_pivot['Bent-Pipe']
     
     return df_pivot
 
@@ -56,8 +56,8 @@ def draw_bar_chart(ax, df_pivot, title):
         return
 
     target_models = ['VGG19', 'ResNet101', 'YOLOv5', 'Swin_Base']
-    algs_ratio = ['LA-DP_Ratio', 'Greedy_Ratio', 'Random_Ratio', 'GA_Ratio', 'BentPipe_Ratio']
-    labels = ['LA-DP', 'Greedy', 'Random', 'GA', 'BentPipe']
+    algs_ratio = ['LA-DP_Ratio', 'Greedy_Ratio', 'Random_Ratio', 'GA_Ratio', 'Bent-Pipe_Ratio']
+    labels = ['LA-DP', 'Greedy', 'Random', 'GA', 'Bent-Pipe']
     colors = ['#1f77b4', '#ff7f0e', '#2ca02c', '#9467bd', '#d62728']
 
     # 按模型分组求均值
@@ -83,11 +83,11 @@ def draw_bar_chart(ax, df_pivot, title):
 
     # 装饰坐标轴与背景
     ax.set_xlabel('任务所属推理模型', fontsize=10)
-    ax.set_ylabel('平均归一化时延 (BentPipe=1.0)', fontsize=10)
+    ax.set_ylabel('平均归一化时延 (Bent-Pipe=1.0)', fontsize=10)
     ax.set_title(title, fontsize=11, pad=8)
     ax.set_xticks(x)
     ax.set_xticklabels(active_models, fontsize=9)
-    ax.axhline(y=1.0, color='black', linewidth=1, linestyle=':')  # BentPipe 基准线
+    ax.axhline(y=1.0, color='black', linewidth=1, linestyle=':')  # Bent-Pipe 基准线
     ax.grid(axis='y', linestyle='--', alpha=0.4)
     ax.legend(fontsize=9, loc='upper left')
 
