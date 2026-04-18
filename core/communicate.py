@@ -127,20 +127,50 @@ class Communicator:
                     # 3. 本次通信总时延
                     comm_latency = propagation_delay + transmission_delay
                     
-                    # 🌟 [新增] 为了基准测试，将实测数据暴露给返回值，方便外部统计
+                    # =============== 【新增：理论延时比例换算】 ===============
+                    import json
+                    theoretical_bw_mbps = 580.0
+                    hardware_baseline_mbps = 580.0
+                    try:
+                        with open("config/network_config.json", "r") as f:
+                            net_cfg = json.load(f)
+                            hardware_baseline_mbps = net_cfg.get("global_settings", {}).get("hardware_baseline_mbps", 580.0)
+                            links = net_cfg.get("links", {})
+                            link_key1 = f"{self.node_id}_to_{target_id}"
+                            link_key2 = f"{target_id}_to_{self.node_id}"
+                            if link_key1 in links:
+                                theoretical_bw_mbps = links[link_key1].get("bandwidth_mbps", hardware_baseline_mbps)
+                            elif link_key2 in links:
+                                theoretical_bw_mbps = links[link_key2].get("bandwidth_mbps", hardware_baseline_mbps)
+                    except Exception as e:
+                        pass
+                    
+                    # 按照等比比例进行目标传输时延折算
+                    # 比如受硬件局限，实测带宽上限为580M，但想要模拟星群间高速链路5800M，即可将实测时延除以10
+                    scale_ratio = hardware_baseline_mbps / theoretical_bw_mbps if theoretical_bw_mbps > 0 else 1.0
+                    simulated_transmission_time = transmission_delay * scale_ratio
+                    simulated_comm_latency = propagation_delay + simulated_transmission_time
+                    # =========================================================
+                    
+                    # 🌟 [更新] 将实测数据与理论折算数据一并暴露给返回值
                     metrics = {
                         'success': True,
                         'total_time': total_real_time,
                         'transmission_time': transmission_delay,
                         'propagation_time': propagation_delay,
                         'throughput_mbps': throughput_mbps,
-                        'data_mb': data_mb
+                        'data_mb': data_mb,
+                        'simulated_transmission_time': simulated_transmission_time,
+                        'simulated_comm_latency': simulated_comm_latency,
+                        'theoretical_bandwidth': theoretical_bw_mbps
                     }
                     
-                    print(f"  [COMM-UDP] 🟢 {self.node_id}->{target_id}  ({data_mb:.3f}MB) 发送成功，实测数据:")
-                    print(f"             --> | 真实传输所耗时: {transmission_delay*1000:6.1f} ms  (接收推算吞吐: {throughput_mbps:6.1f} Mbps)")
-                    print(f"             --> | 物理单程传播时延: {propagation_delay*1000:6.1f} ms")
-                    print(f"             --> | 最终总计通信时延: {comm_latency*1000:6.1f} ms")
+                    print(f"  [COMM-UDP] 🟢 {self.node_id}->{target_id}  ({data_mb:.3f}MB) 发送成功，时延统筹:")
+                    print(f"             --> | 真实传输耗时: {transmission_delay*1000:6.1f} ms  (接收推算吞吐: {throughput_mbps:6.1f} Mbps)")
+                    print(f"             --> | 物理单程传播: {propagation_delay*1000:6.1f} ms")
+                    print(f"             --> | 【等效缩放】理论带宽: {theoretical_bw_mbps} Mbps (系数 {scale_ratio:.3f})")
+                    print(f"             --> | 【等效缩放】传输耗时: {simulated_transmission_time*1000:6.1f} ms")
+                    print(f"             --> | 【等效缩放】整体时延: {simulated_comm_latency*1000:6.1f} ms")
                     
                     udp_sock.close()
                     return True, metrics  # 🌟 修改返回值为详细指标字典

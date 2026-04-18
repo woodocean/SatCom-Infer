@@ -1,10 +1,11 @@
 {
   "global_settings": {
-    "base_gpu_speed_gflops_per_ms": 100.0
+    "base_gpu_speed_gflops_per_ms": 100.0,
+    "hardware_baseline_mbps": 580.0
   },
   "nodes": {
     "RS": {
-      "ip": "192.168.0.101",
+      "ip": "192.168.10.165",
       "port": 8000,
       "role": "remote_sensing",
       "device": "PC",
@@ -20,7 +21,7 @@
       }
     },
     "SAT-01": {
-      "ip": "127.0.0.1",
+      "ip": "192.168.3.181",
       "port": 8001,
       "role": "leo_computing",
       "device": "Jetson_1",
@@ -35,7 +36,7 @@
       }
     },
     "SAT-02": {
-      "ip": "127.0.0.1",
+      "ip": "192.168.2.178",
       "port": 8002,
       "role": "leo_computing",
       "device": "Jetson_2",
@@ -49,7 +50,7 @@
       }
     },
     "SAT-03": {
-      "ip": "192.168.0.105",
+      "ip": "192.168.3.181",
       "port": 8003,
       "role": "leo_computing",
       "device": "Jetson_1",
@@ -66,10 +67,10 @@
       }
     },
     "SAT-04": {
-      "ip": "192.168.0.101",
+      "ip": "192.168.2.178",
       "port": 8004,
       "role": "leo_computing",
-      "device": "PC",
+      "device": "Jetson_2",
       "neighbors": [
         "SAT-03",
         "SAT-05"
@@ -80,10 +81,10 @@
       }
     },
     "SAT-05": {
-      "ip": "192.168.0.106",
+      "ip": "192.168.3.181",
       "port": 8005,
       "role": "leo_computing",
-      "device": "Jetson_2",
+      "device": "Jetson_1",
       "neighbors": [
         "SAT-04",
         "GS"
@@ -94,7 +95,7 @@
       }
     },
     "GS": {
-      "ip": "192.168.0.101",
+      "ip": "192.168.10.165",
       "port": 8006,
       "role": "ground_station",
       "device": "PC",
@@ -110,34 +111,44 @@
   },
   "links": {
     "RS_to_SAT-01": {
-      "bandwidth_mbps": 8253
+      "bandwidth_mbps": 7943,
+      "propagation_delay_ms": 10.15
     },
     "RS_to_SAT-02": {
-      "bandwidth_mbps": 9278
+      "bandwidth_mbps": 11861,
+      "propagation_delay_ms": 5.49
     },
     "RS_to_SAT-03": {
-      "bandwidth_mbps": 3676
+      "bandwidth_mbps": 6341,
+      "propagation_delay_ms": 5.92
     },
     "RS_to_GS": {
-      "bandwidth_mbps": 395
+      "bandwidth_mbps": 500,
+      "propagation_delay_ms": 37.4
     },
     "SAT-01_to_SAT-03": {
-      "bandwidth_mbps": 14124
+      "bandwidth_mbps": 9080,
+      "propagation_delay_ms": 12.64
     },
     "SAT-01_to_GS": {
-      "bandwidth_mbps": 300
+      "bandwidth_mbps": 361,
+      "propagation_delay_ms": 30.15
     },
     "SAT-02_to_SAT-03": {
-      "bandwidth_mbps": 12306
+      "bandwidth_mbps": 10199,
+      "propagation_delay_ms": 12.63
     },
     "SAT-03_to_SAT-04": {
-      "bandwidth_mbps": 4555
+      "bandwidth_mbps": 18694,
+      "propagation_delay_ms": 8.09
     },
     "SAT-04_to_SAT-05": {
-      "bandwidth_mbps": 17899
+      "bandwidth_mbps": 10515,
+      "propagation_delay_ms": 8.46
     },
     "SAT-05_to_GS": {
-      "bandwidth_mbps": 434
+      "bandwidth_mbps": 329,
+      "propagation_delay_ms": 49.68
     }
   },
   "simulation_paths": {

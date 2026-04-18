@@ -171,7 +171,33 @@ class RouterQoSClient:
         
         logger.info(f"完成: {applied} 成功, {failed} 失败")
         return {'ok': failed == 0, 'applied': applied, 'failed': failed}
-    
+
+    def set_root_delay(self, dst_ip, delay_ms, limit=100000, dry_run=False):
+        """
+        全速模式：不设 htb class 限制，直接在接口根部挂载 netem 延迟。
+        这会让该接口所有去往该方向的流量统一增加延迟，且理论上能跑满物理带宽。
+        （对齐旧版本 bw.py 的动作）
+        """
+        iface = self._get_iface(dst_ip)
+        logger.info(f"为接口 {iface} (目标: {dst_ip}) 设置 {delay_ms}ms 延迟...")
+        
+        if dry_run:
+            return {'ok': True, 'iface': iface}
+        
+        try:
+            # 1. 确保环境干净
+            self._exec(f"tc qdisc del dev {iface} root 2>/dev/null")
+            
+            # 2. 直接添加 netem 作为根队列 (不使用 htb)
+            if delay_ms > 0:
+                self._exec(f"tc qdisc add dev {iface} root netem delay {delay_ms}ms limit {limit}")
+            
+            logger.info("✓ 延迟已应用")
+            return {'ok': True}
+        except Exception as e:
+            logger.error(f"✗ 延迟设置失败: {e}")
+            return {'ok': False, 'error': str(e)}
+
     def clear_all(self, dry_run=False):
         """清除所有规则"""
         logger.warning("清除所有规则")

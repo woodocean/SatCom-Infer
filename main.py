@@ -3,6 +3,7 @@ import time
 import json
 import logging
 from core.node import ComputeNode
+from core.router_qos import RouterQoSClient
 import sys
 import os
 import torch
@@ -18,12 +19,37 @@ def update_network_topology(config_path):
     try:
         config = load_config(config_path)
         
+        # 路由器登录凭测（如果要真实下发硬件的话请修改为真实 IP 和 root 密码）
+        router_ip = "192.168.10.1"
+        router_user = "root"
+        router_password = "wslhy110"
+        
+        # 打开 QoS 客户端连接实例
+        qos_client = RouterQoSClient(router_ip, router_user, router_password, ssh_timeout=3)
+        
         for link_name, info in config['links'].items():
+            # 1. 产生新的（或来自 STK 的）带宽与时延
             if "GS" in link_name: 
                 new_bw = random.randint(100, 500)
+                new_delay = random.uniform(30.0, 60.0) # 地面站高延迟
             else:
-                new_bw = random.randint(100,20000)
+                new_bw = random.randint(100, 20000)
+                new_delay = random.uniform(2.0, 15.0)  # 星间低延迟
+                
             info['bandwidth_mbps'] = new_bw
+            info['propagation_delay_ms'] = round(new_delay, 2)
+            
+            # 2. 从 JSON 里解析出你要操作的设备 IP
+            dst_node_id = link_name.split("_to_")[-1]
+            if dst_node_id in config['nodes']:
+                dst_ip = config['nodes'][dst_node_id]['ip']
+                
+                # 只有非本机的远端路由才去下发硬件操作
+                if not dst_ip.startswith("127.0.0.1") and not dst_ip.startswith("localhost"):
+                    # 3. 硬件层面直接去刷入 netem 的传播延迟，不限带宽
+                    qos_client.set_root_delay(dst_ip, delay_ms=int(new_delay))
+
+        qos_client.close()
             
         tmp_path = config_path + ".tmp"
         with open(tmp_path, 'w') as f:
