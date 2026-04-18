@@ -69,6 +69,6 @@ if __name__ == "__main__":
     qos.clear_all()
     
     # 2. 统一加 100ms 延迟 (不限速)
-    qos.add_delay(TARGET_IP, delay_ms=10)
+    qos.add_delay(TARGET_IP, delay_ms=50)
     
     qos.close()

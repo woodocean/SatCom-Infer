@@ -87,10 +87,6 @@ class Communicator:
         udp_sock.settimeout(1.5)  # 单次超时上限 (包含往返时延)
 
         msg_id = random.randint(0, 65535)
-        
-        # 获取物理测速硬件的峰值带宽基准 (您那边 Iperf UDP 能跑到 450Mbps)
-        # 以此用于分离测算“传输”与“传播”时延
-        hw_bandwidth_mbps = getattr(self, 'hardware_max_bw', 450.0) 
 
         start_t = time.perf_counter()
 
@@ -110,22 +106,34 @@ class Communicator:
             # B. 阻塞等待接收端所有块重组完成后的 DONE 应答
             try:
                 ack_data, _ = udp_sock.recvfrom(1024)
-                if ack_data == b'DONE':
+                if ack_data.startswith(b'DONE'):
                     end_t = time.perf_counter()
-                    real_time = end_t - start_t
+                    total_real_time = end_t - start_t
                     
-                    # =============== 时延分离与测算 ===============
-                    # 1. 计算理论传输时延 (仅因为数据量和光猫硬件极限而产生的时延)
-                    transmission_delay = (data_mb * 8) / hw_bandwidth_mbps
-                    # 2. 推断传播时延 (扣除掉纯数据位移动时间后，剩下的就是物理接线的长距离和协议处理时间，近似取一半为单向传播时延)
-                    propagation_delay = max(0.0, (real_time - transmission_delay) / 2)
+                    # =============== 时延测算核心点 ===============
+                    # 1. 传输时延: 接收端实打实在收这些数据块所花费的总时间 (最后一块落下的时间 - 收到第一块落下的时间)
+                    if len(ack_data) >= 12:
+                        rx_time = struct.unpack('!d', ack_data[4:12])[0]
+                    else:
+                        rx_time = 0.001
+                        
+                    transmission_delay = rx_time if rx_time > 0.001 else 0.001
+                    throughput_mbps = (data_mb * 8) / transmission_delay if data_mb > 0 else 0.0
                     
-                    print(f"  [COMM-UDP] 🟢 {self.node_id}->{target_id}  ({data_mb:.3f}MB) 发送彻底成功 | "
-                          f"总物理耗时: {real_time*1000:.1f} ms\n"
-                          f"             --> [记录分析] 分析传输时延: {transmission_delay*1000:.1f} ms | 单向传播时延估值: {propagation_delay*1000:.1f} ms")
+                    # 2. 传播时延 (单向): [(发送端发出起~等到回应的往返时间) - 接收的耗时] / 2
+                    # 无论你在 bw.py 中怎么设定 (50ms, 10ms..)，这完美等价于这趟物理线缆的传播时延
+                    propagation_delay = max(0.0, (total_real_time - transmission_delay) / 2)
+                    
+                    # 3. 本次通信总时延
+                    comm_latency = propagation_delay + transmission_delay
+                    
+                    print(f"  [COMM-UDP] 🟢 {self.node_id}->{target_id}  ({data_mb:.3f}MB) 发送成功，实测数据:")
+                    print(f"             --> | 真实传输所耗时: {transmission_delay*1000:6.1f} ms  (接收推算吞吐: {throughput_mbps:6.1f} Mbps)")
+                    print(f"             --> | 物理单程传播时延: {propagation_delay*1000:6.1f} ms")
+                    print(f"             --> | 最终总计通信时延: {comm_latency*1000:6.1f} ms")
                     
                     udp_sock.close()
-                    return True, real_time
+                    return True, comm_latency
             except socket.timeout:
                 print(f"  [COMM-UDP] 🟡 {self.node_id}->{target_id} 等待最终 ACK 超时 (物理延迟过大或严重丢包)，触发第 {attempt+1} 次强制重载重传...")
                 continue
@@ -190,6 +198,7 @@ class Communicator:
                             'chunks': {}, 
                             'num': num_chunks, 
                             'addr': addr, 
+                            'first_ts': time.perf_counter(),
                             'ts': time.time()
                         }
 
@@ -199,8 +208,12 @@ class Communicator:
 
                     # 当字典里的存储数量与总数量相等时，数据全了！
                     if len(self.recv_buffers[msg_id]['chunks']) == num_chunks:
-                        # [关键] 必须在这里火速给发送方回应 DONE！解开发送方的超时阻塞！
-                        self.server_socket.sendto(b'DONE', addr)
+                        # 记录接收侧的纯数据块拼装耗时 (第一片落下 到 最后一片落下的时间) 也就是【传输发送时长】
+                        rx_time = time.perf_counter() - self.recv_buffers[msg_id]['first_ts']
+                        
+                        # [关键] 必须在这里火速给发送方回应 DONE！同时将我们精准侧算到的 rx_时间 发回去
+                        ack_msg = b'DONE' + struct.pack('!d', rx_time)
+                        self.server_socket.sendto(ack_msg, addr)
                         
                         # 把拼积木拆分到另一边，别挡住其他高频包的进来
                         full_data = bytearray()
