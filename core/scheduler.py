@@ -4,40 +4,49 @@ import csv
 from algorithms.pmp_solver import PMPSolver
 
 class Scheduler:
-    def __init__(self, net_config_path="config/network_config.json", dnn_profiles_path="config/dnn_profiles_database.json"):
+    def __init__(self, net_config_path="config/network_config.json", 
+                 pc_profiles_path="config/dnn_profiles_database_pc.json", 
+                 jetson_profiles_path="config/dnn_profiles_database_jetson.json"):
         # 1. 加载卫星网络配置
         if not os.path.exists(net_config_path):
             raise FileNotFoundError(f"找不到网络配置文件: {net_config_path}")
         with open(net_config_path, 'r', encoding='utf-8') as f:
             self.net_config = json.load(f)
             
-        # 2. 加载模型物理测绘数据库
-        if not os.path.exists(dnn_profiles_path):
-            raise FileNotFoundError(f"找不到模型全景配置文件: {dnn_profiles_path}")
-        with open(dnn_profiles_path, 'r', encoding='utf-8') as f:
-            self.dnn_profiles = json.load(f)
+        # 2. 根据设备类型加载模型物理测绘数据库
+        self.dnn_profiles = {}
+        
+        if not os.path.exists(pc_profiles_path):
+            raise FileNotFoundError(f"找不到 PC 配置文件: {pc_profiles_path}")
+        with open(pc_profiles_path, 'r', encoding='utf-8') as f:
+            self.dnn_profiles["pc"] = json.load(f)
+            
+        if not os.path.exists(jetson_profiles_path):
+            raise FileNotFoundError(f"找不到 Jetson 配置文件: {jetson_profiles_path}")
+        with open(jetson_profiles_path, 'r', encoding='utf-8') as f:
+            self.dnn_profiles["jetson"] = json.load(f)
 
     def generate_task_and_schedule(self, task_id="task_001", model_name="yolov5", batch_size=32, target_h=640, target_w=640):
         # print(f"\n[{task_id}] 接收任务: {model_name} | 规格: b{batch_size}_{target_h}x{target_w}")
         
         # ================= 1. 物理档案查表提取 =================
         config_key = f"b{batch_size}_{target_h}x{target_w}"
-        if model_name not in self.dnn_profiles or config_key not in self.dnn_profiles[model_name]:
-            raise KeyError(f"数据库中缺少配置: {model_name} -> {config_key}，请先运行 validator 进行测绘！")
-            
-        raw_profile = self.dnn_profiles[model_name][config_key]
         
-        # 将字典转换为 PMPSolver 所需的列表格式
-        layers_list = []
-        for i in range(len(raw_profile)):
-            if str(i) in raw_profile:
-                layers_list.append(raw_profile[str(i)])
+        layers_dict = {"pc": [], "jetson": []}
+        for device in ["pc", "jetson"]:
+            if model_name not in self.dnn_profiles[device] or config_key not in self.dnn_profiles[device][model_name]:
+                raise KeyError(f"数据库({device})中缺少配置: {model_name} -> {config_key}，请先运行 validator 进行测绘！")
+            raw_profile = self.dnn_profiles[device][model_name][config_key]
+            
+            for i in range(len(raw_profile)):
+                if str(i) in raw_profile:
+                    layers_dict[device].append(raw_profile[str(i)])
             
         # 计算原始输入体积 (MB): Batch * C(3) * H * W * 4Bytes / 1024^2
         input_mb = (batch_size * 3 * target_h * target_w * 4) / (1024 ** 2)
 
         model_profile = {
-            "layers": layers_list,
+            "layers": dict(layers_dict), # 将不同设备的layers字典传给算法
             "input_size_raw": input_mb
         }
 

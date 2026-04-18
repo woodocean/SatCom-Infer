@@ -27,23 +27,35 @@ class PMPSolver:
                 "reference_compute_speed": 100.0  # 本地标定算力基准（GFLOPs/ms）
             }
         """
-        self.layers = model_profile['layers']    # List[Dict], 每层含 latency/comm/weight 等
-        self.L: int = len(self.layers)
         self.nodes: List[Dict] = env_status['nodes']
         self.K: int = len(self.nodes)
         self.B: List[float] = env_status['bandwidths']  # 每跳链路带宽（Mbps）
         self.input_size_raw: float = model_profile.get('input_size_raw', 3.0)  # MB
+
+        # 根据传入的 dict 或者是 list 处理 layers (兼容旧版单 list)
+        if isinstance(model_profile['layers'], dict):
+            self.layers_dict = model_profile['layers']
+            self.layers = self.layers_dict["pc"]  # 用 PC 的作为基准取 comm 和 weight
+        else:
+            self.layers = model_profile['layers']
+            self.layers_dict = {"pc": self.layers, "jetson": self.layers}  # fallback
+            
+        self.L: int = len(self.layers)
 
         # 异构算力标定系数（保留，用于节点算力缩放）
         self.F_REF: float = env_status.get("reference_compute_speed", 100.0)
 
         # ================ 预计算前缀和（关键优化） ================
         # 注意：此处字段名已更新为新字段
-        self.prefix_latency = [0.0] * (self.L + 1)
+        self.prefix_latency = {"pc": [0.0] * (self.L + 1), "jetson": [0.0] * (self.L + 1)}
         self.prefix_weight = [0.0] * (self.L + 1)
         self.prefix_pure = [0.0] * (self.L + 1)  # 用于求 max(comm_pure_mb) 的前缀最大值（后续用滑动窗口）
+        
         for i in range(self.L):
-            self.prefix_latency[i+1] = self.prefix_latency[i] + self.layers[i].get('latency_mean_ms', 0.0)
+            self.prefix_latency["pc"][i+1] = self.prefix_latency["pc"][i] + self.layers_dict["pc"][i].get('latency_mean_ms', 0.0)
+            if "jetson" in self.layers_dict:
+                self.prefix_latency["jetson"][i+1] = self.prefix_latency["jetson"][i] + self.layers_dict["jetson"][i].get('latency_mean_ms', 0.0)
+            
             self.prefix_weight[i+1] = self.prefix_weight[i] + self.layers[i].get('weight_size_mb', 0.0)
             # 纯特征图大小：我们用前缀最大值数组（非前缀和）——但为简化，我们改用滑动窗口在 DP 中动态求 max
         # 说明：max(comm_pure_mb) 无法用前缀和直接表示，因此我们将在内存检查时用 O(1) 区间查询（需额外维护 RMQ 或直接遍历小段）。
@@ -81,14 +93,19 @@ class PMPSolver:
     def _compute_delay(self, node_idx: int, start: int, end: int) -> float:
         if start >= end:
             return 0.0
-        comp_latency = self.prefix_latency[end] - self.prefix_latency[start]
-        node_f = self.nodes[node_idx]['hardware'].get('compute_speed_gflops_per_ms', 1.0)
-        # print(f"节点{self.nodes[node_idx]['id']}算力为{node_f}")
-        if node_f <= 0:
-            return float('inf')
-        return comp_latency * (self.F_REF / node_f)
         
-        # return comp_latency
+        # 1. 判定设备类型 (默认 fallback 到 pc)
+        # 这里需要网络配置里传进了 `device` 类型 (如 'PC', 'Jetson_1')
+        device_str = str(self.nodes[node_idx].get('device', 'PC')).lower()
+        if 'jetson' in device_str:
+            device_type = 'jetson'
+        else:
+            device_type = 'pc'
+            
+        # 2. 直接取目标设备的 profile 耗时
+        comp_latency = self.prefix_latency[device_type][end] - self.prefix_latency[device_type][start]
+        
+        return comp_latency
 
     # =================== 1. LA-DP (负载感知动态规划) ===================
     def solve_la_dp(self) -> Tuple[float, Dict]:

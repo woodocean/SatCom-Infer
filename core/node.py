@@ -159,14 +159,11 @@ class ComputeNode:
                 print(f"[{self.node_id}] [PIP] 任务 {task_id}({alg}) 首发，执行层 [{my_start} -> {my_end}]")
                 output, ms = self.engine.exec_layers(input_data, my_start, my_end)
                 
-                # --- 模拟计算时延换算 ---
-                sim_comp_ms = ms * (PC_BASE_GFLOPS / my_gflops)
+                # --- 部署到物理设备，使用真实的计算时延 (直接使用 ms) ---
+                sim_comp_ms = ms 
                 acc_lat += sim_comp_ms
                 history = [(self.node_id, my_start, my_end, sim_comp_ms)]
-                print(f"  -> 真实耗时: {ms:.2f}ms | 模拟耗时: {sim_comp_ms:.2f}ms")
-                # acc_lat += ms
-                # history = [(self.node_id, my_start, my_end, ms)]
-                # print(f"  -> 真实耗时: {ms:.2f}ms ")
+                print(f"  -> 真实计算耗时: {ms:.2f}ms")
             else:
                 print(f"[{self.node_id}] [PIP] 首发节点作为纯数据源，直接派发数据...")
                 output, ms = input_data, 0.0
@@ -267,15 +264,11 @@ class ComputeNode:
 
             # =========================================================
             
-            # --- 模拟计算时延换算 ---
-            sim_comp_ms = ms * (PC_BASE_GFLOPS / my_gflops)
-            acc_lat += sim_comp_ms
+            # --- 部署到物理设备，使用真实的计算时延 (直接使用 ms) ---
+            sim_comp_ms = ms 
+            acc_lat += float(sim_comp_ms)
             history.append((self.node_id, start, end, sim_comp_ms))
-            print(f"  -> 真实耗时: {ms:.2f}ms | 模拟耗时: {sim_comp_ms:.2f}ms")
-
-            # acc_lat += ms
-            # history.append((self.node_id, start, end, ms))
-            # print(f"  -> 真实耗时: {ms:.2f}ms")
+            print(f"  -> 真实计算耗时: {ms:.2f}ms")
 
             if route: # 如果还有下一跳
                 next_hop = route[0]

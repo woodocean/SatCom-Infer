@@ -152,7 +152,8 @@ def main():
             # --- 步骤 B: 调度器感知更新 (注入真实的深度学习测绘档案) ---
             scheduler = Scheduler(
                 net_config_path=net_config_path, 
-                dnn_profiles_path="config/dnn_profiles_database.json" 
+                pc_profiles_path="config/dnn_profiles_database_pc.json",
+                jetson_profiles_path="config/dnn_profiles_database_jetson.json"
             )
 
             chosen_model = random.choice(model_pool)
