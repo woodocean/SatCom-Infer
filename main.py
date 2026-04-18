@@ -134,92 +134,112 @@ def main():
         from core.scheduler import Scheduler
         
         # 异构任务池：通过控制分辨率和 batch 模拟真实的复杂网络负荷
-        # model_pool = ["yolov5", "resnet101", "vgg19", "swin_base"]
-        model_pool = ["resnet101"]
+        model_pool = ["yolov5", "resnet101", "vgg19", "swin_base"]
+        # model_pool = ["resnet101"]
         batch_pool = [16,32]
         res_pool = {"yolov5": [(640, 640)],
                     "resnet101": [(224, 224)],
                     "vgg19": [(224, 224)],
                     "swin_base": [(224, 224)]}
         
-        for i in range(0, 101):
-            task_id = f"Task_{i:03d}"
+        for chosen_model in model_pool:
+            print(f"\n{'#'*60}")
+            print(f"### [模型切换] 当前正在测试模型: {chosen_model}")
+            print(f"{'#'*60}")
             
-            # --- 步骤 A: 环境动态演进，并添加短暂的睡眠防止所有节点同时读写 ---
-            update_network_topology(net_config_path)
-            time.sleep(0.5) 
-            
-            # --- 步骤 B: 调度器感知更新 (注入真实的深度学习测绘档案) ---
-            scheduler = Scheduler(
-                net_config_path=net_config_path, 
-                pc_profiles_path="config/dnn_profiles_database_pc.json",
-                jetson_profiles_path="config/dnn_profiles_database_jetson.json"
-            )
+            for i in range(0, 101):
+                task_id = f"{chosen_model}_Task_{i:03d}"
+                
+                # --- 步骤 A: 环境动态演进，并添加短暂的睡眠防止所有节点同时读写 ---
+                update_network_topology(net_config_path)
+                time.sleep(0.5) 
+                
+                # --- 步骤 B: 调度器感知更新 (注入真实的深度学习测绘档案) ---
+                scheduler = Scheduler(
+                    net_config_path=net_config_path, 
+                    pc_profiles_path="config/dnn_profiles_database_pc.json",
+                    jetson_profiles_path="config/dnn_profiles_database_jetson.json"
+                )
 
-            chosen_model = random.choice(model_pool)
-            chosen_bs = random.choice(batch_pool)
-            chosen_res = random.choice(res_pool[chosen_model])
+                chosen_bs = random.choice(batch_pool)
+                chosen_res = random.choice(res_pool[chosen_model])
+                
+                print(f"\n[任务生成] ==> {task_id} | 模型: {chosen_model} | Batch: {chosen_bs} | 尺寸: {chosen_res[0]}x{chosen_res[1]}")
+                
+                # 调度器在内部测算所有 6 种算法，并写入实验 CSV 日志
+                plans = scheduler.generate_task_and_schedule(
+                    task_id=task_id, 
+                    model_name=chosen_model,
+                    batch_size=chosen_bs,
+                    target_h=chosen_res[0],
+                    target_w=chosen_res[1]
+                )
+                
+                # === [关键新增] 按照选择的排产分辨率，构建对应的物理尺寸随机矩阵 ===
+                fake_img = torch.randn(chosen_bs, 3, chosen_res[0], chosen_res[1])
             
-            print(f"\n[任务生成] ==> {task_id} | 模型: {chosen_model} | Batch: {chosen_bs} | 尺寸: {chosen_res[0]}x{chosen_res[1]}")
-            
-            # 调度器在内部测算所有 6 种算法，并写入实验 CSV 日志
-            plans = scheduler.generate_task_and_schedule(
-                task_id=task_id, 
-                model_name=chosen_model,
-                batch_size=chosen_bs,
-                target_h=chosen_res[0],
-                target_w=chosen_res[1]
-            )
-            
-            # === [关键新增] 按照选择的排产分辨率，构建对应的物理尺寸随机矩阵 ===
-            # 不要固定 [1,3,224,224] 了，否则体现不出异构网络下的通信瓶颈！
-            fake_img = torch.randn(chosen_bs, 3, chosen_res[0], chosen_res[1])
-            
-            # --- 步骤 C: 顺序分发给管道，一次执行一个算法进行公平仿真 ---
-            for alg, plan in plans.items():
-                if plan is None:
-                    print(f"  [RS] 🛑 算法 [{alg}] 当前由于硬件约束无解，直接跳过管道仿真。")
-                    continue
+                # --- 步骤 C: 顺序分发给管道，一次执行一个算法进行公平仿真 ---
+                for alg, plan in plans.items():
+                    if plan is None:
+                        print(f"  [RS] 🛑 算法 [{alg}] 当前由于硬件约束无解，直接跳过管道仿真。")
+                        continue
 
-                # 健壮路由获取：有的节点可能没有写 simulation_paths，如果没有，就按照物理串联取出来
-                if "simulation_paths" in scheduler.net_config and "pipeline" in scheduler.net_config["simulation_paths"]:
-                    ordered_route = scheduler.net_config["simulation_paths"]["pipeline"][1:] 
-                else:
-                    # 把排除了 RS 自己之外的其他节点均作为路由候选
-                    ordered_route = [n["id"] for n in scheduler.net_config["nodes"] if "RS" not in n["id"]]
+                    # 健壮路由获取：有的节点可能没有写 simulation_paths，如果没有，就按照物理串联取出来
+                    if "simulation_paths" in scheduler.net_config and "pipeline" in scheduler.net_config["simulation_paths"]:
+                        ordered_route = scheduler.net_config["simulation_paths"]["pipeline"][1:] 
+                    else:
+                        # 把排除了 RS 自己之外的其他节点均作为路由候选
+                        ordered_route = [n["id"] for n in scheduler.net_config["nodes"] if "RS" not in n["id"]]
 
-                # ==== 控制仿真节奏流控阻塞 ====
-                # 检查 node.py 中定义的 task_ack_event，确保管道内只有一个任务在跑，避免堵车
-                if hasattr(node, "task_ack_event"):
-                    if not node.task_ack_event.is_set():
-                        print(f"  [RS] ⏳ 管道占用中: 正在等待前序算法应答...")
+                    # ==== 控制仿真节奏流控阻塞 ====
+                    # 检查 node.py 中定义的 task_ack_event，确保管道内只有一个任务在跑，避免堵车
+                    if hasattr(node, "task_ack_event"):
+                        if not node.task_ack_event.is_set():
+                            print(f"  [RS] ⏳ 管道占用中: 正在等待前序算法应答...")
+                        
+                        node.task_ack_event.wait()   # 等待收到地面的 ACK 后置位释放
+                        node.task_ack_event.clear()  # 手动关闭闸门，准备装弹
                     
-                    node.task_ack_event.wait()   # 等待收到地面的 ACK 后置位释放
-                    node.task_ack_event.clear()  # 手动关闭闸门，准备装弹
-                
-                time.sleep(0.5) # 微调睡眠确保底层 Socket 缓冲区准备就绪
-                
-                print(f"  [RS] 🚀 正在向网络下发任务: [{task_id}] | 驱动策略: {alg}")
-                
-                # 重新打包你的任务载荷，把精准制导的层级策略一并塞进去
-                rs_payload = {
-                    'mode': 'PMP',
-                    'task_id': task_id,
-                    'algorithm': alg,
-                    'model_name': chosen_model,
-                    'accumulated_latency': 0.0,
-                    'tensor': fake_img,    # 会通过 Pickle 被压进网络传输
-                    'batch': chosen_bs,   
-                    'route': ordered_route,   
-                    'layer_plan': plan     
-                }
+                    time.sleep(3.0) # 在收到 ACK 后额外等待 3 秒确保底层 Socket 缓冲区清空
+                    
+                    print(f"  [RS] 🚀 正在向网络下发任务: [{task_id}] | 驱动策略: {alg}")
+                    
+                    # 重新打包你的任务载荷，把精准制导的层级策略一并塞进去
+                    rs_payload = {
+                        'mode': 'PMP',
+                        'task_id': task_id,
+                        'algorithm': alg,
+                        'model_name': chosen_model,
+                        'accumulated_latency': 0.0,
+                        'tensor': fake_img,    # 会通过 Pickle 被压进网络传输
+                        'batch': chosen_bs,   
+                        'route': ordered_route,   
+                        'layer_plan': plan     
+                    }
 
-                # 模拟系统自身触发，正式倒进网络首个计算节点
-                node.handle_message({
-                    'type': 'NEW_TASK',
-                    'src': 'system_trigger',
-                    'payload': rs_payload
-                })
+                    # 模拟系统自身触发，正式倒进网络首个计算节点
+                    node.handle_message({
+                        'type': 'NEW_TASK',
+                        'src': 'system_trigger',
+                        'payload': rs_payload
+                    })
+
+        print("\n🎉 [RS] 第一阶段：100组对比实验所有任务已经全部轰炸分发完毕。")
+            #         'algorithm': alg,
+            #         'model_name': chosen_model,
+            #         'accumulated_latency': 0.0,
+            #         'tensor': fake_img,    # 会通过 Pickle 被压进网络传输
+            #         'batch': chosen_bs,   
+            #         'route': ordered_route,   
+            #         'layer_plan': plan     
+            #     }
+
+            #     # 模拟系统自身触发，正式倒进网络首个计算节点
+            #     node.handle_message({
+            #         'type': 'NEW_TASK',
+            #         'src': 'system_trigger',
+            #         'payload': rs_payload
+            #     })
 
         print("\n🎉 [RS] 第一阶段：100组对比实验所有任务已经全部轰炸分发完毕。")
         print("🎉 [RS] 你可以前往目录查看自动生成的 `experiment_results.csv`。")
