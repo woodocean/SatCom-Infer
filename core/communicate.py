@@ -127,13 +127,23 @@ class Communicator:
                     # 3. 本次通信总时延
                     comm_latency = propagation_delay + transmission_delay
                     
+                    # 🌟 [新增] 为了基准测试，将实测数据暴露给返回值，方便外部统计
+                    metrics = {
+                        'success': True,
+                        'total_time': total_real_time,
+                        'transmission_time': transmission_delay,
+                        'propagation_time': propagation_delay,
+                        'throughput_mbps': throughput_mbps,
+                        'data_mb': data_mb
+                    }
+                    
                     print(f"  [COMM-UDP] 🟢 {self.node_id}->{target_id}  ({data_mb:.3f}MB) 发送成功，实测数据:")
                     print(f"             --> | 真实传输所耗时: {transmission_delay*1000:6.1f} ms  (接收推算吞吐: {throughput_mbps:6.1f} Mbps)")
                     print(f"             --> | 物理单程传播时延: {propagation_delay*1000:6.1f} ms")
                     print(f"             --> | 最终总计通信时延: {comm_latency*1000:6.1f} ms")
                     
                     udp_sock.close()
-                    return True, comm_latency
+                    return True, metrics  # 🌟 修改返回值为详细指标字典
             except socket.timeout:
                 print(f"  [COMM-UDP] 🟡 {self.node_id}->{target_id} 等待最终 ACK 超时 (物理延迟过大或严重丢包)，触发第 {attempt+1} 次强制重载重传...")
                 continue
