@@ -135,14 +135,14 @@ def main():
         
         # 异构任务池：通过控制分辨率和 batch 模拟真实的复杂网络负荷
         # model_pool = ["yolov5", "resnet101", "vgg19", "swin_base"]
-        model_pool = ["swin_base"]
+        model_pool = ["resnet101"]
         batch_pool = [16,32]
         res_pool = {"yolov5": [(640, 640)],
                     "resnet101": [(224, 224)],
                     "vgg19": [(224, 224)],
                     "swin_base": [(224, 224)]}
         
-        for i in range(61, 81):
+        for i in range(0, 101):
             task_id = f"Task_{i:03d}"
             
             # --- 步骤 A: 环境动态演进，并添加短暂的睡眠防止所有节点同时读写 ---

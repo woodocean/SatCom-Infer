@@ -118,16 +118,16 @@ class ResNet_DAG_Wrapper(nn.Module):
     def __init__(self, version='50', device='cuda'):
         super().__init__()
         self.device = device
-        print(f"[Wrapper] ResNet-{version}...")
+        print(f"[Wrapper] ResNet-{version} (使用随机权重，避免下载)...")
         
         if str(version) == '18':
-            raw = resnet18(weights=ResNet18_Weights.DEFAULT).to(device)
+            raw = resnet18(weights=None).to(device)
         elif str(version) == '50':
-            raw = resnet50(weights=ResNet50_Weights.DEFAULT).to(device)
+            raw = resnet50(weights=None).to(device)
         elif str(version) == '101':
-            raw = resnet101(weights=ResNet101_Weights.DEFAULT).to(device)
+            raw = resnet101(weights=None).to(device)
         else:
-            raw = resnet50(weights=ResNet50_Weights.DEFAULT).to(device)
+            raw = resnet50(weights=None).to(device)
         raw.eval()      
         
         self.layers = nn.ModuleList()
@@ -166,8 +166,8 @@ class VGG19_DAG_Wrapper(nn.Module):
     def __init__(self, device='cuda'):
         super().__init__()
         self.device = device
-        print(f"[Wrapper] 正在加载 VGG-19 ...")
-        self.raw_model = vgg19(weights=VGG19_Weights.DEFAULT).to(device)
+        print(f"[Wrapper] 正在加载 VGG-19 (随机权重模式)...")
+        self.raw_model = vgg19(weights=None).to(device)
         self.raw_model.eval()
         self.layers = nn.ModuleList()
         for layer in self.raw_model.features: 
@@ -198,8 +198,8 @@ class MobileNetV2_DAG_Wrapper(nn.Module):
     def __init__(self, device='cuda'):
         super().__init__()
         self.device = device
-        print(f"[Wrapper] 正在加载 MobileNet V2 ...")
-        self.raw_model = mobilenet_v2(weights=MobileNet_V2_Weights.DEFAULT).to(device)
+        print(f"[Wrapper] 正在加载 MobileNet V2 (随机权重模式)...")
+        self.raw_model = mobilenet_v2(weights=None).to(device)
         self.raw_model.eval()
         self.layers = nn.ModuleList()
         for layer in self.raw_model.features: 
@@ -404,8 +404,8 @@ class AlexNet_DAG_Wrapper(nn.Module):
     def __init__(self, device='cuda'):
         super().__init__()
         self.device = device
-        print(f"[Wrapper] 正在加载 AlexNet ...")
-        self.raw_model = alexnet(weights=AlexNet_Weights.DEFAULT).to(device)
+        print(f"[Wrapper] 正在加载 AlexNet (随机权重模式)...")
+        self.raw_model = alexnet(weights=None).to(device)
         self.raw_model.eval()
         self.layers = nn.ModuleList()
         for layer in self.raw_model.features: 
