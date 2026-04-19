@@ -288,13 +288,13 @@ class Communicator:
     def _listen_loop(self):
         while self.running:
             try:
-                self.server_soc恢复为 6 Bytes: HHH)
+                self.server_socket.settimeout(2.0)
+                data, addr = self.server_socket.recvfrom(65536)
+                
+                # 头不完整视为乱码直接扔 (恢复为 6 Bytes: HHH)
                 if len(data) < 6: continue
                 msg_id, num_chunks, chunk_idx = struct.unpack('!HHH', data[:6])
-                chunk_data = data[6升级为 10 Bytes: HII)
-                if len(data) < 10: continue
-                msg_id, num_chunks, chunk_idx = struct.unpack('!HII', data[:10])
-                chunk_data = data[10:]
+                chunk_data = data[6:]
 
                 with self.buf_lock:
                     if msg_id not in self.recv_buffers:
