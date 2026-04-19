@@ -126,7 +126,7 @@ def main():
     # 6. 任务触发逻辑 (仅遥感卫星 RS 执行)
     # ==========================================================
     if args.id == "RS":
-        time.sleep(3) # 等待其他节点的 TCP 服务和心跳通信兵稳定建立
+        # time.sleep(3) # 等待其他节点的 TCP 服务和心跳通信兵稳定建立
         print("\n" + "="*50)
         print("--- 发起 PMP 动态带宽 六大算法 对比实验 (100个任务) ---")
         print("="*50)
@@ -135,7 +135,7 @@ def main():
         
         # 异构任务池：通过控制分辨率和 batch 模拟真实的复杂网络负荷
         # model_pool = ["yolov5", "resnet101", "vgg19", "swin_base"]
-        model_pool = ["resnet101"]
+        model_pool = ["yolov5"]
         batch_pool = [16,32]
         res_pool = {"yolov5": [(640, 640)],
                     "resnet101": [(224, 224)],
