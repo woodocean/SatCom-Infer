@@ -160,8 +160,9 @@ class Communicator:
 
             # A. 高速突发注入并进行防丢包节奏控制
             for i, chunk in enumerate(chunks):
-                # 头部协议 -> msg_id: (2 bytes), 总数: (2 bytes), 序号: (2 bytes) = 6 Bytes
-                header = struct.pack("!HHH", msg_id, num_chunks, i)
+                # 头部协议 -> msg_id: (2 bytes), 总数: (4 bytes), 序号: (4 bytes) = 10 Bytes
+                # 升级为 I (unsigned int) 以支持超过 65535 个分片 (约 100MB+)
+                header = struct.pack("!HII", msg_id, num_chunks, i)
                 sent = False
                 for _ in range(3):
                     try:
@@ -287,10 +288,10 @@ class Communicator:
                 self.server_socket.settimeout(2.0)
                 data, addr = self.server_socket.recvfrom(65536)
                 
-                # 头不完整视为乱码直接扔
-                if len(data) < 6: continue
-                msg_id, num_chunks, chunk_idx = struct.unpack('!HHH', data[:6])
-                chunk_data = data[6:]
+                # 头不完整视为乱码直接扔 (现在头长度升级为 10 Bytes: HII)
+                if len(data) < 10: continue
+                msg_id, num_chunks, chunk_idx = struct.unpack('!HII', data[:10])
+                chunk_data = data[10:]
 
                 with self.buf_lock:
                     if msg_id not in self.recv_buffers:
