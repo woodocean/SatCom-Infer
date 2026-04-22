@@ -331,7 +331,7 @@ class Communicator:
                         # 丢去处理业务
                         threading.Thread(
                             target=self._process_async, 
-                            args=(full_data,), 
+                            args=(full_data, rx_time), 
                             daemon=True
                         ).start()
 
@@ -342,9 +342,25 @@ class Communicator:
             except Exception as e:
                 print(f"  [COMM] UDP 接收总线严重异常: {e}")
 
-    def _process_async(self, raw_data):
+    def _process_async(self, raw_data, rx_time=0.0):
         try:
             message = pickle.loads(raw_data)
+            
+            # ================= 【核心改动：注入通信时延】 ================= #
+            src_node = message.get('src')
+            if src_node:
+                # 逆向查询发送端到本机的链路配置
+                theoretical_bw_mbps, propagation_delay_s, hardware_baseline_mbps = self._get_link_profile(src_node)
+                transmission_delay = rx_time if rx_time > 0.001 else 0.001
+                scale_ratio = hardware_baseline_mbps / theoretical_bw_mbps if theoretical_bw_mbps > 0.0 else 1.0
+                
+                simulated_transmission_time = transmission_delay * scale_ratio
+                simulated_comm_latency = propagation_delay_s + simulated_transmission_time
+                
+                # 转为毫秒注入
+                message['measured_comm_latency_ms'] = simulated_comm_latency * 1000.0
+            # ============================================================= #
+            
             if self.handler:
                 self.handler(message)
         except Exception as e:
