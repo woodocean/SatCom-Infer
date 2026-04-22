@@ -59,9 +59,9 @@ def update_network_topology(config_path):
                 dst_ip = config['nodes'][dst_node_id]['ip']
                 
                 # 只有非本机的远端路由才去下发硬件操作
-                if not dst_ip.startswith("127.0.0.1") and not dst_ip.startswith("localhost"):
-                    # 3. 硬件层面直接去刷入 netem 的传播延迟，不限带宽
-                    qos_client.set_root_delay(dst_ip, delay_ms=int(new_delay))
+                # if not dst_ip.startswith("127.0.0.1") and not dst_ip.startswith("localhost"):
+                #     # 3. 硬件层面直接去刷入 netem 的传播延迟，不限带宽
+                #     qos_client.set_root_delay(dst_ip, delay_ms=int(new_delay))
 
         qos_client.close()
             
@@ -191,51 +191,51 @@ def main():
             # 不要固定 [1,3,224,224] 了，否则体现不出异构网络下的通信瓶颈！
             fake_img = torch.randn(chosen_bs, 3, chosen_res[0], chosen_res[1])
             
-            # --- 步骤 C: 顺序分发给管道，一次执行一个算法进行公平仿真 ---
-            for alg, plan in plans.items():
-                if plan is None:
-                    print(f"  [RS] 🛑 算法 [{alg}] 当前由于硬件约束无解，直接跳过管道仿真。")
-                    continue
+            # # --- 步骤 C: 顺序分发给管道，一次执行一个算法进行公平仿真 ---
+            # for alg, plan in plans.items():
+            #     if plan is None:
+            #         print(f"  [RS] 🛑 算法 [{alg}] 当前由于硬件约束无解，直接跳过管道仿真。")
+            #         continue
 
-                # 健壮路由获取：有的节点可能没有写 simulation_paths，如果没有，就按照物理串联取出来
-                if "simulation_paths" in scheduler.net_config and "pipeline" in scheduler.net_config["simulation_paths"]:
-                    ordered_route = scheduler.net_config["simulation_paths"]["pipeline"][1:] 
-                else:
-                    # 把排除了 RS 自己之外的其他节点均作为路由候选
-                    ordered_route = [n["id"] for n in scheduler.net_config["nodes"] if "RS" not in n["id"]]
+            #     # 健壮路由获取：有的节点可能没有写 simulation_paths，如果没有，就按照物理串联取出来
+            #     if "simulation_paths" in scheduler.net_config and "pipeline" in scheduler.net_config["simulation_paths"]:
+            #         ordered_route = scheduler.net_config["simulation_paths"]["pipeline"][1:] 
+            #     else:
+            #         # 把排除了 RS 自己之外的其他节点均作为路由候选
+            #         ordered_route = [n["id"] for n in scheduler.net_config["nodes"] if "RS" not in n["id"]]
 
-                # ==== 控制仿真节奏流控阻塞 ====
-                # 检查 node.py 中定义的 task_ack_event，确保管道内只有一个任务在跑，避免堵车
-                if hasattr(node, "task_ack_event"):
-                    if not node.task_ack_event.is_set():
-                        print(f"  [RS] ⏳ 管道占用中: 正在等待前序算法应答...")
+            #     # ==== 控制仿真节奏流控阻塞 ====
+            #     # 检查 node.py 中定义的 task_ack_event，确保管道内只有一个任务在跑，避免堵车
+            #     if hasattr(node, "task_ack_event"):
+            #         if not node.task_ack_event.is_set():
+            #             print(f"  [RS] ⏳ 管道占用中: 正在等待前序算法应答...")
                     
-                    node.task_ack_event.wait()   # 等待收到地面的 ACK 后置位释放
-                    node.task_ack_event.clear()  # 手动关闭闸门，准备装弹
+            #         node.task_ack_event.wait()   # 等待收到地面的 ACK 后置位释放
+            #         node.task_ack_event.clear()  # 手动关闭闸门，准备装弹
                 
-                time.sleep(3.0) # 在收到 ACK 后额外等待 3 秒确保底层 Socket 缓冲区清空
+            #     time.sleep(3.0) # 在收到 ACK 后额外等待 3 秒确保底层 Socket 缓冲区清空
                 
-                print(f"  [RS] 🚀 正在向网络下发任务: [{task_id}] | 驱动策略: {alg}")
+            #     print(f"  [RS] 🚀 正在向网络下发任务: [{task_id}] | 驱动策略: {alg}")
                 
-                # 重新打包你的任务载荷，把精准制导的层级策略一并塞进去
-                rs_payload = {
-                    'mode': 'PMP',
-                    'task_id': task_id,
-                    'algorithm': alg,
-                    'model_name': chosen_model,
-                    'accumulated_latency': 0.0,
-                    'tensor': fake_img,    # 会通过 Pickle 被压进网络传输
-                    'batch': chosen_bs,   
-                    'route': ordered_route,   
-                    'layer_plan': plan     
-                }
+            #     # 重新打包你的任务载荷，把精准制导的层级策略一并塞进去
+            #     rs_payload = {
+            #         'mode': 'PMP',
+            #         'task_id': task_id,
+            #         'algorithm': alg,
+            #         'model_name': chosen_model,
+            #         'accumulated_latency': 0.0,
+            #         'tensor': fake_img,    # 会通过 Pickle 被压进网络传输
+            #         'batch': chosen_bs,   
+            #         'route': ordered_route,   
+            #         'layer_plan': plan     
+            #     }
 
-                # 模拟系统自身触发，正式倒进网络首个计算节点
-                node.handle_message({
-                    'type': 'NEW_TASK',
-                    'src': 'system_trigger',
-                    'payload': rs_payload
-                })
+            #     # 模拟系统自身触发，正式倒进网络首个计算节点
+            #     node.handle_message({
+            #         'type': 'NEW_TASK',
+            #         'src': 'system_trigger',
+            #         'payload': rs_payload
+            #     })
 
         print("\n🎉 [RS] 第一阶段：100组对比实验所有任务已经全部轰炸分发完毕。")
             #         'algorithm': alg,
