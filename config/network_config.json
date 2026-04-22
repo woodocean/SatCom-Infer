@@ -21,7 +21,7 @@
       }
     },
     "SAT-01": {
-      "ip": "192.168.3.181",
+      "ip": "192.168.3.182",
       "port": 8001,
       "role": "leo_computing",
       "device": "Jetson_1",
@@ -36,7 +36,7 @@
       }
     },
     "SAT-02": {
-      "ip": "192.168.2.178",
+      "ip": "192.168.2.179",
       "port": 8002,
       "role": "leo_computing",
       "device": "Jetson_2",
@@ -50,7 +50,7 @@
       }
     },
     "SAT-03": {
-      "ip": "192.168.3.181",
+      "ip": "192.168.3.182",
       "port": 8003,
       "role": "leo_computing",
       "device": "Jetson_1",
@@ -67,7 +67,7 @@
       }
     },
     "SAT-04": {
-      "ip": "192.168.2.178",
+      "ip": "192.168.2.179",
       "port": 8004,
       "role": "leo_computing",
       "device": "Jetson_2",
@@ -81,7 +81,7 @@
       }
     },
     "SAT-05": {
-      "ip": "192.168.3.181",
+      "ip": "192.168.3.182",
       "port": 8005,
       "role": "leo_computing",
       "device": "Jetson_1",
