@@ -273,7 +273,6 @@ class PMPSolver:
 
     # =================== 5. Random Split ===================
     def solve_random_split(self, n_trials: int = 1) -> Tuple[float, Dict]:
-    def solve_random_split(self, n_trials: int = 1) -> Tuple[float, Dict]:
         best_lat = float('inf')
         best_plan: Dict = {}
 

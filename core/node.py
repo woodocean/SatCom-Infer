@@ -174,12 +174,7 @@ class ComputeNode:
             sim_tx_ms = 0.0
             if next_hop:
                 tensor_mb = (output.element_size() * output.nelement()) / (1024 * 1024)
-                link_key = f"{self.node_id}_to_{next_hop}"
-                bw_mbps = net_cfg["links"].get(link_key, {}).get("bandwidth_mbps", 100.0)
-                bw_mb_per_ms = (bw_mbps / 8.0) / 1000.0
-                sim_tx_ms = tensor_mb / bw_mb_per_ms
-                acc_lat += sim_tx_ms
-                print(f"  -> 产出: {tensor_mb:.4f}MB | 模拟传输至 {next_hop} 耗时: {sim_tx_ms:.2f}ms")
+                print(f"  -> 产出: {tensor_mb:.4f}MB | 正通过物理层喷射给 {next_hop}，将由下一跳实测传输耗时...")
 
             # 读取下一跳需要的层数参数送出去
             next_start, next_end = layer_plan.get(next_hop, (-1, -1))
@@ -199,6 +194,7 @@ class ComputeNode:
                 'split_history': history,
                 'batch':batch,
             }
+            print(f"accumulated latency: {acc_lat}")
             self.comms.send_message(next_hop, 'PipelineForward', payload)
 
     def _handle_pipeline_forward(self, message):
@@ -235,7 +231,13 @@ class ComputeNode:
         acc_lat = p.get('accumulated_latency', 0.0)
         batch = p.get('batch')
         print(f"batch = {batch}")
-        
+
+        # =================【核心修正】：累积上游物理线路的实测传输经历时间！=================
+        measured_comm_ms = message.get('measured_comm_latency_ms', 0.0)
+        if measured_comm_ms > 0.0:
+            acc_lat += measured_comm_ms
+            print(f"  [+] UDP底层截获物理传输耗时，并已累加等效时延: {measured_comm_ms:.2f} ms")
+
         # =================【新增：动态切换模型逻辑】=================
         req_model = p.get('model_name')
         # 【关键保护】：加锁执行！
@@ -274,14 +276,9 @@ class ComputeNode:
                 next_hop = route[0]
                 remain = route[1:]
                 
-                # --- 模拟传输时延换算 ---
+                # --- 移除虚假的理论通信时延累加 ---
                 tensor_mb = (output.element_size() * output.nelement()) / (1024 * 1024)
-                link_key = f"{self.node_id}_to_{next_hop}"
-                bw_mbps = net_cfg["links"].get(link_key, {}).get("bandwidth_mbps", 100.0)
-                bw_mb_per_ms = (bw_mbps / 8.0) / 1000.0
-                sim_tx_ms = tensor_mb / bw_mb_per_ms
-                acc_lat += sim_tx_ms
-                print(f"  -> 产出: {tensor_mb:.4f}MB | 模拟传输至 {next_hop} 耗时: {sim_tx_ms:.2f}ms")
+                print(f"  -> 产出: {tensor_mb:.4f}MB | 正通过物理层喷射给 {next_hop}，将由下一跳实测传输耗时...")
                 
                 # 定位下一跳要执行的起止层
                 illegitimate_range = [-1, -2]

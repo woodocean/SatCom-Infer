@@ -318,7 +318,7 @@ class Communicator:
                         # 丢去处理业务
                         threading.Thread(
                             target=self._process_async, 
-                            args=(full_data,), 
+                            args=(full_data, rx_time), 
                             daemon=True
                         ).start()
 
@@ -329,9 +329,17 @@ class Communicator:
             except Exception as e:
                 print(f"  [COMM] UDP 接收总线严重异常: {e}")
 
-    def _process_async(self, raw_data):
+    def _process_async(self, raw_data, rx_time=0.0):
         try:
             message = pickle.loads(raw_data)
+            
+            src_id = message.get('src')
+            if src_id:
+                theo_bw, prop_s, hw_bw = self._get_link_profile(src_id)
+                scale = hw_bw / theo_bw if theo_bw > 0 else 1.0
+                sim_comm_latency_ms = (prop_s + (rx_time * scale)) * 1000.0
+                message['measured_comm_latency_ms'] = sim_comm_latency_ms
+
             if self.handler:
                 self.handler(message)
         except Exception as e:
