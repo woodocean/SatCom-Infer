@@ -298,6 +298,19 @@ class Communicator:
                     # 更新存片和时间
                     self.recv_buffers[msg_id]['chunks'][chunk_idx] = chunk_data
                     self.recv_buffers[msg_id]['ts'] = time.time()
+                    
+                    # ============= [新增] 接收进度监控 =============
+                    received_chunks = len(self.recv_buffers[msg_id]['chunks'])
+                    # 每收到一定比例或固定包数打印一次进度（防止全量刷屏）
+                    if received_chunks % max(1, num_chunks // 4) == 0:
+                        elapsed = time.perf_counter() - self.recv_buffers[msg_id]['first_ts']
+                        print(f"  [RECEIVER] 🧩 拼图进度: {received_chunks}/{num_chunks} "
+                              f"({received_chunks/num_chunks*100:.1f}%), 耗时: {elapsed:.3f}s")
+                    
+                    # 也可以开启超时丢弃时的统计，了解是被卡在哪些序号了：
+                    # 这个需要配合清理线程（_cleanup_loop）使用，这里我们主要看接收瞬间的状态
+                    # ===============================================
+
 
                     # 当字典里的存储数量与总数量相等时，数据全了！
                     if len(self.recv_buffers[msg_id]['chunks']) == num_chunks:
@@ -318,7 +331,7 @@ class Communicator:
                         # 丢去处理业务
                         threading.Thread(
                             target=self._process_async, 
-                            args=(full_data, rx_time), 
+                            args=(full_data,), 
                             daemon=True
                         ).start()
 
@@ -329,17 +342,9 @@ class Communicator:
             except Exception as e:
                 print(f"  [COMM] UDP 接收总线严重异常: {e}")
 
-    def _process_async(self, raw_data, rx_time=0.0):
+    def _process_async(self, raw_data):
         try:
             message = pickle.loads(raw_data)
-            
-            src_id = message.get('src')
-            if src_id:
-                theo_bw, prop_s, hw_bw = self._get_link_profile(src_id)
-                scale = hw_bw / theo_bw if theo_bw > 0 else 1.0
-                sim_comm_latency_ms = (prop_s + (rx_time * scale)) * 1000.0
-                message['measured_comm_latency_ms'] = sim_comm_latency_ms
-
             if self.handler:
                 self.handler(message)
         except Exception as e:
