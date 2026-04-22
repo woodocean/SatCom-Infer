@@ -99,13 +99,23 @@ class PMPSolver:
         device_str = str(self.nodes[node_idx].get('device', 'PC')).lower()
         if 'jetson' in device_str:
             device_type = 'jetson'
+            base_speed = 10.0  # 假设Jetson profile代表平均 10GFLOPS 计算水准
         else:
             device_type = 'pc'
+            base_speed = 100.0 # 假设PC profile代表平均 100GFLOPS 计算水准
             
-        # 2. 直接取目标设备的 profile 耗时
+        # 2. 从 Json database 取出纯理论切分耗时
         comp_latency = self.prefix_latency[device_type][end] - self.prefix_latency[device_type][start]
         
-        return comp_latency
+        # 3. 按比例放缩算力
+        hardware_info = self.nodes[node_idx].get('hardware', {})
+        node_speed = hardware_info.get('compute_speed_gflops_per_ms', base_speed)
+        
+        if node_speed <= 0:
+            return float('inf')  # 比如 RS 这类没有计算能力的源节点
+            
+        # 根据当前节点设定的节点真实算力与基础算力的比例，放缩时间
+        return comp_latency * (base_speed / node_speed)
 
     # =================== 1. LA-DP (负载感知动态规划) ===================
     def solve_la_dp(self) -> Tuple[float, Dict]:
@@ -132,10 +142,10 @@ class PMPSolver:
                         continue
 
                     # --- 情况2: 计算模式 (prev_l < l) ---
-                    # 内存检查
-                    mem_ok, _ = self._check_memory(node_idx, prev_l, l)
-                    if not mem_ok:
-                        continue
+                    # 内存检查 (因当前暂不考虑任何内存和能力约束，将其全注释掉)
+                    # mem_ok, _ = self._check_memory(node_idx, prev_l, l)
+                    # if not mem_ok:
+                    #     continue
 
                     # 计算时延
                     t_comp = self._compute_delay(node_idx, prev_l, l)
@@ -263,6 +273,7 @@ class PMPSolver:
 
     # =================== 5. Random Split ===================
     def solve_random_split(self, n_trials: int = 1) -> Tuple[float, Dict]:
+    def solve_random_split(self, n_trials: int = 1) -> Tuple[float, Dict]:
         best_lat = float('inf')
         best_plan: Dict = {}
 
@@ -351,9 +362,13 @@ class PMPSolver:
                     total_lat += self._comm_delay_ms(input_comm, self.B[k])
                     continue
                 node_idx = k
-                mem_ok, _ = self._check_memory(node_idx, start, end)
-                if not mem_ok:
-                    return -float('inf')
+                
+                # ------ 去除内存约束 -------
+                # mem_ok, _ = self._check_memory(node_idx, start, end)
+                # if not mem_ok:
+                #     return -float('inf')
+                # -------------------------
+                
                 t_comp: float = self._compute_delay(node_idx, start, end)
                 input_comm: float = self.layers[start - 1]['comm_total_mb'] if start > 0 else self.input_size_raw
                 t_trans: float = self._comm_delay_ms(input_comm, self.B[k])

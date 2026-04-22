@@ -6,8 +6,14 @@ import time
 import torch
 import random
 import os
+import json
 
-CHUNK_SIZE = 60000  # UDP MTU 限制下的安全分块大小 (不要超过 65507)
+# 恢复为大分包方案，降低分片数量压力，并通过增加 Sleep 放缓速率
+CHUNK_SIZE = 60000
+SEND_PACING_EVERY = 10
+SEND_PACING_SLEEP = 0.001
+MIN_ACK_TIMEOUT = 3.0
+RECV_BUFFER_TTL = 45.0
 
 class Communicator:
     """
@@ -42,6 +48,33 @@ class Communicator:
             return 50.0
         return 80.0
 
+    def _get_link_profile(self, target_id):
+        """读取链路带宽与传播时延，用于动态设置 ACK 超时。"""
+        theoretical_bw_mbps = 580.0
+        hardware_baseline_mbps = 580.0
+        propagation_delay_s = 0.0
+
+        try:
+            cfg_path = os.path.join("config", "network_config.json")
+            with open(cfg_path, "r", encoding="utf-8") as f:
+                net_cfg = json.load(f)
+
+            global_settings = net_cfg.get("global_settings", {})
+            hardware_baseline_mbps = global_settings.get("hardware_baseline_mbps", 580.0)
+
+            links = net_cfg.get("links", {})
+            link_key1 = f"{self.node_id}_to_{target_id}"
+            link_key2 = f"{target_id}_to_{self.node_id}"
+            link_info = links.get(link_key1) or links.get(link_key2) or {}
+
+            theoretical_bw_mbps = link_info.get("bandwidth_mbps", hardware_baseline_mbps)
+            propagation_delay_ms = link_info.get("propagation_delay_ms", 0.0)
+            propagation_delay_s = max(0.0, float(propagation_delay_ms) / 1000.0)
+        except Exception:
+            pass
+
+        return theoretical_bw_mbps, propagation_delay_s, hardware_baseline_mbps
+
     # ===================== 发送 =====================
     def send_message(self, target_id, msg_type, payload):
         message = {
@@ -71,6 +104,11 @@ class Communicator:
         payload = pickle.dumps(message)
         total_len = len(payload)
         data_mb = total_len / (1024 * 1024)
+        theoretical_bw_mbps, propagation_delay_s, hardware_baseline_mbps = self._get_link_profile(target_id)
+
+        # ACK 超时应至少覆盖：发送耗时 + 往返传播 + 处理裕量，避免高传播链路上的假超时重传
+        est_tx_s = (data_mb * 8.0 / max(1.0, theoretical_bw_mbps)) if data_mb > 0 else 0.001
+        base_ack_timeout = max(MIN_ACK_TIMEOUT, est_tx_s * 1.5 + propagation_delay_s * 2.0 + 1.0)
 
         # 1. 对数据打成碎片
         chunks = [payload[i:i + CHUNK_SIZE] for i in range(0, total_len, CHUNK_SIZE)]
@@ -83,19 +121,46 @@ class Communicator:
             udp_sock.setsockopt(socket.SOL_SOCKET, socket.SO_SNDBUF, 8 * 1024 * 1024)
         except OSError:
             pass  # 有的系统不允许设这么大，忽略即可
-            
-        udp_sock.settimeout(1.5)  # 单次超时上限 (包含往返时延)
+
+        # 针对大报文适当增大发送缓冲，减少内核拥塞导致的丢包
+        if data_mb >= 20:
+            try:
+                udp_sock.setsockopt(socket.SOL_SOCKET, socket.SO_SNDBUF, 32 * 1024 * 1024)
+            except OSError:
+                pass
+
+        udp_sock.settimeout(base_ack_timeout)
 
         msg_id = random.randint(0, 65535)
 
         start_t = time.perf_counter()
 
         # UDP 发送轮次 (带超时重发整个包块保障)
-        MAX_RETRIES = 10
+        MAX_RETRIES = 4
+
+        if data_mb >= 20:
+            print(
+                f"  [COMM-UDP] {self.node_id}->{target_id} 大报文发送参数: "
+                f"chunks={num_chunks}, chunk={CHUNK_SIZE}B, ack_timeout={base_ack_timeout:.2f}s"
+            )
+
         for attempt in range(MAX_RETRIES):
+            current_timeout = min(base_ack_timeout * (1.0 + 0.4 * attempt), base_ack_timeout + 20.0)
+            udp_sock.settimeout(current_timeout)
+
+            if data_mb >= 100:
+                pacing_every = max(16, SEND_PACING_EVERY // 2)
+                pacing_sleep = SEND_PACING_SLEEP * 2
+            elif data_mb >= 20:
+                pacing_every = max(24, SEND_PACING_EVERY)
+                pacing_sleep = SEND_PACING_SLEEP
+            else:
+                pacing_every = 64
+                pacing_sleep = 0.00008
+
             # A. 高速突发注入并进行防丢包节奏控制
             for i, chunk in enumerate(chunks):
-                # 头部协议 -> msg_id: (2 bytes), 总数: (2 bytes), 序号: (2 bytes) = 6 Bytes
+                # 恢复原生 HHH：msg_id: (2 bytes), 总数: (2 bytes), 序号: (2 bytes) = 6 Bytes
                 header = struct.pack("!HHH", msg_id, num_chunks, i)
                 udp_sock.sendto(header + chunk, (ip, port))
                 
@@ -129,25 +194,7 @@ class Communicator:
                     
                     # 3. 本次通信总时延
                     comm_latency = propagation_delay + transmission_delay
-                    
-                    # =============== 【新增：理论延时比例换算】 ===============
-                    import json
-                    theoretical_bw_mbps = 580.0
-                    hardware_baseline_mbps = 580.0
-                    try:
-                        with open("config/network_config.json", "r") as f:
-                            net_cfg = json.load(f)
-                            hardware_baseline_mbps = net_cfg.get("global_settings", {}).get("hardware_baseline_mbps", 580.0)
-                            links = net_cfg.get("links", {})
-                            link_key1 = f"{self.node_id}_to_{target_id}"
-                            link_key2 = f"{target_id}_to_{self.node_id}"
-                            if link_key1 in links:
-                                theoretical_bw_mbps = links[link_key1].get("bandwidth_mbps", hardware_baseline_mbps)
-                            elif link_key2 in links:
-                                theoretical_bw_mbps = links[link_key2].get("bandwidth_mbps", hardware_baseline_mbps)
-                    except Exception as e:
-                        pass
-                    
+
                     # 按照等比比例进行目标传输时延折算
                     # 比如受硬件局限，实测带宽上限为580M，但想要模拟星群间高速链路5800M，即可将实测时延除以10
                     scale_ratio = hardware_baseline_mbps / theoretical_bw_mbps if theoretical_bw_mbps > 0 else 1.0
@@ -178,7 +225,10 @@ class Communicator:
                     udp_sock.close()
                     return True, metrics  # 🌟 修改返回值为详细指标字典
             except socket.timeout:
-                print(f"  [COMM-UDP] 🟡 {self.node_id}->{target_id} 等待最终 ACK 超时 (物理延迟过大或严重丢包)，触发第 {attempt+1} 次强制重载重传...")
+                print(
+                    f"  [COMM-UDP] 🟡 {self.node_id}->{target_id} 等待最终 ACK 超时 "
+                    f"(timeout={current_timeout:.2f}s)，触发第 {attempt+1} 次重传..."
+                )
                 continue
             except ConnectionResetError:
                 print(f"  [COMM-UDP] 🔴 {self.node_id}->{target_id} 端口不可达，对端可能未启动...")
@@ -219,7 +269,7 @@ class Communicator:
             with self.buf_lock:
                 to_delete = []
                 for mid, info in self.recv_buffers.items():
-                    if now - info['ts'] > 10.0:  # 超过 10 秒没收齐拼装包就被判定流产
+                    if now - info['ts'] > RECV_BUFFER_TTL:  # 大报文传输期更长，避免误清理导致反复重传
                         to_delete.append(mid)
                 for mid in to_delete:
                     del self.recv_buffers[mid]
@@ -230,7 +280,7 @@ class Communicator:
                 self.server_socket.settimeout(2.0)
                 data, addr = self.server_socket.recvfrom(65536)
                 
-                # 头不完整视为乱码直接扔
+                # 头不完整视为乱码直接扔 (恢复为 6 Bytes: HHH)
                 if len(data) < 6: continue
                 msg_id, num_chunks, chunk_idx = struct.unpack('!HHH', data[:6])
                 chunk_data = data[6:]
