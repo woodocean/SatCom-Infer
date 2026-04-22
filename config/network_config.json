@@ -5,7 +5,7 @@
   },
   "nodes": {
     "RS": {
-      "ip": "192.168.10.185",
+      "ip": "192.168.10.165",
       "port": 8000,
       "role": "remote_sensing",
       "device": "PC",
@@ -95,7 +95,7 @@
       }
     },
     "GS": {
-      "ip": "192.168.10.185",
+      "ip": "192.168.10.165",
       "port": 8006,
       "role": "ground_station",
       "device": "PC",
@@ -111,44 +111,44 @@
   },
   "links": {
     "RS_to_SAT-01": {
-      "bandwidth_mbps": 2365,
-      "propagation_delay_ms": 2.59
+      "bandwidth_mbps": 15335,
+      "propagation_delay_ms": 12.57
     },
     "RS_to_SAT-02": {
-      "bandwidth_mbps": 2131,
-      "propagation_delay_ms": 9.08
+      "bandwidth_mbps": 849,
+      "propagation_delay_ms": 13.4
     },
     "RS_to_SAT-03": {
-      "bandwidth_mbps": 17346,
-      "propagation_delay_ms": 10.94
+      "bandwidth_mbps": 15337,
+      "propagation_delay_ms": 11.71
     },
     "RS_to_GS": {
-      "bandwidth_mbps": 391,
-      "propagation_delay_ms": 55.16
+      "bandwidth_mbps": 407,
+      "propagation_delay_ms": 39.8
     },
     "SAT-01_to_SAT-03": {
-      "bandwidth_mbps": 5361,
-      "propagation_delay_ms": 14.8
+      "bandwidth_mbps": 5207,
+      "propagation_delay_ms": 3.01
     },
     "SAT-01_to_GS": {
-      "bandwidth_mbps": 271,
-      "propagation_delay_ms": 44.45
+      "bandwidth_mbps": 448,
+      "propagation_delay_ms": 52.46
     },
     "SAT-02_to_SAT-03": {
-      "bandwidth_mbps": 19289,
-      "propagation_delay_ms": 6.83
+      "bandwidth_mbps": 6944,
+      "propagation_delay_ms": 9.26
     },
     "SAT-03_to_SAT-04": {
-      "bandwidth_mbps": 1308,
-      "propagation_delay_ms": 8.95
+      "bandwidth_mbps": 1167,
+      "propagation_delay_ms": 9.92
     },
     "SAT-04_to_SAT-05": {
-      "bandwidth_mbps": 6752,
-      "propagation_delay_ms": 10.61
+      "bandwidth_mbps": 13209,
+      "propagation_delay_ms": 8.75
     },
     "SAT-05_to_GS": {
-      "bandwidth_mbps": 397,
-      "propagation_delay_ms": 54.86
+      "bandwidth_mbps": 120,
+      "propagation_delay_ms": 45.91
     }
   },
   "simulation_paths": {

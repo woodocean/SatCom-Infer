@@ -234,6 +234,7 @@ class ComputeNode:
 
         # =================【核心修正】：累积上游物理线路的实测传输经历时间！=================
         measured_comm_ms = message.get('measured_comm_latency_ms', 0.0)
+        print(f"measured_comm_ms={measured_comm_ms}")
         if measured_comm_ms > 0.0:
             acc_lat += measured_comm_ms
             print(f"  [+] UDP底层截获物理传输耗时，并已累加等效时延: {measured_comm_ms:.2f} ms")
