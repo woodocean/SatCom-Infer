@@ -1,6 +1,9 @@
 import numpy as np
 import random
 import time
+import csv
+import statistics
+from pathlib import Path
 from typing import Dict, List, Tuple
 
 class CDPSolver:
@@ -98,6 +101,12 @@ class CDPSolver:
         D_alloc = self.D_in * (self.f / F_total)
         return self._evaluate_delay(D_alloc)
 
+    def solve_greedy(self) -> Tuple[float, Dict[int, float]]:
+        """
+        与 solve_compute_greedy 保持兼容的贪心接口。
+        """
+        return self.solve_compute_greedy()
+
     # =================== 3. Uniform Partition (均匀分配基线) ===================
     def solve_uniform(self) -> Tuple[float, Dict[int, float]]:
         """
@@ -128,48 +137,172 @@ class CDPSolver:
                 
         return self._evaluate_delay(best_D_alloc)
 
+    # =================== 5. Genetic Algorithm ===================
+    def solve_ga(self, pop_size: int = 50, generations: int = 150, mutation_rate: float = 0.3) -> Tuple[float, Dict[int, float]]:
+        """
+        遗传算法搜索分配方案。
+
+        复杂度近似为 O(pop_size * generations * K)，其中 K 为节点数。
+        """
+
+        def normalize(individual: np.ndarray) -> np.ndarray:
+            candidate = np.clip(individual.astype(float), 0.0, None)
+            total = float(np.sum(candidate))
+            if total <= 0.0:
+                return np.full(self.K, self.D_in / self.K, dtype=float)
+            return candidate / total * self.D_in
+
+        def fitness(individual: np.ndarray) -> float:
+            lat, _ = self._evaluate_delay(normalize(individual))
+            return -lat
+
+        if pop_size < 2:
+            raise ValueError("pop_size 必须至少为 2")
+        if generations < 1:
+            raise ValueError("generations 必须至少为 1")
+
+        population: List[np.ndarray] = [np.random.dirichlet(np.ones(self.K)) * self.D_in for _ in range(pop_size)]
+        best_score = -float('inf')
+        best_alloc: np.ndarray = np.full(self.K, self.D_in / self.K, dtype=float)
+
+        for _ in range(generations):
+            scores = [fitness(individual) for individual in population]
+            best_idx = int(np.argmax(scores))
+            if scores[best_idx] > best_score:
+                best_score = scores[best_idx]
+                best_alloc = normalize(population[best_idx])
+
+            ranked_indices = np.argsort(scores)[::-1]
+            elite_count = max(2, pop_size // 2)
+            selected = [population[index] for index in ranked_indices[:elite_count]]
+
+            next_population: List[np.ndarray] = [normalize(individual.copy()) for individual in selected[:2]]
+            while len(next_population) < pop_size:
+                parent_1, parent_2 = random.sample(selected, 2)
+                if self.K == 1:
+                    child = parent_1.copy()
+                else:
+                    cut = random.randint(1, self.K - 1)
+                    child = np.concatenate([parent_1[:cut], parent_2[cut:]])
+
+                if random.random() < mutation_rate:
+                    mut_idx = random.randint(0, self.K - 1)
+                    child[mut_idx] += random.uniform(-0.2, 0.2) * self.D_in
+                    if self.K > 1:
+                        other_idx = random.randint(0, self.K - 1)
+                        if other_idx != mut_idx:
+                            child[other_idx] += random.uniform(-0.1, 0.1) * self.D_in
+
+                next_population.append(normalize(child))
+
+            population = next_population[:pop_size]
+
+        return self._evaluate_delay(best_alloc)
+
+
+def _build_mock_env(node_count: int) -> Dict:
+    nodes = []
+    for i in range(node_count):
+        nodes.append({
+            'id': i,
+            'compute_speed_gflops_per_s': 10.0 + i * 5.0,
+            'b_dist_mbps': 5.0 + i * 5.0,
+            'b_agg_mbps': 2.0 + i * 3.0,
+        })
+    return {'nodes': nodes}
+
+
+def _build_mock_model_profile() -> Dict:
+    return {
+        'input_size_mb': 150.0,
+        'output_size_mb': 5.0,
+        'compute_total_gflops': 80.0,
+    }
+
+
+def _benchmark(func, repeats: int, warmup: int) -> Dict[str, float]:
+    for _ in range(warmup):
+        func()
+
+    durations_ms: List[float] = []
+    last_result = None
+    for _ in range(repeats):
+        start = time.perf_counter()
+        last_result = func()
+        durations_ms.append((time.perf_counter() - start) * 1000.0)
+
+    return {
+        'mean_ms': statistics.mean(durations_ms),
+        'std_ms': statistics.pstdev(durations_ms) if len(durations_ms) > 1 else 0.0,
+        'min_ms': min(durations_ms),
+        'max_ms': max(durations_ms),
+        'last_latency_ms': float(last_result[0]) if last_result is not None else float('nan'),
+    }
+
+
+def _print_complexity_summary() -> None:
+    print('理论复杂度对照')
+    print('- LAWA: O(K)')
+    print('- Greedy: O(K)')
+    print('- GA: O(pop_size * generations * K)')
+    print()
+
+
+def run_benchmark(node_counts=None, repeats: int = 20, warmup: int = 3, pop_size: int = 20, generations: int = 30, output_csv: str = 'cdp_search_time_mean.csv') -> None:
+    if node_counts is None:
+        node_counts = [3, 4, 5, 6]
+
+    random.seed(42)
+    np.random.seed(42)
+
+    _print_complexity_summary()
+    print(f'重复次数: {repeats} | 预热次数: {warmup} | GA(pop={pop_size}, gen={generations})')
+    print('-' * 96)
+    print('{:<8} {:<12} {:>12} {:>12} {:>12} {:>12}'.format('K', 'Algorithm', 'Mean(ms)', 'Std(ms)', 'Min(ms)', 'Max(ms)'))
+    print('-' * 96)
+
+    csv_rows = []
+    for node_count in node_counts:
+        solver = CDPSolver(_build_mock_model_profile(), _build_mock_env(node_count))
+        algorithm_map = {
+            'LAWA': lambda: solver.solve_lawa(),
+            'Greedy': lambda: solver.solve_greedy(),
+            'GA': lambda: solver.solve_ga(pop_size=pop_size, generations=generations),
+        }
+
+        for algorithm_name in ['LAWA', 'Greedy', 'GA']:
+            stat = _benchmark(algorithm_map[algorithm_name], repeats=repeats, warmup=warmup)
+            csv_rows.append({
+                'K': node_count,
+                'Algorithm': algorithm_name,
+                'Mean_ms': stat['mean_ms'],
+                'Std_ms': stat['std_ms'],
+                'Min_ms': stat['min_ms'],
+                'Max_ms': stat['max_ms'],
+                'Last_Latency_ms': stat['last_latency_ms'],
+            })
+            print(
+                '{:<8} {:<12} {:>12.3f} {:>12.3f} {:>12.3f} {:>12.3f}'.format(
+                    node_count,
+                    algorithm_name,
+                    stat['mean_ms'],
+                    stat['std_ms'],
+                    stat['min_ms'],
+                    stat['max_ms'],
+                )
+            )
+
+    csv_path = Path(__file__).resolve().parent.parent / output_csv
+    with csv_path.open('w', newline='', encoding='utf-8') as f:
+        writer = csv.DictWriter(f, fieldnames=['K', 'Algorithm', 'Mean_ms', 'Std_ms', 'Min_ms', 'Max_ms', 'Last_Latency_ms'])
+        writer.writeheader()
+        writer.writerows(csv_rows)
+
+    print('-' * 96)
+    print(f'结果已保存到: {csv_path}')
+
 # ==============================================================
 # 5. 测试与比较主函数
 # ==============================================================
 if __name__ == "__main__":
-    # 模拟输入参数
-    mock_model_profile = {
-        "input_size_mb": 150.0,        # 150MB 输入数据
-        "output_size_mb": 5.0,         # 5MB 聚合特征结果
-        "compute_total_gflops": 80.0   # 处理 150MB 全量数据的所需算力为 80 GFLOPs
-    }
-    
-    # 构建具备【异构性】的卫星星座环境
-    mock_env_status = {
-        "nodes": [
-            # 节点 0：算力极强，但网络链路极差 (容易在传统分配中成为瓶颈)
-            {"id": 0, "compute_speed_gflops_per_s": 50.0, "b_dist_mbps": 5.0, "b_agg_mbps": 2.0},
-            # 节点 1：算力一般，网络一般
-            {"id": 1, "compute_speed_gflops_per_s": 20.0, "b_dist_mbps": 30.0, "b_agg_mbps": 15.0},
-            # 节点 2：算力弱，但网络极好 (边缘通信强节点)
-            {"id": 2, "compute_speed_gflops_per_s": 10.0, "b_dist_mbps": 100.0, "b_agg_mbps": 50.0},
-            # 节点 3：算力均衡节点
-            {"id": 3, "compute_speed_gflops_per_s": 25.0, "b_dist_mbps": 50.0, "b_agg_mbps": 20.0},
-        ]
-    }
-
-    print("=================== 实验启动 ===================")
-    solver = CDPSolver(mock_model_profile, mock_env_status)
-
-    # 1. 评估 LAWA (你提出的最优解)
-    lawa_lat, lawa_plan = solver.solve_lawa()
-    print(f"[LAWA 算法 (Ours)] \n  --> 预估时延: {lawa_lat:.3f} s \n  --> 分配方案: {lawa_plan}\n")
-
-    # 2. 评估 Compute-Greedy (算力主导基线)
-    cmp_lat, cmp_plan = solver.solve_compute_greedy()
-    print(f"[纯算力加权分配 (Baseline)] \n  --> 预估时延: {cmp_lat:.3f} s \n  --> 分配方案: {cmp_plan}\n")
-
-    # 3. 评估 Uniform (均分基线)
-    uni_lat, uni_plan = solver.solve_uniform()
-    print(f"[均分数据分配 (Baseline)] \n  --> 预估时延: {uni_lat:.3f} s \n  --> 分配方案: {uni_plan}\n")
-
-    # 4. 评估 Random (多次随机贪心)
-    rnd_lat, rnd_plan = solver.solve_random_search(trials=5000)
-    print(f"[随机最优分配 (Baseline - 5000 iter)] \n  --> 预估时延: {rnd_lat:.3f} s \n  --> 分配方案: {rnd_plan}\n")
-
-    print(f"结论印证：LAWA 时延降低幅度显著！相比唯算力论提升: {(cmp_lat - lawa_lat)/cmp_lat*100:.1f}%")
+    run_benchmark()

@@ -57,7 +57,7 @@ def draw_bar_chart(ax, df_pivot, title):
 
     target_models = ['VGG19', 'ResNet101', 'YOLOv5', 'Swin_Base']
     algs_ratio = ['LA-DP_Ratio', 'Greedy_Ratio', 'Random_Ratio', 'GA_Ratio', 'Bent-Pipe_Ratio']
-    labels = ['LA-DP', 'Greedy', 'Random', 'GA', 'Pass-Through']
+    labels = ['LA-DP', 'Greedy', 'Random', 'GA', 'GS-Only']
     colors = ['#1f77b4', '#ff7f0e', '#2ca02c', '#9467bd', '#d62728']
 
     # 按模型分组求均值
@@ -83,7 +83,7 @@ def draw_bar_chart(ax, df_pivot, title):
 
     # 装饰坐标轴与背景
     ax.set_xlabel('任务所属推理模型', fontsize=10)
-    ax.set_ylabel('平均归一化时延 (Pass-Through=1.0)', fontsize=10)
+    ax.set_ylabel('平均归一化时延 (GS-Only=1.0)', fontsize=10)
     ax.set_title(title, fontsize=11, pad=8)
     ax.set_xticks(x)
     ax.set_xticklabels(active_models, fontsize=9)

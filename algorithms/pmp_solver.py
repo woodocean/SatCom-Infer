@@ -164,7 +164,7 @@ class PMPSolver:
         plan = dict(reversed(list(plan.items())))
         return float(total_lat), plan
 
-    # =================== 2. Communication-Greedy ===================
+    # =================== 2. Local-Latency-Greedy (Smarter Greedy) ===================
     def solve_communication_greedy(self) -> Tuple[float, Dict]:
         plan = {}
         curr_l = 0
@@ -178,33 +178,48 @@ class PMPSolver:
                 continue
 
             node_idx = k
-            best_next_l: int = curr_l
-            min_comm_output: float = float('inf')
+            best_cost = float('inf')
+            best_next_l = curr_l
 
-            # 尝试扩展切分点 [curr_l, next_l)
-            for next_l in range(curr_l + 1, self.L + 1):
-                mem_ok, _ = self._check_memory(node_idx, curr_l, next_l)
-                if not mem_ok:
-                    break  # 内存超限，后续更大区间必超，剪枝
+            # 取代原本“仅看通信输出最小”的短视贪心
+            # 现在的“聪明”贪心会综合评估 (本跳计算 + 下一跳传输) 的局部总延时
+            for next_l in range(curr_l, self.L + 1):
+                if next_l > curr_l:
+                    mem_ok, _ = self._check_memory(node_idx, curr_l, next_l)
+                    if not mem_ok:
+                        break  # 内存超限，后续更大区间必超，剪枝
 
-                # 贪婪目标：最小化 next_l 层输出的 comm_total_mb（即下跳传输量）
-                output_comm = self.layers[next_l - 1]['comm_total_mb'] if next_l < self.L else 0.0
-                if output_comm <= min_comm_output:
-                    min_comm_output = output_comm
+                # 计算当前选择下在本节点的计算时延 (next_l == curr_l 时为 0)
+                t_comp = self._compute_delay(node_idx, curr_l, next_l)
+                
+                # 评估这个选择导致的通信输出量 (将它传给下一跳的开销)
+                output_comm = self.layers[next_l - 1]['comm_total_mb'] if next_l > 0 else self.input_size_raw
+                # 处理末尾情况：如果已经是最后一层且是最后的节点，就不需要继续往下传了
+                if next_l == self.L and k == self.K - 1:
+                    t_trans_next = 0.0
+                else:
+                    bw_next = self.B[k]  # 去往下一跳的链路带宽
+                    t_trans_next = self._comm_delay_ms(output_comm, bw_next)
+                
+                # 局部成本：在此节点计算 [curr_l, next_l) 的耗时 + 传出中间特征图的耗时
+                cost = t_comp + t_trans_next
+                
+                if cost < best_cost:
+                    best_cost = cost
                     best_next_l = next_l
 
-            # 计算当前跳开销
+            # 决定之后，结算到达本节点的传输开销 (即 input_comm 需要流经进入本节点的链路)
             input_comm: float = self.layers[curr_l - 1]['comm_total_mb'] if curr_l > 0 else self.input_size_raw
-            t_trans: float = self._comm_delay_ms(input_comm, self.B[k])
-
+            t_trans_in: float = self._comm_delay_ms(input_comm, self.B[k])
+            
             if best_next_l > curr_l:
-                t_comp = self._compute_delay(node_idx, curr_l, best_next_l)
+                actual_comp = self._compute_delay(node_idx, curr_l, best_next_l)
                 plan[self.nodes[node_idx]['id']] = [curr_l, best_next_l - 1]
-                total_latency += t_comp + t_trans
+                total_latency += actual_comp + t_trans_in
                 curr_l = best_next_l
             else:
                 # 中继：仅传输，不计算
-                total_latency += t_trans
+                total_latency += t_trans_in
 
         return total_latency, plan
 
@@ -247,12 +262,14 @@ class PMPSolver:
         return t_trans_total + t_comp, {gs_node['id']: [0, self.L - 1]}
 
     # =================== 5. Random Split ===================
-    def solve_random_split(self, n_trials: int = 50) -> Tuple[float, Dict]:
+    def solve_random_split(self, n_trials: int = 1) -> Tuple[float, Dict]:
         best_lat = float('inf')
         best_plan: Dict = {}
 
+        # 原本 n_trials 是 50，太高导致其行为类似模拟退火，接近最优解。
+        # 现将其“改笨”，仅挑选1组（或极少数）合法的随机分割点直接结算，体现纯随机性能下限。
         for _ in range(n_trials):
-            cuts_raw: np.ndarray = np.random.choice(range(0, self.L + 1), size=self.K - 1, replace=True)
+            cuts_raw: np.ndarray = np.random.choice(range(0, self.L + 1), size=self.K - 1, replace=False)
             cuts = np.unique(np.sort(cuts_raw))
             splits: List[int] = [0] + cuts.tolist() + [self.L]
 
@@ -304,7 +321,7 @@ class PMPSolver:
         return best_lat, best_plan
 
     # =================== 6. Genetic Algorithm ===================
-    def solve_ga(self, pop_size: int = 30, generations: int = 100, mutation_rate: float = 0.2) -> Tuple[float, Dict]:
+    def solve_ga(self, pop_size: int = 50, generations: int = 150, mutation_rate: float = 0.3) -> Tuple[float, Dict]:
         def decode(individual: np.ndarray) -> List[int]:
             cuts: np.ndarray = np.sort(individual)
             cuts = np.clip(cuts, 1, self.L - 1)

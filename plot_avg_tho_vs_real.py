@@ -24,14 +24,14 @@ def process_data(csv_path):
     
     # 2. 按任务编号范围分类模型
     def assign_model(num):
-        if 0 <= num <= 20:
-            return 'VGG19'
-        elif 21 <= num <= 40:
+        if 0 <= num <= 50:
             return 'ResNet101'
-        elif 41 <= num <= 60:
-            return 'YOLOv5'
-        elif 61 <= num <= 80:
+        elif 51 <= num <= 100:
+            return 'VGG19'
+        elif 101 <= num <= 150:
             return 'Swin_Base'
+        elif 61 <= num <= 80:
+            return 'YOLOv5'
         else:
             return 'Other'
             

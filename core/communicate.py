@@ -99,9 +99,12 @@ class Communicator:
                 header = struct.pack("!HHH", msg_id, num_chunks, i)
                 udp_sock.sendto(header + chunk, (ip, port))
                 
-                # 减缓路由器交换队列溢出导致的高丢包率 (1.2% 是可接受底线)
-                if i % 20 == 0:
-                    time.sleep(0.0005)
+                # 减缓路由器交换队列溢出导致的高丢包率
+                # 适当减缓发送速率：增加 sleep 时间和频次
+                if (i + 1) % 10 == 0:
+                    time.sleep(0.002)
+                else:
+                    time.sleep(0.0001)
 
             # B. 阻塞等待接收端所有块重组完成后的 DONE 应答
             try:
