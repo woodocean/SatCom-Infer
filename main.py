@@ -155,7 +155,7 @@ def main():
                     "vgg19": [(224, 224)],
                     "swin_base": [(224, 224)]}
         
-        for i in range(0, 20):  # 运行20个任务演示
+        for i in range(0, 5):  # 运行5个任务演示
             task_id = f"Task_{i:03d}"
             
             # --- 步骤 A: 环境动态演进，并添加短暂的睡眠防止所有节点同时读写 ---
@@ -191,7 +191,7 @@ def main():
             # 不要固定 [1,3,224,224] 了，否则体现不出异构网络下的通信瓶颈！
             fake_img = torch.randn(chosen_bs, 3, chosen_res[0], chosen_res[1])
             
-            # --- 步骤 C: 顺序分发给管道，一次执行一个算法进行公平仿真 ---
+            # # --- 步骤 C: 顺序分发给管道，一次执行一个算法进行公平仿真 ---
             for alg, plan in plans.items():
                 if plan is None:
                     print(f"  [RS] 🛑 算法 [{alg}] 当前由于硬件约束无解，直接跳过管道仿真。")
