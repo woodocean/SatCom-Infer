@@ -52,6 +52,18 @@ class ComputeNode:
             self.comms.register_peer(n_id, n_ip, n_port)
             print(f"[{self.node_id}] 已注册邻居: {n_id} @ {n_ip}:{n_port}")
 
+    def _get_compute_scale_ratio(self, net_cfg):
+        """返回计算时延缩放系数：基准算力 / 节点当前算力。"""
+        node_info = net_cfg.get("nodes", {}).get(self.node_id, {})
+        device_str = str(node_info.get("device", "PC")).lower()
+        baseline_tflops = 5.0 if "jetson" in device_str else 11.6
+
+        hardware = node_info.get("hardware", {})
+        node_tflops = float(hardware.get("compute_speed_tflops", hardware.get("compute_speed_gflops_per_ms", baseline_tflops)))
+        if node_tflops <= 0.0:
+            return 1.0
+        return baseline_tflops / node_tflops
+
     # ==========================================================
     # 网络消息分发总线
     # ==========================================================
@@ -160,10 +172,11 @@ class ComputeNode:
                 output, ms = self.engine.exec_layers(input_data, my_start, my_end)
                 
                 # --- 部署到物理设备，使用真实的计算时延 (直接使用 ms) ---
-                sim_comp_ms = ms 
+                scale_ratio = self._get_compute_scale_ratio(net_cfg)
+                sim_comp_ms = ms * scale_ratio
                 acc_lat += sim_comp_ms
                 history = [(self.node_id, my_start, my_end, sim_comp_ms)]
-                print(f"  -> 真实计算耗时: {ms:.2f}ms")
+                print(f"  -> 真实计算耗时: {ms:.2f}ms (缩放后: {sim_comp_ms:.2f}ms, 系数={scale_ratio:.3f})")
             else:
                 print(f"[{self.node_id}] [PIP] 首发节点作为纯数据源，直接派发数据...")
                 output, ms = input_data, 0.0
@@ -268,10 +281,11 @@ class ComputeNode:
             # =========================================================
             
             # --- 部署到物理设备，使用真实的计算时延 (直接使用 ms) ---
-            sim_comp_ms = ms 
+            scale_ratio = self._get_compute_scale_ratio(net_cfg)
+            sim_comp_ms = ms * scale_ratio
             acc_lat += float(sim_comp_ms)
             history.append((self.node_id, start, end, sim_comp_ms))
-            print(f"  -> 真实计算耗时: {ms:.2f}ms")
+            print(f"  -> 真实计算耗时: {ms:.2f}ms (缩放后: {sim_comp_ms:.2f}ms, 系数={scale_ratio:.3f})")
 
             if route: # 如果还有下一跳
                 next_hop = route[0]

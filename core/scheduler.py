@@ -69,12 +69,14 @@ class Scheduler:
         
         # 构建逐跳带宽向量 B (Mbps)
         bandwidth_list = []
+        propagation_delay_list = []
         # 获取源节点 ID (通常是 RS)
         current_source = self.net_config["simulation_paths"]["pipeline"][0] if "simulation_paths" in self.net_config else "RS"
 
         for i in range(len(nodes)):
             target_node = nodes[i]["id"]
             bw = 100.0  # 默认保底带宽
+            prop_ms = 0.0  # 默认保底传播时延
             
             # 使用字符串匹配 JSON 中的 Key
             forward_key = f"{current_source}_to_{target_node}"
@@ -82,15 +84,19 @@ class Scheduler:
             
             if forward_key in raw_links:
                 bw = float(raw_links[forward_key].get("bandwidth_mbps", 100.0))
+                prop_ms = float(raw_links[forward_key].get("propagation_delay_ms", 0.0))
             elif backward_key in raw_links:
                 bw = float(raw_links[backward_key].get("bandwidth_mbps", 100.0))
+                prop_ms = float(raw_links[backward_key].get("propagation_delay_ms", 0.0))
             
             bandwidth_list.append(bw)
+            propagation_delay_list.append(prop_ms)
             current_source = target_node # 移动指针，下一跳的源是当前节点
 
         env_status = {
             "nodes": nodes,
             "bandwidths": bandwidth_list,
+            "propagation_delays_ms": propagation_delay_list,
             "reference_compute_speed": self.net_config.get("reference_compute_speed", 100.0)
         }
 
@@ -114,7 +120,7 @@ class Scheduler:
         except Exception as e: plans["Uniform"] = {"plan": None, "latency": float('inf')}
 
         try:
-            rd_lat, rd_plan = solver.solve_random_split(n_trials=50) 
+            rd_lat, rd_plan = solver.solve_random_split(n_trials=1)
             plans["Random"] = {"plan": rd_plan, "latency": rd_lat}
         except Exception as e: plans["Random"] = {"plan": None, "latency": float('inf')}
 

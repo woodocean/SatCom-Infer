@@ -6,6 +6,38 @@ import os
 
 warnings.filterwarnings('ignore')
 
+def _remove_retrans_outliers(df, source_name):
+    """剔除明显由超时重传导致的极端大时延点（仅处理高侧异常）"""
+    cleaned_groups = []
+    removed = 0
+
+    for alg, grp in df.groupby('Algorithm', sort=False):
+        g = grp.copy()
+        if len(g) < 6:
+            cleaned_groups.append(g)
+            continue
+
+        q1 = g['Latency'].quantile(0.25)
+        q3 = g['Latency'].quantile(0.75)
+        iqr = q3 - q1
+        med = g['Latency'].median()
+
+        # 仅清理“明显异常高值”：IQR 高门限 + 绝对门限 + 中位数倍率门限
+        iqr_upper = q3 + (6.0 * iqr if iqr > 0 else 0.0)
+        hard_upper = 5000.0
+        ratio_upper = med * 8.0 if med > 0 else hard_upper
+        upper = max(iqr_upper, hard_upper, ratio_upper)
+
+        keep_mask = g['Latency'] <= upper
+        removed += int((~keep_mask).sum())
+        cleaned_groups.append(g[keep_mask])
+
+    out = pd.concat(cleaned_groups, ignore_index=True) if cleaned_groups else df
+    if removed > 0:
+        print(f"[清洗] {source_name}: 剔除超时重传异常值 {removed} 条")
+    return out
+
+
 def process_data(csv_path):
     """通用的数据清洗和预处理函数"""
     if not os.path.exists(csv_path):
@@ -14,6 +46,13 @@ def process_data(csv_path):
     
     # 1. 读取并清洗数据 
     df = pd.read_csv(csv_path, names=['Task', 'Algorithm', 'Latency'])
+    df['Latency'] = pd.to_numeric(df['Latency'], errors='coerce')
+    df = df.dropna(subset=['Task', 'Algorithm', 'Latency'])
+
+    # 实验结果优先清理重传导致的离群大值
+    if 'experiment' in os.path.basename(csv_path).lower():
+        df = _remove_retrans_outliers(df, os.path.basename(csv_path))
+
     # 去除因多次追加执行留下的重复脏数据
     df = df.drop_duplicates(subset=['Task', 'Algorithm'], keep='last')
     df_pivot = df.pivot(index='Task', columns='Algorithm', values='Latency').reset_index()
@@ -24,13 +63,13 @@ def process_data(csv_path):
     
     # 2. 改进模型分类逻辑：自动识别或统一归类
     def assign_model(num):
-        if 0 <= num <= 50:
+        if 0 <= num <= 200:
             return 'ResNet101'
-        elif 51 <= num <= 100:
+        elif 201 <= num <= 400:
             return 'VGG19'
-        elif 101 <= num <= 150:
+        elif 401 <= num <= 600:
             return 'Swin_Base'
-        elif 61 <= num <= 80:
+        elif 601 <= num <= 800:
             return 'YOLOv5'
         else:
             return 'Other'

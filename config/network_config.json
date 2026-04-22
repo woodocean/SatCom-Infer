@@ -1,7 +1,7 @@
 {
   "global_settings": {
     "base_gpu_speed_gflops_per_ms": 100.0,
-    "hardware_baseline_mbps": 580.0
+    "hardware_baseline_mbps": 220.0
   },
   "nodes": {
     "RS": {
@@ -111,44 +111,44 @@
   },
   "links": {
     "RS_to_SAT-01": {
-      "bandwidth_mbps": 3015,
-      "propagation_delay_ms": 8.53
+      "bandwidth_mbps": 7400,
+      "propagation_delay_ms": 6.09
     },
     "RS_to_SAT-02": {
-      "bandwidth_mbps": 7044,
-      "propagation_delay_ms": 4.53
+      "bandwidth_mbps": 17430,
+      "propagation_delay_ms": 10.35
     },
     "RS_to_SAT-03": {
-      "bandwidth_mbps": 16211,
-      "propagation_delay_ms": 9.13
+      "bandwidth_mbps": 14623,
+      "propagation_delay_ms": 3.15
     },
     "RS_to_GS": {
-      "bandwidth_mbps": 234,
-      "propagation_delay_ms": 36.19
+      "bandwidth_mbps": 151,
+      "propagation_delay_ms": 45.68
     },
     "SAT-01_to_SAT-03": {
-      "bandwidth_mbps": 4810,
-      "propagation_delay_ms": 11.59
+      "bandwidth_mbps": 18560,
+      "propagation_delay_ms": 13.51
     },
     "SAT-01_to_GS": {
-      "bandwidth_mbps": 109,
-      "propagation_delay_ms": 51.51
+      "bandwidth_mbps": 487,
+      "propagation_delay_ms": 42.06
     },
     "SAT-02_to_SAT-03": {
-      "bandwidth_mbps": 14111,
-      "propagation_delay_ms": 12.96
+      "bandwidth_mbps": 7595,
+      "propagation_delay_ms": 11.59
     },
     "SAT-03_to_SAT-04": {
-      "bandwidth_mbps": 10492,
-      "propagation_delay_ms": 13.65
+      "bandwidth_mbps": 14591,
+      "propagation_delay_ms": 11.81
     },
     "SAT-04_to_SAT-05": {
-      "bandwidth_mbps": 7679,
-      "propagation_delay_ms": 14.95
+      "bandwidth_mbps": 1836,
+      "propagation_delay_ms": 9.65
     },
     "SAT-05_to_GS": {
-      "bandwidth_mbps": 439,
-      "propagation_delay_ms": 53.58
+      "bandwidth_mbps": 470,
+      "propagation_delay_ms": 55.24
     }
   },
   "simulation_paths": {

@@ -50,8 +50,8 @@ class Communicator:
 
     def _get_link_profile(self, target_id):
         """读取链路带宽与传播时延，用于动态设置 ACK 超时。"""
-        theoretical_bw_mbps = 580.0
-        hardware_baseline_mbps = 580.0
+        theoretical_bw_mbps = 220.0
+        hardware_baseline_mbps = 220.0
         propagation_delay_s = 0.0
 
         try:
@@ -60,7 +60,7 @@ class Communicator:
                 net_cfg = json.load(f)
 
             global_settings = net_cfg.get("global_settings", {})
-            hardware_baseline_mbps = global_settings.get("hardware_baseline_mbps", 580.0)
+            hardware_baseline_mbps = global_settings.get("hardware_baseline_mbps", 220.0)
 
             links = net_cfg.get("links", {})
             link_key1 = f"{self.node_id}_to_{target_id}"

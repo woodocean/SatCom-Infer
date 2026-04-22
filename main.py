@@ -18,6 +18,20 @@ def load_config(path):
 def update_network_topology(config_path):
     try:
         config = load_config(config_path)
+
+        # 同步刷新节点算力（单位：TFLOPS）
+        for node_id, node_info in config.get('nodes', {}).items():
+            hw = node_info.setdefault('hardware', {})
+            if node_id == 'GS':
+                node_tflops = 300.0
+            elif node_id.startswith('SAT'):
+                node_tflops = round(random.uniform(0.5, 10.0), 3)
+            else:
+                node_tflops = 0.0
+
+            # 新字段 + 兼容旧字段（旧字段名仅用于兼容历史代码）
+            hw['compute_speed_tflops'] = node_tflops
+            hw['compute_speed_gflops_per_ms'] = node_tflops
         
         # 路由器登录凭测（如果要真实下发硬件的话请修改为真实 IP 和 root 密码）
         router_ip = "192.168.10.1"

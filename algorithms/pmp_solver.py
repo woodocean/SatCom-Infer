@@ -30,6 +30,7 @@ class PMPSolver:
         self.nodes: List[Dict] = env_status['nodes']
         self.K: int = len(self.nodes)
         self.B: List[float] = env_status['bandwidths']  # 每跳链路带宽（Mbps）
+        self.P: List[float] = env_status.get('propagation_delays_ms', [0.0] * self.K)  # 每跳传播时延（ms）
         self.input_size_raw: float = model_profile.get('input_size_raw', 3.0)  # MB
 
         # 根据传入的 dict 或者是 list 处理 layers (兼容旧版单 list)
@@ -62,11 +63,12 @@ class PMPSolver:
         # 由于 L 一般 ≤ 50，此处可接受 O(L) 检查，或你可后续加 Sparse Table。此处为简洁，用遍历。
 
     # =================== 工具函数：查表计算通信时延（ms） ===================
-    def _comm_delay_ms(self, comm_mb: float, bandwidth_mbps: float) -> float:
-        """通信延时计算：(数据量(MB) * 8 比特/字节) / 带宽(Mbps) * 1000 => ms"""
+    def _comm_delay_ms(self, comm_mb: float, bandwidth_mbps: float, propagation_delay_ms: float = 0.0) -> float:
+        """通信延时计算：传输时延 + 传播时延（单位 ms）"""
         if bandwidth_mbps <= 0:
             return float('inf')
-        return (comm_mb * 8.0 / bandwidth_mbps) * 1000.0
+        tx_ms = (comm_mb * 8.0 / bandwidth_mbps) * 1000.0
+        return tx_ms + max(0.0, propagation_delay_ms)
 
     # =================== 工具函数：检查内存约束（核心逻辑） ===================
     def _check_memory(self, node_idx: int, start: int, end: int) -> Tuple[bool, float]:
@@ -94,28 +96,27 @@ class PMPSolver:
         if start >= end:
             return 0.0
         
-        # 1. 判定设备类型 (默认 fallback 到 pc)
-        # 这里需要网络配置里传进了 `device` 类型 (如 'PC', 'Jetson_1')
+        # 1. 判定设备类型并选择对应 profile 的基准算力（TFLOPS）
         device_str = str(self.nodes[node_idx].get('device', 'PC')).lower()
         if 'jetson' in device_str:
             device_type = 'jetson'
-            base_speed = 10.0  # 假设Jetson profile代表平均 10GFLOPS 计算水准
+            base_tflops = 5.0
         else:
             device_type = 'pc'
-            base_speed = 100.0 # 假设PC profile代表平均 100GFLOPS 计算水准
+            base_tflops = 11.6
             
         # 2. 从 Json database 取出纯理论切分耗时
         comp_latency = self.prefix_latency[device_type][end] - self.prefix_latency[device_type][start]
         
-        # 3. 按比例放缩算力
+        # 3. 按比例放缩算力（基准算力 / 节点当前算力）
         hardware_info = self.nodes[node_idx].get('hardware', {})
-        node_speed = hardware_info.get('compute_speed_gflops_per_ms', base_speed)
+        node_tflops = hardware_info.get('compute_speed_tflops', hardware_info.get('compute_speed_gflops_per_ms', base_tflops))
         
-        if node_speed <= 0:
+        if node_tflops <= 0:
             return float('inf')  # 比如 RS 这类没有计算能力的源节点
             
         # 根据当前节点设定的节点真实算力与基础算力的比例，放缩时间
-        return comp_latency * (base_speed / node_speed)
+        return comp_latency * (base_tflops / node_tflops)
 
     # =================== 1. LA-DP (负载感知动态规划) ===================
     def solve_la_dp(self) -> Tuple[float, Dict]:
@@ -134,7 +135,7 @@ class PMPSolver:
                     if prev_l == l:
                         # 传输输入：上一跳的输出（即第 prev_l-1 层的 comm_total_mb）
                         input_comm = self.layers[prev_l - 1]['comm_total_mb'] if prev_l > 0 else self.input_size_raw
-                        t_trans = self._comm_delay_ms(input_comm, self.B[node_idx])
+                        t_trans = self._comm_delay_ms(input_comm, self.B[node_idx], self.P[node_idx])
                         cost = dp[k-1][prev_l] + 0.0 + t_trans
                         if cost < dp[k][l]:
                             dp[k][l] = cost
@@ -152,7 +153,7 @@ class PMPSolver:
 
                     # 传输时延：输入为 prev_l 层输出（即第 prev_l-1 层的 comm_total_mb）
                     input_comm = self.layers[prev_l - 1]['comm_total_mb'] if prev_l > 0 else self.input_size_raw
-                    t_trans = self._comm_delay_ms(input_comm, self.B[node_idx])
+                    t_trans = self._comm_delay_ms(input_comm, self.B[node_idx], self.P[node_idx])
 
                     cost = dp[k-1][prev_l] + t_comp + t_trans
                     if cost < dp[k][l]:
@@ -184,7 +185,7 @@ class PMPSolver:
             if curr_l >= self.L:
                 # 全部已分完，剩余节点仅中继（传输最后一层输出）
                 input_comm = self.layers[self.L - 1]['comm_total_mb']
-                total_latency += self._comm_delay_ms(input_comm, self.B[k])
+                total_latency += self._comm_delay_ms(input_comm, self.B[k], self.P[k])
                 continue
 
             node_idx = k
@@ -209,7 +210,7 @@ class PMPSolver:
                     t_trans_next = 0.0
                 else:
                     bw_next = self.B[k]  # 去往下一跳的链路带宽
-                    t_trans_next = self._comm_delay_ms(output_comm, bw_next)
+                    t_trans_next = self._comm_delay_ms(output_comm, bw_next, self.P[k])
                 
                 # 局部成本：在此节点计算 [curr_l, next_l) 的耗时 + 传出中间特征图的耗时
                 cost = t_comp + t_trans_next
@@ -220,7 +221,7 @@ class PMPSolver:
 
             # 决定之后，结算到达本节点的传输开销 (即 input_comm 需要流经进入本节点的链路)
             input_comm: float = self.layers[curr_l - 1]['comm_total_mb'] if curr_l > 0 else self.input_size_raw
-            t_trans_in: float = self._comm_delay_ms(input_comm, self.B[k])
+            t_trans_in: float = self._comm_delay_ms(input_comm, self.B[k], self.P[k])
             
             if best_next_l > curr_l:
                 actual_comp = self._compute_delay(node_idx, curr_l, best_next_l)
@@ -250,7 +251,7 @@ class PMPSolver:
                 end -= 1
 
             input_comm = self.layers[start - 1]['comm_total_mb'] if start > 0 else self.input_size_raw
-            t_trans = self._comm_delay_ms(input_comm, self.B[k])
+            t_trans = self._comm_delay_ms(input_comm, self.B[k], self.P[k])
 
             if end > start:
                 t_comp = self._compute_delay(node_idx, start, end)
@@ -265,7 +266,7 @@ class PMPSolver:
     # =================== 4. Bent-Pipe ===================
     def solve_bent_pipe(self) -> Tuple[float, Dict]:
         # 所有链路传输原始输入
-        t_trans_total = sum(self._comm_delay_ms(self.input_size_raw, b) for b in self.B)
+        t_trans_total = sum(self._comm_delay_ms(self.input_size_raw, self.B[i], self.P[i]) for i in range(self.K))
         gs_node = self.nodes[-1]
         gs_idx = len(self.nodes) - 1
         t_comp = self._compute_delay(gs_idx, 0, self.L)
@@ -273,12 +274,8 @@ class PMPSolver:
 
     # =================== 5. Random Split ===================
     def solve_random_split(self, n_trials: int = 1) -> Tuple[float, Dict]:
-        best_lat = float('inf')
-        best_plan: Dict = {}
-
-        # 原本 n_trials 是 50，太高导致其行为类似模拟退火，接近最优解。
-        # 现将其“改笨”，仅挑选1组（或极少数）合法的随机分割点直接结算，体现纯随机性能下限。
-        for _ in range(n_trials):
+        # 纯随机：只要命中一个合法分割就直接返回，不做“择优”。
+        for _ in range(max(1, n_trials)):
             cuts_raw: np.ndarray = np.random.choice(range(0, self.L + 1), size=self.K - 1, replace=False)
             cuts = np.unique(np.sort(cuts_raw))
             splits: List[int] = [0] + cuts.tolist() + [self.L]
@@ -309,7 +306,7 @@ class PMPSolver:
                 if start >= end:
                     # 中继：传输上一跳输出
                     input_comm: float = self.layers[end - 1]['comm_total_mb'] if end > 0 else self.input_size_raw
-                    total_lat += self._comm_delay_ms(input_comm, self.B[k])
+                    total_lat += self._comm_delay_ms(input_comm, self.B[k], self.P[k])
                     continue
 
                 node_idx = k
@@ -320,15 +317,14 @@ class PMPSolver:
 
                 t_comp: float = self._compute_delay(node_idx, start, end)
                 input_comm: float = self.layers[start - 1]['comm_total_mb'] if start > 0 else self.input_size_raw
-                t_trans: float = self._comm_delay_ms(input_comm, self.B[k])
+                t_trans: float = self._comm_delay_ms(input_comm, self.B[k], self.P[k])
                 total_lat += t_comp + t_trans
                 plan[self.nodes[node_idx]['id']] = [start, end - 1]
 
-            if valid and total_lat < best_lat:
-                best_lat = total_lat
-                best_plan = plan.copy()
+            if valid:
+                return total_lat, plan.copy()
 
-        return best_lat, best_plan
+        return float('inf'), {}
 
     # =================== 6. Genetic Algorithm ===================
     def solve_ga(self, pop_size: int = 50, generations: int = 150, mutation_rate: float = 0.3) -> Tuple[float, Dict]:
@@ -358,7 +354,7 @@ class PMPSolver:
                 start, end = splits[k], splits[k + 1]
                 if start == end:
                     input_comm: float = self.layers[end - 1]['comm_total_mb'] if end > 0 else self.input_size_raw
-                    total_lat += self._comm_delay_ms(input_comm, self.B[k])
+                    total_lat += self._comm_delay_ms(input_comm, self.B[k], self.P[k])
                     continue
                 node_idx = k
                 
@@ -370,7 +366,7 @@ class PMPSolver:
                 
                 t_comp: float = self._compute_delay(node_idx, start, end)
                 input_comm: float = self.layers[start - 1]['comm_total_mb'] if start > 0 else self.input_size_raw
-                t_trans: float = self._comm_delay_ms(input_comm, self.B[k])
+                t_trans: float = self._comm_delay_ms(input_comm, self.B[k], self.P[k])
                 total_lat += t_comp + t_trans
             return -total_lat  # 负值，最大化适应度 = 最小化时延
 
