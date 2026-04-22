@@ -63,13 +63,13 @@ def process_data(csv_path):
     
     # 2. 改进模型分类逻辑：自动识别或统一归类
     def assign_model(num):
-        if 0 <= num <= 200:
+        if 0 <= num <= 4:
             return 'ResNet101'
-        elif 201 <= num <= 400:
+        elif 5 <= num <= 9:
             return 'VGG19'
-        elif 401 <= num <= 600:
+        elif 10 <= num <= 15:
             return 'Swin_Base'
-        elif 601 <= num <= 800:
+        elif 16 <= num <= 20:
             return 'YOLOv5'
         else:
             return 'Other'

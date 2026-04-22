@@ -327,7 +327,7 @@ class PMPSolver:
         return float('inf'), {}
 
     # =================== 6. Genetic Algorithm ===================
-    def solve_ga(self, pop_size: int = 50, generations: int = 150, mutation_rate: float = 0.3) -> Tuple[float, Dict]:
+    def solve_ga(self, pop_size: int = 50, generations: int = 300, mutation_rate: float = 0.3) -> Tuple[float, Dict]:
         def decode(individual: np.ndarray) -> List[int]:
             cuts: np.ndarray = np.sort(individual)
             cuts = np.clip(cuts, 1, self.L - 1)
