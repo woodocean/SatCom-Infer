@@ -44,11 +44,11 @@ def update_network_topology(config_path):
         for link_name, info in config['links'].items():
             # 1. 产生新的（或来自 STK 的）带宽与时延
             if "GS" in link_name: 
-                new_bw = random.randint(100, 500)
-                new_delay = random.uniform(30.0, 60.0) # 地面站高延迟
+                new_bw = random.randint(50, 200)
+                new_delay = random.uniform(1.0, 2.0) # 地面站高延迟
             else:
-                new_bw = random.randint(100, 20000)
-                new_delay = random.uniform(2.0, 15.0)  # 星间低延迟
+                new_bw = random.randint(1000, 20000)
+                new_delay = random.uniform(2.0, 5.0)  # 星间低延迟
                 
             info['bandwidth_mbps'] = new_bw
             info['propagation_delay_ms'] = round(new_delay, 2)
@@ -148,14 +148,14 @@ def main():
         from core.scheduler import Scheduler
         
         # 异构任务池：通过控制分辨率和 batch 模拟真实的复杂网络负荷
-        model_pool = [ "resnet101"]
-        batch_pool = [16,32]
+        model_pool = [ "resnet101", "vgg19", "swin_base", "yolov5" ]
+        batch_pool = [64]
         res_pool = {"yolov5": [(640, 640)],
                     "resnet101": [(224, 224)],
                     "vgg19": [(224, 224)],
                     "swin_base": [(224, 224)]}
         
-        for i in range(0, 151):  # 运行150个任务演示
+        for i in range(0, 20):  # 运行20个任务演示
             task_id = f"Task_{i:03d}"
             
             # --- 步骤 A: 环境动态演进，并添加短暂的睡眠防止所有节点同时读写 ---
@@ -169,8 +169,8 @@ def main():
                 jetson_profiles_path="config/dnn_profiles_database_jetson.json"
             )
 
-            # 每隔 50 个任务换一个模型，循环获取
-            model_idx = (i // 50) % len(model_pool)
+            # 每隔 5 个任务换一个模型，循环获取
+            model_idx = (i // 1) % len(model_pool)
             chosen_model = model_pool[model_idx]
             
             chosen_bs = random.choice(batch_pool)

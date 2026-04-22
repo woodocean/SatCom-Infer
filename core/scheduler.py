@@ -130,7 +130,7 @@ class Scheduler:
         except Exception as e: plans["Bent-Pipe"] = {"plan": None, "latency": float('inf')}
 
         try:
-            ga_lat, ga_plan = solver.solve_ga(pop_size=30, generations=50, mutation_rate=0.2)
+            ga_lat, ga_plan = solver.solve_ga(pop_size=30, generations=500, mutation_rate=0.2)
             plans["GA"] = {"plan": ga_plan, "latency": ga_lat}
         except Exception as e: plans["GA"] = {"plan": None, "latency": float('inf')}
 
