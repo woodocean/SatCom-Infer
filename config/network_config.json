@@ -32,9 +32,9 @@
         "GS"
       ],
       "hardware": {
-        "compute_speed_gflops_per_ms": 5.609,
+        "compute_speed_gflops_per_ms": 1.713,
         "memory_mb": 4096,
-        "compute_speed_tflops": 5.609
+        "compute_speed_tflops": 1.713
       }
     },
     "SAT-02": {
@@ -47,9 +47,9 @@
         "SAT-03"
       ],
       "hardware": {
-        "compute_speed_gflops_per_ms": 2.888,
+        "compute_speed_gflops_per_ms": 8.654,
         "memory_mb": 2048,
-        "compute_speed_tflops": 2.888
+        "compute_speed_tflops": 8.654
       }
     },
     "SAT-03": {
@@ -65,9 +65,9 @@
         "SAT-04"
       ],
       "hardware": {
-        "compute_speed_gflops_per_ms": 5.073,
+        "compute_speed_gflops_per_ms": 6.291,
         "memory_mb": 4096,
-        "compute_speed_tflops": 5.073
+        "compute_speed_tflops": 6.291
       }
     },
     "SAT-04": {
@@ -80,9 +80,9 @@
         "SAT-05"
       ],
       "hardware": {
-        "compute_speed_gflops_per_ms": 0.835,
+        "compute_speed_gflops_per_ms": 3.237,
         "memory_mb": 2048,
-        "compute_speed_tflops": 0.835
+        "compute_speed_tflops": 3.237
       }
     },
     "SAT-05": {
@@ -95,9 +95,9 @@
         "GS"
       ],
       "hardware": {
-        "compute_speed_gflops_per_ms": 5.687,
+        "compute_speed_gflops_per_ms": 3.077,
         "memory_mb": 4096,
-        "compute_speed_tflops": 5.687
+        "compute_speed_tflops": 3.077
       }
     },
     "GS": {
@@ -118,44 +118,44 @@
   },
   "links": {
     "RS_to_SAT-01": {
-      "bandwidth_mbps": 4608,
-      "propagation_delay_ms": 4.51
+      "bandwidth_mbps": 6510,
+      "propagation_delay_ms": 2.05
     },
     "RS_to_SAT-02": {
-      "bandwidth_mbps": 13876,
-      "propagation_delay_ms": 4.24
+      "bandwidth_mbps": 8041,
+      "propagation_delay_ms": 3.05
     },
     "RS_to_SAT-03": {
-      "bandwidth_mbps": 11524,
-      "propagation_delay_ms": 4.67
+      "bandwidth_mbps": 14684,
+      "propagation_delay_ms": 2.87
     },
     "RS_to_GS": {
-      "bandwidth_mbps": 57,
-      "propagation_delay_ms": 1.7
+      "bandwidth_mbps": 55,
+      "propagation_delay_ms": 1.4
     },
     "SAT-01_to_SAT-03": {
-      "bandwidth_mbps": 2072,
-      "propagation_delay_ms": 2.89
+      "bandwidth_mbps": 16195,
+      "propagation_delay_ms": 2.07
     },
     "SAT-01_to_GS": {
-      "bandwidth_mbps": 72,
-      "propagation_delay_ms": 1.6
+      "bandwidth_mbps": 179,
+      "propagation_delay_ms": 1.97
     },
     "SAT-02_to_SAT-03": {
-      "bandwidth_mbps": 3983,
-      "propagation_delay_ms": 3.27
+      "bandwidth_mbps": 1589,
+      "propagation_delay_ms": 2.21
     },
     "SAT-03_to_SAT-04": {
-      "bandwidth_mbps": 3491,
-      "propagation_delay_ms": 4.76
+      "bandwidth_mbps": 10274,
+      "propagation_delay_ms": 3.67
     },
     "SAT-04_to_SAT-05": {
-      "bandwidth_mbps": 9398,
-      "propagation_delay_ms": 3.75
+      "bandwidth_mbps": 13018,
+      "propagation_delay_ms": 4.27
     },
     "SAT-05_to_GS": {
-      "bandwidth_mbps": 198,
-      "propagation_delay_ms": 1.09
+      "bandwidth_mbps": 114,
+      "propagation_delay_ms": 1.64
     }
   },
   "simulation_paths": {
