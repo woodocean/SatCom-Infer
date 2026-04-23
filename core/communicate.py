@@ -149,10 +149,10 @@ class Communicator:
             udp_sock.settimeout(current_timeout)
 
             if data_mb >= 100:
-                pacing_every = max(64, SEND_PACING_EVERY // 2)
+                pacing_every = max(128, SEND_PACING_EVERY // 2)
                 pacing_sleep = SEND_PACING_SLEEP * 2
             elif data_mb >= 20:
-                pacing_every = max(96, SEND_PACING_EVERY)
+                pacing_every = max(128, SEND_PACING_EVERY)
                 pacing_sleep = SEND_PACING_SLEEP
             else:
                 pacing_every = 128
