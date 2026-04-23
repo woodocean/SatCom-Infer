@@ -44,6 +44,16 @@ class InferenceEngine:
         self.layers = []          # 展平后的层列表 [(name, module), ...] 或直接为 list[nn.Module]
         self.num_layers = 0
         self.is_dag_wrapper = False  # 标志：是否使用了 dag_wrappers 的包装类
+        self.stable_timing = True
+
+        # 为了降低不同任务间的测时抖动，关闭 cudnn benchmark 的动态算法搜索。
+        if self.device == 'cuda' and self.stable_timing:
+            torch.backends.cudnn.benchmark = False
+
+    def _sync_if_cuda(self):
+        """仅在 CUDA 场景下同步，避免 CPU 模式调用 cuda.synchronize 报错。"""
+        if self.device == 'cuda' and torch.cuda.is_available():
+            torch.cuda.synchronize()
 
     def load_model(self, checkpoint_path=None):
         """加载模型，支持原生模型与 DAG Wrapper 模型"""
@@ -132,6 +142,8 @@ class InferenceEngine:
             return input_data, 0.0
         
         
+        # 输入迁移（CPU->GPU）的耗时与纯计算分离，避免通信路径上的拷贝抖动污染算子测时。
+        transfer_start = time.perf_counter()
         if isinstance(input_data, torch.Tensor):
             x = input_data.to(self.device)
         elif isinstance(input_data, dict):
@@ -139,8 +151,10 @@ class InferenceEngine:
             x = {k: (v.to(self.device) if isinstance(v, torch.Tensor) else v) for k, v in input_data.items()}
         else:
             x = input_data
+        self._sync_if_cuda()
+        transfer_ms = (time.perf_counter() - transfer_start) * 1000
 
-        torch.cuda.synchronize()
+        self._sync_if_cuda()
         start_time = time.perf_counter()
         with torch.no_grad():
             if self.is_dag_wrapper:
@@ -157,9 +171,16 @@ class InferenceEngine:
                         layer = self.layers[i]
                     x = layer(x)
 
-        torch.cuda.synchronize()
+        self._sync_if_cuda()
         end_time = time.perf_counter()
         cost_ms = (end_time - start_time) * 1000
+
+        # 只在迁移时间明显偏大时打印一次提示，帮助定位“同 batch 不同耗时”的来源。
+        if transfer_ms > max(10.0, cost_ms * 0.5):
+            print(
+                f"[{self.node_id}] [TIMING] 输入迁移耗时偏高: transfer={transfer_ms:.2f}ms, "
+                f"compute={cost_ms:.2f}ms, layers=[{start_layer}->{end_layer}]"
+            )
         return x, cost_ms
 
     def run_full(self, input_data):
