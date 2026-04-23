@@ -270,6 +270,9 @@ class Communicator:
                 to_delete = []
                 for mid, info in self.recv_buffers.items():
                     if now - info['ts'] > RECV_BUFFER_TTL:  # 大报文传输期更长，避免误清理导致反复重传
+                        missing = info['num'] - len(info['chunks'])
+                        print(f"  [RECEIVER-CLEANUP] 🗑️ 丢弃长期停滞报文 (msg_id={mid}): "
+                              f"已有 {len(info['chunks'])}/{info['num']} 片, 仍缺 {missing} 片。")
                         to_delete.append(mid)
                 for mid in to_delete:
                     del self.recv_buffers[mid]
@@ -287,6 +290,7 @@ class Communicator:
 
                 with self.buf_lock:
                     if msg_id not in self.recv_buffers:
+                        print(f"  [RECEIVER] 📥 新数据流侵入: msg_id={msg_id}, addr={addr}, 总片数={num_chunks}")
                         self.recv_buffers[msg_id] = {
                             'chunks': {}, 
                             'num': num_chunks, 
@@ -294,6 +298,10 @@ class Communicator:
                             'first_ts': time.perf_counter(),
                             'ts': time.time()
                         }
+                    else:
+                        # 诊断探测：看发送方超时疯狂重传导致我们收到的是否为重复包
+                        if chunk_idx in self.recv_buffers[msg_id]['chunks'] and chunk_idx % max(1, num_chunks // 4) == 0:
+                            print(f"  [RECEIVER] ⚠️ 警告: 收到重复报文分片 (msg_id={msg_id}, chunk={chunk_idx})! 发送端疑似超时重传了。")
 
                     # 更新存片和时间
                     self.recv_buffers[msg_id]['chunks'][chunk_idx] = chunk_data
@@ -301,11 +309,11 @@ class Communicator:
                     
                     # ============= [新增] 接收进度监控 =============
                     received_chunks = len(self.recv_buffers[msg_id]['chunks'])
-                    # 每收到一定比例或固定包数打印一次进度（防止全量刷屏）
-                    if received_chunks % max(1, num_chunks // 4) == 0:
+                    # 每收到约 10% 打印一次进度，频率高一点好排查卡在哪
+                    if received_chunks % max(1, num_chunks // 10) == 0:
                         elapsed = time.perf_counter() - self.recv_buffers[msg_id]['first_ts']
                         print(f"  [RECEIVER] 🧩 拼图进度: {received_chunks}/{num_chunks} "
-                              f"({received_chunks/num_chunks*100:.1f}%), 耗时: {elapsed:.3f}s")
+                              f"({received_chunks/num_chunks*100:.1f}%), 当前耗时: {elapsed:.3f}s")
                     
                     # 也可以开启超时丢弃时的统计，了解是被卡在哪些序号了：
                     # 这个需要配合清理线程（_cleanup_loop）使用，这里我们主要看接收瞬间的状态
@@ -319,6 +327,9 @@ class Communicator:
                         
                         # [关键] 必须在这里火速给发送方回应 DONE！同时将我们精准侧算到的 rx_时间 发回去
                         ack_msg = b'DONE' + struct.pack('!d', rx_time)
+                        
+                        print(f"  [RECEIVER] ✅ 收齐全部 {num_chunks} 片，发送 ACK，通知发送方总传输耗时: {rx_time:.3f}s")
+
                         self.server_socket.sendto(ack_msg, addr)
                         
                         # 把拼积木拆分到另一边，别挡住其他高频包的进来

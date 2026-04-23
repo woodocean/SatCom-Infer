@@ -86,8 +86,8 @@ def _sync_config_to_jetsons(config, config_path):
 
     cfg_text = json.dumps(config, indent=2)
     remote_candidates = [
-        "/workspace/config/network_config.json",
-        "/home/nvidia/workspace/config/network_config.json",
+        "/home/nvidia/satinfer/SatCom-Infer/config/network_config.json",
+        "/home/nvidia/satinfer/SatCom-Infer/config/network_config.json",
     ]
 
     for host in jetson_ips:
@@ -261,14 +261,14 @@ def main():
         
         # 异构任务池：通过控制分辨率和 batch 模拟真实的复杂网络负荷
         model_pool = ["yolov5", "swin_base","resnet101", "vgg19" ]
-        batch_pool = [64]
+        batch_pool = [16,32,64]
         res_pool = {"yolov5": [(640, 640)],
                     "resnet101": [(224, 224)],
                     "vgg19": [(224, 224)],
                     "swin_base": [(224, 224)]}
         
         try:
-            for i in range(0, 5):  # 运行5个任务演示
+            for i in range(0, 200):  # 运行200个任务演示
                 task_id = f"Task_{i:03d}"
                 
                 # --- 步骤 A: 环境动态演进 (使用传入的长连接) ---
@@ -283,7 +283,7 @@ def main():
                 )
 
                 # 每个任务选择一个模型并构造输入
-                model_idx = (i // 1) % len(model_pool)
+                model_idx = (i // 50) % len(model_pool)
                 chosen_model = model_pool[model_idx]
 
                 chosen_bs = random.choice(batch_pool)
