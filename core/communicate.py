@@ -166,10 +166,10 @@ class Communicator:
                 
                 # 减缓路由器交换队列溢出导致的高丢包率
                 # 适当减缓发送速率：增加 sleep 时间和频次
-                if (i + 1) % 10 == 0:
-                    time.sleep(0.002)
-                else:
-                    time.sleep(0.0001)
+                # if (i + 1) % 10 == 0:
+                #     time.sleep(0.002)
+                # else:
+                #     time.sleep(0.0001)
 
             # B. 阻塞等待接收端所有块重组完成后的 DONE 应答
             try:
