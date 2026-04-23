@@ -163,16 +163,22 @@ class Communicator:
                 # 恢复原生 HHH：msg_id: (2 bytes), 总数: (2 bytes), 序号: (2 bytes) = 6 Bytes
                 header = struct.pack("!HHH", msg_id, num_chunks, i)
                 
-                try:
-                    udp_sock.sendto(header + chunk, (ip, port))
-                except OSError as e:
-                    # 获取错误码，兼容 Windows 的 winerror 和标准的 errno
-                    err_code = getattr(e, 'winerror', e.errno)
-                    if err_code == 10055:  # WinError 10055 分配的缓冲区已满/队列满
-                        time.sleep(0.005)  # 强行避让，等待操作系统网卡驱动消化发送缓冲区
-                        udp_sock.sendto(header + chunk, (ip, port))  # 补发这片
-                    else:
-                        raise e
+                # 改进版本：循环重试直到发送成功或达到硬上限
+                sent = False
+                wait_count = 0
+                while not sent:
+                    try:
+                        udp_sock.sendto(header + chunk, (ip, port))
+                        sent = True
+                    except OSError as e:
+                        err_code = getattr(e, 'winerror', e.errno)
+                        if err_code == 10055:
+                            wait_count += 1
+                            time.sleep(0.002) # 缩短等待步长，高频探测空间
+                            if wait_count > 50: # 如果等了 100ms 还没空间，那说明网络真的断了
+                                raise e
+                        else:
+                            raise e
                 
                 # 批次发送：只有到达规定的批次才触发短暂休眠（剔除原先每片都 sleep 的写法）
                 if (i + 1) % pacing_every == 0:
