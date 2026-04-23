@@ -125,7 +125,7 @@ class Communicator:
         # 针对大报文适当增大发送缓冲，减少内核拥塞导致的丢包
         if data_mb >= 20:
             try:
-                udp_sock.setsockopt(socket.SOL_SOCKET, socket.SO_SNDBUF, 32 * 1024 * 1024)
+                udp_sock.setsockopt(socket.SOL_SOCKET, socket.SO_SNDBUF, 300 * 1024 * 1024)
             except OSError:
                 pass
 
@@ -162,14 +162,21 @@ class Communicator:
             for i, chunk in enumerate(chunks):
                 # 恢复原生 HHH：msg_id: (2 bytes), 总数: (2 bytes), 序号: (2 bytes) = 6 Bytes
                 header = struct.pack("!HHH", msg_id, num_chunks, i)
-                udp_sock.sendto(header + chunk, (ip, port))
                 
-                # 减缓路由器交换队列溢出导致的高丢包率
-                # 适当减缓发送速率：增加 sleep 时间和频次
-                # if (i + 1) % 10 == 0:
-                #     time.sleep(0.002)
-                # else:
-                #     time.sleep(0.0001)
+                try:
+                    udp_sock.sendto(header + chunk, (ip, port))
+                except OSError as e:
+                    # 获取错误码，兼容 Windows 的 winerror 和标准的 errno
+                    err_code = getattr(e, 'winerror', e.errno)
+                    if err_code == 10055:  # WinError 10055 分配的缓冲区已满/队列满
+                        time.sleep(0.005)  # 强行避让，等待操作系统网卡驱动消化发送缓冲区
+                        udp_sock.sendto(header + chunk, (ip, port))  # 补发这片
+                    else:
+                        raise e
+                
+                # 批次发送：只有到达规定的批次才触发短暂休眠（剔除原先每片都 sleep 的写法）
+                if (i + 1) % pacing_every == 0:
+                    time.sleep(pacing_sleep)
 
             # B. 阻塞等待接收端所有块重组完成后的 DONE 应答
             try:
