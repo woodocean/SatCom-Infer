@@ -48,10 +48,18 @@ class Communicator:
             return 50.0
         return 80.0
 
-    def _get_link_profile(self, target_id):
+    def _get_link_profile(self, target_id, actual_sender_id=None):
         """读取链路带宽与传播时延，用于动态设置 ACK 超时。"""
-        theoretical_bw_mbps = 800.0
-        hardware_baseline_mbps = 800.0
+        if actual_sender_id is None:
+            actual_sender_id = self.node_id
+            
+        theoretical_bw_mbps = 220.0
+        # 根据发送端硬件区分物理发包基线速度
+        if 'SAT' in actual_sender_id:
+            hardware_baseline_mbps = 220.0
+        else:
+            hardware_baseline_mbps = 880.0
+            
         propagation_delay_s = 0.0
 
         try:
@@ -59,8 +67,8 @@ class Communicator:
             with open(cfg_path, "r", encoding="utf-8") as f:
                 net_cfg = json.load(f)
 
-            global_settings = net_cfg.get("global_settings", {})
-            hardware_baseline_mbps = global_settings.get("hardware_baseline_mbps", 800.0)
+            # global_settings = net_cfg.get("global_settings", {})
+            # hardware_baseline_mbps = global_settings.get("hardware_baseline_mbps", 220.0)
 
             links = net_cfg.get("links", {})
             link_key1 = f"{self.node_id}_to_{target_id}"
@@ -104,7 +112,7 @@ class Communicator:
         payload = pickle.dumps(message)
         total_len = len(payload)
         data_mb = total_len / (1024 * 1024)
-        theoretical_bw_mbps, propagation_delay_s, hardware_baseline_mbps = self._get_link_profile(target_id)
+        theoretical_bw_mbps, propagation_delay_s, hardware_baseline_mbps = self._get_link_profile(target_id, actual_sender_id=self.node_id)
 
         # ACK 超时应至少覆盖：发送耗时 + 往返传播 + 处理裕量，避免高传播链路上的假超时重传
         est_tx_s = (data_mb * 8.0 / max(1.0, theoretical_bw_mbps)) if data_mb > 0 else 0.001
@@ -374,7 +382,7 @@ class Communicator:
             src_node = message.get('src')
             if src_node:
                 # 逆向查询发送端到本机的链路配置
-                theoretical_bw_mbps, propagation_delay_s, hardware_baseline_mbps = self._get_link_profile(src_node)
+                theoretical_bw_mbps, propagation_delay_s, hardware_baseline_mbps = self._get_link_profile(src_node, actual_sender_id=src_node)
                 transmission_delay = rx_time if rx_time > 0.001 else 0.001
                 scale_ratio = hardware_baseline_mbps / theoretical_bw_mbps if theoretical_bw_mbps > 0.0 else 1.0
                 
