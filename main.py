@@ -260,7 +260,7 @@ def main():
         from core.scheduler import Scheduler
         
         # 异构任务池：通过控制分辨率和 batch 模拟真实的复杂网络负荷
-        model_pool = ["yolov5", "swin_base","resnet101", "vgg19" ]
+        model_pool = ["vgg19" ,"yolov5", "swin_base","resnet101",]
         batch_pool = [16,32,64]
         res_pool = {"yolov5": [(640, 640)],
                     "resnet101": [(224, 224)],

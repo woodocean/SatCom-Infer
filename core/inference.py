@@ -45,6 +45,8 @@ class InferenceEngine:
         self.num_layers = 0
         self.is_dag_wrapper = False  # 标志：是否使用了 dag_wrappers 的包装类
         self.stable_timing = True
+        self.warmup_runs = 3
+        self.warmed_signatures = set()
 
         # 为了降低不同任务间的测时抖动，关闭 cudnn benchmark 的动态算法搜索。
         if self.device == 'cuda' and self.stable_timing:
@@ -54,6 +56,67 @@ class InferenceEngine:
         """仅在 CUDA 场景下同步，避免 CPU 模式调用 cuda.synchronize 报错。"""
         if self.device == 'cuda' and torch.cuda.is_available():
             torch.cuda.synchronize()
+
+    def _describe_input(self, x):
+        """返回输入张量的诊断字符串，便于排查在线时延波动。"""
+        if isinstance(x, torch.Tensor):
+            return (
+                f"shape={tuple(x.shape)}, dtype={x.dtype}, "
+                f"device={x.device}, contiguous={x.is_contiguous()}"
+            )
+
+        if isinstance(x, dict):
+            main = x.get('main')
+            cache = x.get('cache', {})
+            if isinstance(main, torch.Tensor):
+                main_desc = (
+                    f"shape={tuple(main.shape)}, dtype={main.dtype}, "
+                    f"device={main.device}, contiguous={main.is_contiguous()}"
+                )
+            else:
+                main_desc = f"type={type(main).__name__}"
+            cache_count = len(cache) if isinstance(cache, dict) else 0
+            return f"main({main_desc}), cache_count={cache_count}"
+
+        return f"type={type(x).__name__}"
+
+    def _make_warmup_signature(self, x, start_layer, end_layer):
+        """按层段和输入主张量形状归一化 warmup 签名。"""
+        if isinstance(x, torch.Tensor):
+            main = x
+        elif isinstance(x, dict) and isinstance(x.get('main'), torch.Tensor):
+            main = x['main']
+        else:
+            main = None
+
+        if main is None:
+            return (self.model_name, start_layer, end_layer, 'non_tensor')
+
+        return (
+            self.model_name,
+            start_layer,
+            end_layer,
+            tuple(main.shape),
+            str(main.dtype),
+        )
+
+    def _run_slice_once(self, x, start_layer, end_layer):
+        """执行一次切片推理，统一 DAG 与线性模型路径。"""
+        if self.is_dag_wrapper:
+            # 若输入带 cache，先重置本地 cache，再从输入包恢复，避免任务间串扰。
+            if isinstance(x, dict) and hasattr(self.model, 'reset_cache'):
+                self.model.reset_cache()
+            result = self.model.forward_slice(x, start_layer, end_layer + 1)
+            return result['main']
+
+        out = x
+        for i in range(start_layer, end_layer + 1):
+            if isinstance(self.layers[i], tuple):
+                _, layer = self.layers[i]
+            else:
+                layer = self.layers[i]
+            out = layer(out)
+        return out
 
     def load_model(self, checkpoint_path=None):
         """加载模型，支持原生模型与 DAG Wrapper 模型"""
@@ -154,22 +217,29 @@ class InferenceEngine:
         self._sync_if_cuda()
         transfer_ms = (time.perf_counter() - transfer_start) * 1000
 
+        focus_layers = {(33, 44), (40, 44)}
+        focus_tag = "[TIMING-FOCUS]" if (start_layer, end_layer) in focus_layers else "[TIMING-IN]"
+        print(
+            f"[{self.node_id}] {focus_tag} layers=[{start_layer}->{end_layer}] "
+            f"input={self._describe_input(x)}"
+        )
+
+        warmup_sig = self._make_warmup_signature(x, start_layer, end_layer)
+        if warmup_sig not in self.warmed_signatures:
+            print(
+                f"[{self.node_id}] [TIMING] 首次命中层段签名，执行 {self.warmup_runs} 次 warmup: "
+                f"layers=[{start_layer}->{end_layer}]"
+            )
+            with torch.no_grad():
+                for _ in range(self.warmup_runs):
+                    _ = self._run_slice_once(x, start_layer, end_layer)
+                    self._sync_if_cuda()
+            self.warmed_signatures.add(warmup_sig)
+
         self._sync_if_cuda()
         start_time = time.perf_counter()
         with torch.no_grad():
-            if self.is_dag_wrapper:
-                # 关键：DAG Wrapper 必须用其 own forward_slice
-                # 注意：wrapper.forward_slice 返回 dict({'main': ..., 'cache': ...})
-                result = self.model.forward_slice(x, start_layer, end_layer + 1)
-                x = result['main']
-            else:
-                # 原逻辑：直接遍历 self.layers[i][1]（即 module）
-                for i in range(start_layer, end_layer + 1):
-                    if isinstance(self.layers[i], tuple):
-                        _, layer = self.layers[i]
-                    else:
-                        layer = self.layers[i]
-                    x = layer(x)
+            x = self._run_slice_once(x, start_layer, end_layer)
 
         self._sync_if_cuda()
         end_time = time.perf_counter()
