@@ -63,32 +63,34 @@ def process_data(csv_path):
     
     # 2. 改进模型分类逻辑：自动识别或统一归类
     def assign_model(num):
-        if 0 <= num <= 99  :
-            return 'Swin_Base'
-        elif 100 <= num <= 149:
+        if 0 <= num <= 9  :
+            return 'ViT_Huge'
+        elif 10 <= num <= 19:
             return 'VGG19'
-        elif 150 <= num <= 199:
+        elif 20 <= num <= 29:
             return 'YOLOv5'
-        elif 200 <= num <= 249:
+        elif 30 <= num <= 39:
+            return 'Swin_Base'
+        elif 40 <= num <= 49:
             return 'ResNet101'
         else:
             return 'Other'
             
     df_pivot['Model'] = df_pivot['Task_Num'].apply(assign_model)
     
-    # 3. 计算归一化时延比值（vs Bent-Pipe = 1.0）
+    # 3. 计算归一化时延比值（vs GS-Only = 1.0）
     # 检查数据中实际存在的算法，增加容错
-    all_algs = ['LA-DP', 'Greedy', 'Bent-Pipe', 'Random', 'GA', 'Uniform']
+    all_algs = ['LA-DP', 'Greedy', 'GS-Only', 'Random', 'GA', 'Uniform']
     available_algs = [alg for alg in all_algs if alg in df_pivot.columns]
     
-    if 'Bent-Pipe' not in available_algs:
-        # 如果没有 Bent-Pipe，则不计算 Ratio，或者以第一个算法为基准
-        print("⚠️ ⚠️ 缺失 Bent-Pipe 算法，无法计算归一化比值")
+    if 'GS-Only' not in available_algs:
+        # 如果没有 GS-Only，则不计算 Ratio，或者以第一个算法为基准
+        print("⚠️ ⚠️ 缺失 GS-Only 算法，无法计算归一化比值")
         for alg in available_algs:
             df_pivot[f'{alg}_Ratio'] = 0.0
     else:
         for alg in available_algs:
-            df_pivot[f'{alg}_Ratio'] = df_pivot[alg] / df_pivot['Bent-Pipe']
+            df_pivot[f'{alg}_Ratio'] = df_pivot[alg] / df_pivot['GS-Only']
     
     return df_pivot
 
@@ -100,7 +102,7 @@ def draw_bar_chart(ax, df_pivot, title):
         return
 
     # 定义要显示的算法和颜色
-    labels = ['LA-DP', 'Greedy', 'Random', 'GA', 'Uniform', 'Bent-Pipe']
+    labels = ['LA-DP', 'Greedy', 'Random', 'GA', 'Uniform', 'GS-Only']
     # 过滤掉数据中不存在的算法
     labels = [l for l in labels if l in df_pivot.columns]
     algs_ratio = [f'{l}_Ratio' for l in labels]
@@ -130,7 +132,7 @@ def draw_bar_chart(ax, df_pivot, title):
 
     # 装饰坐标轴
     ax.set_xlabel('模型类型', fontsize=10)
-    ax.set_ylabel('归一化时延 (Bent-Pipe=1.0)', fontsize=10)
+    ax.set_ylabel('归一化时延 (GS-Only=1.0)', fontsize=10)
     ax.set_title(title, fontsize=11, fontweight='bold')
     ax.set_xticks(x)
     ax.set_xticklabels(active_models, fontsize=10)

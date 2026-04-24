@@ -126,8 +126,8 @@ class Scheduler:
 
         try:
             bp_lat, bp_plan = solver.solve_bent_pipe()
-            plans["Bent-Pipe"] = {"plan": bp_plan, "latency": bp_lat}
-        except Exception as e: plans["Bent-Pipe"] = {"plan": None, "latency": float('inf')}
+            plans["GS-Only"] = {"plan": bp_plan, "latency": bp_lat}
+        except Exception as e: plans["GS-Only"] = {"plan": None, "latency": float('inf')}
 
         try:
             ga_lat, ga_plan = solver.solve_ga(pop_size=30, generations=500, mutation_rate=0.2)

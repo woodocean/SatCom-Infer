@@ -161,10 +161,10 @@ def update_network_topology(config_path, qos_client=None):
             if dst_node_id in config['nodes']:
                 dst_ip = config['nodes'][dst_node_id]['ip']
                 
-                # 只有非本机的远端路由才去下发硬件操作
-                if not dst_ip.startswith("127.0.0.1") and not dst_ip.startswith("localhost"):
-                    # 使用传入的或新建的长连接执行命令
-                    qos_client.set_root_delay(dst_ip, delay_ms=int(new_delay))
+                # # 只有非本机的远端路由才去下发硬件操作
+                # if not dst_ip.startswith("127.0.0.1") and not dst_ip.startswith("localhost"):
+                #     # 使用传入的或新建的长连接执行命令
+                #     qos_client.set_root_delay(dst_ip, delay_ms=int(new_delay))
 
         if should_close_qos:
             qos_client.close()
@@ -260,7 +260,7 @@ def main():
         from core.scheduler import Scheduler
         
         # 异构任务池：通过控制分辨率和 batch 模拟真实的复杂网络负荷
-        model_pool = ["vgg19" ,"vit_huge","yolov5", "swin_base","resnet101"]
+        model_pool = ["vit_huge","vgg19" ,"yolov5", "swin_base","resnet101"]
         batch_pool = [16,32,64]
         res_pool = {"yolov5": [(640, 640)],
                     "resnet101": [(224, 224)],
@@ -269,7 +269,7 @@ def main():
                     "vit_huge": [(224, 224)]}
         
         try:
-            for i in range(0, 500):  # 运行500个任务演示
+            for i in range(0, 50):  # 运行50个任务演示
                 task_id = f"Task_{i:03d}"
                 
                 # --- 步骤 A: 环境动态演进 (使用传入的长连接) ---
@@ -284,7 +284,7 @@ def main():
                 )
 
                 # 每个任务选择一个模型并构造输入
-                model_idx = (i // 1) % len(model_pool)
+                model_idx = (i // 10) % len(model_pool)
                 chosen_model = model_pool[model_idx]
 
                 chosen_bs = random.choice(batch_pool)
@@ -304,51 +304,51 @@ def main():
                 # 不固定 [1,3,224,224]，按当前任务分辨率生成
                 fake_img = torch.randn(chosen_bs, 3, chosen_res[0], chosen_res[1])
 
-                # --- 步骤 C: 顺序分发给管道，一次执行一个算法进行公平仿真 ---
-                for alg, plan in plans.items():
-                    if plan is None:
-                        print(f"  [RS] 🛑 算法 [{alg}] 当前由于硬件约束无解，直接跳过管道仿真。")
-                        continue
+                # # --- 步骤 C: 顺序分发给管道，一次执行一个算法进行公平仿真 ---
+                # for alg, plan in plans.items():
+                #     if plan is None:
+                #         print(f"  [RS] 🛑 算法 [{alg}] 当前由于硬件约束无解，直接跳过管道仿真。")
+                #         continue
 
-                    # 健壮路由获取：有的节点可能没有写 simulation_paths，如果没有，就按照物理串联取出来
-                    if "simulation_paths" in scheduler.net_config and "pipeline" in scheduler.net_config["simulation_paths"]:
-                        ordered_route = scheduler.net_config["simulation_paths"]["pipeline"][1:]
-                    else:
-                        # 把排除了 RS 自己之外的其他节点均作为路由候选
-                        ordered_route = [n["id"] for n in scheduler.net_config["nodes"] if "RS" not in n["id"]]
+                #     # 健壮路由获取：有的节点可能没有写 simulation_paths，如果没有，就按照物理串联取出来
+                #     if "simulation_paths" in scheduler.net_config and "pipeline" in scheduler.net_config["simulation_paths"]:
+                #         ordered_route = scheduler.net_config["simulation_paths"]["pipeline"][1:]
+                #     else:
+                #         # 把排除了 RS 自己之外的其他节点均作为路由候选
+                #         ordered_route = [n["id"] for n in scheduler.net_config["nodes"] if "RS" not in n["id"]]
 
-                    # ==== 控制仿真节奏流控阻塞 ====
-                    # 检查 node.py 中定义的 task_ack_event，确保管道内只有一个任务在跑，避免堵车
-                    if hasattr(node, "task_ack_event"):
-                        if not node.task_ack_event.is_set():
-                            print(f"  [RS] ⏳ 管道占用中: 正在等待前序算法应答...")
+                #     # ==== 控制仿真节奏流控阻塞 ====
+                #     # 检查 node.py 中定义的 task_ack_event，确保管道内只有一个任务在跑，避免堵车
+                #     if hasattr(node, "task_ack_event"):
+                #         if not node.task_ack_event.is_set():
+                #             print(f"  [RS] ⏳ 管道占用中: 正在等待前序算法应答...")
 
-                        node.task_ack_event.wait()   # 等待收到地面的 ACK 后置位释放
-                        node.task_ack_event.clear()  # 手动关闭闸门，准备装弹
+                #         node.task_ack_event.wait()   # 等待收到地面的 ACK 后置位释放
+                #         node.task_ack_event.clear()  # 手动关闭闸门，准备装弹
 
-                    time.sleep(1.0)  # 在收到 ACK 后额外等待 1 秒确保底层 Socket 缓冲区清空
+                #     time.sleep(1.0)  # 在收到 ACK 后额外等待 1 秒确保底层 Socket 缓冲区清空
 
-                    print(f"  [RS] 🚀 正在向网络下发任务: [{task_id}] | 驱动策略: {alg}")
+                #     print(f"  [RS] 🚀 正在向网络下发任务: [{task_id}] | 驱动策略: {alg}")
 
-                    # 重新打包任务载荷，把层级策略一并注入
-                    rs_payload = {
-                        'mode': 'PMP',
-                        'task_id': task_id,
-                        'algorithm': alg,
-                        'model_name': chosen_model,
-                        'accumulated_latency': 0.0,
-                        'tensor': fake_img,    # 会通过 Pickle 被压进网络传输
-                        'batch': chosen_bs,
-                        'route': ordered_route,
-                        'layer_plan': plan
-                    }
+                #     # 重新打包任务载荷，把层级策略一并注入
+                #     rs_payload = {
+                #         'mode': 'PMP',
+                #         'task_id': task_id,
+                #         'algorithm': alg,
+                #         'model_name': chosen_model,
+                #         'accumulated_latency': 0.0,
+                #         'tensor': fake_img,    # 会通过 Pickle 被压进网络传输
+                #         'batch': chosen_bs,
+                #         'route': ordered_route,
+                #         'layer_plan': plan
+                #     }
 
-                    # 模拟系统自身触发，正式倒进网络首个计算节点
-                    node.handle_message({
-                        'type': 'NEW_TASK',
-                        'src': 'system_trigger',
-                        'payload': rs_payload
-                    })
+                #     # 模拟系统自身触发，正式倒进网络首个计算节点
+                #     node.handle_message({
+                #         'type': 'NEW_TASK',
+                #         'src': 'system_trigger',
+                #         'payload': rs_payload
+                #     })
 
         finally:
             # 任务结束后关闭长连接
