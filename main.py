@@ -260,15 +260,16 @@ def main():
         from core.scheduler import Scheduler
         
         # 异构任务池：通过控制分辨率和 batch 模拟真实的复杂网络负荷
-        model_pool = ["vgg19" ,"yolov5", "swin_base","resnet101",]
+        model_pool = ["vgg19" ,"vit_huge","yolov5", "swin_base","resnet101"]
         batch_pool = [16,32,64]
         res_pool = {"yolov5": [(640, 640)],
                     "resnet101": [(224, 224)],
                     "vgg19": [(224, 224)],
-                    "swin_base": [(224, 224)]}
+                    "swin_base": [(224, 224)],
+                    "vit_huge": [(224, 224)]}
         
         try:
-            for i in range(0, 200):  # 运行200个任务演示
+            for i in range(0, 500):  # 运行500个任务演示
                 task_id = f"Task_{i:03d}"
                 
                 # --- 步骤 A: 环境动态演进 (使用传入的长连接) ---
@@ -283,7 +284,7 @@ def main():
                 )
 
                 # 每个任务选择一个模型并构造输入
-                model_idx = (i // 50) % len(model_pool)
+                model_idx = (i // 1) % len(model_pool)
                 chosen_model = model_pool[model_idx]
 
                 chosen_bs = random.choice(batch_pool)

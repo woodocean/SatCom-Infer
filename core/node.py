@@ -64,6 +64,39 @@ class ComputeNode:
             return 1.0
         return baseline_tflops / node_tflops
 
+    def _debug_cuda_mem(self, tag):
+        """打印当前 CUDA 显存水位，辅助定位模型切换和大包转发时的峰值。"""
+        if not torch.cuda.is_available():
+            return
+        try:
+            alloc_mb = torch.cuda.memory_allocated() / (1024 * 1024)
+            reserved_mb = torch.cuda.memory_reserved() / (1024 * 1024)
+            max_alloc_mb = torch.cuda.max_memory_allocated() / (1024 * 1024)
+            print(
+                f"[{self.node_id}] [MEM] {tag}: "
+                f"alloc={alloc_mb:.1f}MB, reserved={reserved_mb:.1f}MB, peak={max_alloc_mb:.1f}MB"
+            )
+        except Exception as e:
+            print(f"[{self.node_id}] [MEM] {tag}: 无法读取显存统计 -> {e}")
+
+    def _debug_tensor(self, name, tensor):
+        """打印张量基础信息与估算大小，辅助定位 OOM 来源。"""
+        if not isinstance(tensor, torch.Tensor):
+            print(f"[{self.node_id}] [TENSOR] {name}: 非Tensor(type={type(tensor)})")
+            return
+
+        try:
+            size_mb = (tensor.element_size() * tensor.nelement()) / (1024 * 1024)
+            print(
+                f"[{self.node_id}] [TENSOR] {name}: shape={tuple(tensor.shape)}, "
+                f"dtype={tensor.dtype}, device={tensor.device}, "
+                f"contiguous={tensor.is_contiguous()}, size={size_mb:.2f}MB"
+            )
+            if size_mb >= 128:
+                print(f"[{self.node_id}] [TENSOR] ⚠️ {name} 为超大张量，序列化时可能触发内存峰值")
+        except Exception as e:
+            print(f"[{self.node_id}] [TENSOR] {name}: 打印失败 -> {e}")
+
     # ==========================================================
     # 网络消息分发总线
     # ==========================================================
@@ -150,10 +183,13 @@ class ComputeNode:
             # 1. 动态切换模型逻辑
             if req_model and req_model != self.engine.model_name:
                 print(f"[{self.node_id}] 🔄 [加锁] 触发动态模型切换: {self.engine.model_name} -> {req_model}")
+                self._debug_cuda_mem("switch-before-empty-cache")
                 self.engine.model_name = req_model
                 if torch.cuda.is_available():
                     torch.cuda.empty_cache()
+                self._debug_cuda_mem("switch-after-empty-cache")
                 self.engine.load_model()
+                self._debug_cuda_mem("switch-after-load-model")
 
             if not route_list:
                 print(f"[{self.node_id}] [PIP] 路由为空, 本地全量推理!")
@@ -186,6 +222,8 @@ class ComputeNode:
             # --- 模拟传输时延换算 ---
             sim_tx_ms = 0.0
             if next_hop:
+                self._debug_tensor("start_pip_task.output-before-send", output)
+                self._debug_cuda_mem("start_pip_task.before-send")
                 tensor_mb = (output.element_size() * output.nelement()) / (1024 * 1024)
                 print(f"  -> 产出: {tensor_mb:.4f}MB | 正通过物理层喷射给 {next_hop}，将由下一跳实测传输耗时...")
 
@@ -259,13 +297,18 @@ class ComputeNode:
             # 2. 动态切换模型逻辑
             if req_model and req_model != self.engine.model_name:
                 print(f"[{self.node_id}]  [加锁] 触发动态模型切换: {self.engine.model_name} -> {req_model}")
+                self._debug_cuda_mem("forward-switch-before-empty-cache")
                 self.engine.model_name = req_model
                 if torch.cuda.is_available():
                     torch.cuda.empty_cache()
+                self._debug_cuda_mem("forward-switch-after-empty-cache")
                 self.engine.load_model()
+                self._debug_cuda_mem("forward-switch-after-load-model")
         # =========================================================
             if isinstance(tensor, torch.Tensor):
-                tensor = tensor.to(self.engine.device) 
+                tensor = tensor.to(self.engine.device)
+                self._debug_tensor("pipeline_forward.input-after-to-device", tensor)
+                self._debug_cuda_mem("pipeline_forward.after-input-to-device")
 
             # ============== 【新增核心逻辑：纯透传保护】 ==============
             # 如果收到的起始层 > 结束层，或者层数为负数，说明本节点不承担计算任务
@@ -292,6 +335,8 @@ class ComputeNode:
                 remain = route[1:]
                 
                 # --- 移除虚假的理论通信时延累加 ---
+                self._debug_tensor("pipeline_forward.output-before-send", output)
+                self._debug_cuda_mem("pipeline_forward.before-send")
                 tensor_mb = (output.element_size() * output.nelement()) / (1024 * 1024)
                 print(f"  -> 产出: {tensor_mb:.4f}MB | 正通过物理层喷射给 {next_hop}，将由下一跳实测传输耗时...")
                 

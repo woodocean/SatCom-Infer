@@ -83,7 +83,7 @@ def generate_hardware_profiles(config_grid, output_json, num_runs=5):
                     model = YOLOv5_DAG_Wrapper(device=device)
                 elif model_name == 'swin_base':
                     model = Swin_Base_DAG_Wrapper(device=device, img_size=res[0])
-                elif model_name == 'vit-huge':
+                elif model_name == 'vit_huge':
                     model = ViT_Huge_DAG_Wrapper(device=device)
                 else:
                     print(f"未找到 {model_name} 的包装器，跳过！")
@@ -207,7 +207,7 @@ if __name__ == "__main__":
             'batches': [16, 32,64],
             'resolutions': [(224, 224)]
         },
-        'vit-huge':{
+        'vit_huge':{
             'end_idx': 33,
             'batches': [16, 32,64],
             'resolutions': [(224, 224)]

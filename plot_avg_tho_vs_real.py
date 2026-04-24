@@ -50,8 +50,8 @@ def process_data(csv_path):
     df = df.dropna(subset=['Task', 'Algorithm', 'Latency'])
 
     # 实验结果优先清理重传导致的离群大值
-    if 'experiment' in os.path.basename(csv_path).lower():
-        df = _remove_retrans_outliers(df, os.path.basename(csv_path))
+    # if 'experiment' in os.path.basename(csv_path).lower():
+    #     df = _remove_retrans_outliers(df, os.path.basename(csv_path))
 
     # 去除因多次追加执行留下的重复脏数据
     df = df.drop_duplicates(subset=['Task', 'Algorithm'], keep='last')
@@ -63,14 +63,14 @@ def process_data(csv_path):
     
     # 2. 改进模型分类逻辑：自动识别或统一归类
     def assign_model(num):
-        if 0 <= num <= 4:
-            return 'ResNet101'
-        elif 5 <= num <= 9:
-            return 'VGG19'
-        elif 10 <= num <= 15:
+        if 0 <= num <= 99  :
             return 'Swin_Base'
-        elif 16 <= num <= 20:
+        elif 100 <= num <= 149:
+            return 'VGG19'
+        elif 150 <= num <= 199:
             return 'YOLOv5'
+        elif 200 <= num <= 249:
+            return 'ResNet101'
         else:
             return 'Other'
             
