@@ -5,6 +5,8 @@ import torch
 import sys
 import os
 import json
+import csv
+from datetime import datetime
 
 # 确保能找到同级或外层的模块
 sys.path.append(os.path.dirname(__file__))
@@ -97,6 +99,67 @@ class ComputeNode:
         except Exception as e:
             print(f"[{self.node_id}] [TENSOR] {name}: 打印失败 -> {e}")
 
+    def _extract_bw_metrics(self, net_cfg):
+        """提取星间与星地带宽均值，用于统一长表记录。"""
+        raw_links = net_cfg.get("links", {})
+        isl_bws = []
+        gsl_bws = []
+
+        for link_name, info in raw_links.items():
+            bw = float(info.get("bandwidth_mbps", 0.0))
+            if "GS" in link_name:
+                gsl_bws.append(bw)
+            else:
+                isl_bws.append(bw)
+
+        isl_avg = sum(isl_bws) / len(isl_bws) if isl_bws else 0.0
+        gsl_avg = sum(gsl_bws) / len(gsl_bws) if gsl_bws else 0.0
+        return isl_avg, gsl_avg
+
+    def _append_standardized_physical_row(self, exp_meta, task_id, alg, acc_lat, net_cfg):
+        """将实物端到端结果追加到统一长表，支持与理论结果直接 join。"""
+        output_csv = exp_meta.get("standardized_csv_file", "results_long.csv")
+        file_exists = os.path.isfile(output_csv)
+        timestamp = datetime.now().isoformat(timespec="seconds")
+        isl_avg_bw, gsl_avg_bw = self._extract_bw_metrics(net_cfg)
+
+        with open(output_csv, 'a', newline='', encoding='utf-8') as f:
+            writer = csv.writer(f)
+            if not file_exists:
+                writer.writerow([
+                    "run_id",
+                    "exp_type",
+                    "mode",
+                    "task_id",
+                    "algorithm",
+                    "model_name",
+                    "batch_size",
+                    "input_h",
+                    "input_w",
+                    "isl_avg_bw_mbps",
+                    "gsl_avg_bw_mbps",
+                    "latency_ms",
+                    "norm_latency_vs_gs",
+                    "timestamp",
+                ])
+
+            writer.writerow([
+                exp_meta.get("run_id", "default"),
+                exp_meta.get("exp_type", "algo_effectiveness"),
+                "physical",
+                task_id,
+                alg,
+                exp_meta.get("model_name", ""),
+                exp_meta.get("batch_size", ""),
+                exp_meta.get("input_h", ""),
+                exp_meta.get("input_w", ""),
+                f"{isl_avg_bw:.4f}",
+                f"{gsl_avg_bw:.4f}",
+                acc_lat,
+                "",
+                timestamp,
+            ])
+
     # ==========================================================
     # 网络消息分发总线
     # ==========================================================
@@ -141,6 +204,7 @@ class ComputeNode:
         if task_mode == 'PMP':
             route_list = payload.get('route', [])
             layer_plan = payload.get('layer_plan', {})
+            exp_meta = payload.get('exp_meta', {})
             # 解析出新增的控制信息
             task_id = payload.get('task_id', str(uuid.uuid4())[:8])
             alg = payload.get('algorithm', 'Unknown')
@@ -149,7 +213,7 @@ class ComputeNode:
             req_model = payload.get('model_name')  # 提取模型名
             batch = payload.get('batch')
             print(f"batch = {batch}")
-            self.start_pip_task(route_list, input_data, layer_plan, task_id, alg, acc_lat, req_model,batch)
+            self.start_pip_task(route_list, input_data, layer_plan, task_id, alg, acc_lat, req_model, batch, exp_meta)
             
         elif task_mode == 'CDP':
             dist_map = payload.get('dist_map', {})
@@ -159,7 +223,7 @@ class ComputeNode:
     # ==========================================================
     # 流水线推理 (PMP) 核心逻辑
     # ==========================================================
-    def start_pip_task(self, route_list, input_data, layer_plan, task_id, alg, acc_lat, req_model=None,batch=1):
+    def start_pip_task(self, route_list, input_data, layer_plan, task_id, alg, acc_lat, req_model=None, batch=1, exp_meta=None):
         PC_BASE_GFLOPS = 100.0  
         net_cfg = None
         # =================【加入读冲突重试机制】=================
@@ -244,6 +308,7 @@ class ComputeNode:
                 'layer_plan': layer_plan,
                 'split_history': history,
                 'batch':batch,
+                'exp_meta': exp_meta or {},
             }
             print(f"accumulated latency: {acc_lat}")
             self.comms.send_message(next_hop, 'PipelineForward', payload)
@@ -276,6 +341,7 @@ class ComputeNode:
         route = p.get('route_remain', [])
         layer_plan = p.get('layer_plan', {})
         history = p.get('split_history', [])
+        exp_meta = p.get('exp_meta', {})
         
         task_id = p.get('task_id', '?')
         alg = p.get('algorithm', 'Unknown')
@@ -357,6 +423,7 @@ class ComputeNode:
                     'layer_plan': layer_plan,
                     'split_history': history,
                     'batch':batch,
+                    'exp_meta': exp_meta,
                 }
                 self.comms.send_message(next_hop, 'PipelineForward', payload)
             else:
@@ -380,6 +447,15 @@ class ComputeNode:
                 # 将结果追加写入 CSV，直接拿去画图表！
                 with open("experiment_results.csv", "a", encoding="utf-8") as f:
                     f.write(f"{task_id},{alg},{acc_lat:.2f}\n")
+
+                # 同步写入标准化长表 (physical)，以便与 theory 直接按任务键对齐。
+                self._append_standardized_physical_row(
+                    exp_meta=exp_meta,
+                    task_id=task_id,
+                    alg=alg,
+                    acc_lat=acc_lat,
+                    net_cfg=net_cfg,
+                )
 
     # ==========================================================
     # 数据并行推理 (CDP) 核心逻辑

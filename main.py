@@ -2,6 +2,7 @@ import argparse
 import time
 import json
 import logging
+from datetime import datetime
 from core.node import ComputeNode
 from core.router_qos import RouterQoSClient
 import sys
@@ -209,7 +210,18 @@ def _pick_task_profile(task_index, model_pool, batch_pool, res_pool):
     return chosen_model, chosen_bs, chosen_res
 
 
-def _run_single_rs_task_iteration(node, net_config_path, qos_client, task_index, model_pool, batch_pool, res_pool):
+def _run_single_rs_task_iteration(
+    node,
+    net_config_path,
+    qos_client,
+    task_index,
+    model_pool,
+    batch_pool,
+    res_pool,
+    run_id,
+    exp_type,
+    exp_mode,
+):
     """执行 RS 单个任务迭代：更新环境、生成计划、构造输入。"""
     task_id = f"Task_{task_index:03d}"
 
@@ -230,57 +242,83 @@ def _run_single_rs_task_iteration(node, net_config_path, qos_client, task_index,
         f"Batch: {chosen_bs} | 尺寸: {chosen_res[0]}x{chosen_res[1]}"
     )
 
-    # 调度器内部测算并写理论日志
+    # 调度器内部测算：hybrid/theory 写理论结果，physical 仅求解计划不落理论文件。
     plans = scheduler.generate_task_and_schedule(
         task_id=task_id,
         model_name=chosen_model,
         batch_size=chosen_bs,
         target_h=chosen_res[0],
-        target_w=chosen_res[1]
+        target_w=chosen_res[1],
+        run_id=run_id,
+        exp_type=exp_type,
+        mode="theory",
+        standardized_csv_file="results_long.csv",
+        persist_theory=(exp_mode in ("hybrid", "theory")),
     )
 
     # 保持与历史代码一致：预先构造真实任务输入
     fake_img = torch.randn(chosen_bs, 3, chosen_res[0], chosen_res[1])
 
+    # theory-only 不触发实物下发。
+    if exp_mode == "theory":
+        return {
+            "task_id": task_id,
+            "model_name": chosen_model,
+            "batch_size": chosen_bs,
+            "resolution": chosen_res,
+            "plans": plans,
+            "input_tensor": fake_img,
+        }
+
     # --- 步骤 C: 顺序分发给管道，一次执行一个算法进行公平仿真 ---
-    # for alg, plan in plans.items():
-    #     if plan is None:
-    #         print(f"  [RS] 🛑 算法 [{alg}] 当前由于硬件约束无解，直接跳过管道仿真。")
-    #         continue
-    #
-    #     if "simulation_paths" in scheduler.net_config and "pipeline" in scheduler.net_config["simulation_paths"]:
-    #         ordered_route = scheduler.net_config["simulation_paths"]["pipeline"][1:]
-    #     else:
-    #         ordered_route = [n["id"] for n in scheduler.net_config["nodes"] if "RS" not in n["id"]]
-    #
-    #     if hasattr(node, "task_ack_event"):
-    #         if not node.task_ack_event.is_set():
-    #             print(f"  [RS] ⏳ 管道占用中: 正在等待前序算法应答...")
-    #
-    #         node.task_ack_event.wait()
-    #         node.task_ack_event.clear()
-    #
-    #     time.sleep(1.0)
-    #
-    #     print(f"  [RS] 🚀 正在向网络下发任务: [{task_id}] | 驱动策略: {alg}")
-    #
-    #     rs_payload = {
-    #         'mode': 'PMP',
-    #         'task_id': task_id,
-    #         'algorithm': alg,
-    #         'model_name': chosen_model,
-    #         'accumulated_latency': 0.0,
-    #         'tensor': fake_img,
-    #         'batch': chosen_bs,
-    #         'route': ordered_route,
-    #         'layer_plan': plan
-    #     }
-    #
-    #     node.handle_message({
-    #         'type': 'NEW_TASK',
-    #         'src': 'system_trigger',
-    #         'payload': rs_payload
-    #     })
+    for alg, plan in plans.items():
+        if plan is None:
+            print(f"  [RS] 🛑 算法 [{alg}] 当前由于硬件约束无解，直接跳过管道仿真。")
+            continue
+    
+        if "simulation_paths" in scheduler.net_config and "pipeline" in scheduler.net_config["simulation_paths"]:
+            ordered_route = scheduler.net_config["simulation_paths"]["pipeline"][1:]
+        else:
+            ordered_route = [n["id"] for n in scheduler.net_config["nodes"] if "RS" not in n["id"]]
+    
+        if hasattr(node, "task_ack_event"):
+            if not node.task_ack_event.is_set():
+                print(f"  [RS] ⏳ 管道占用中: 正在等待前序算法应答...")
+    
+            node.task_ack_event.wait()
+            node.task_ack_event.clear()
+    
+        time.sleep(1.0)
+    
+        print(f"  [RS] 🚀 正在向网络下发任务: [{task_id}] | 驱动策略: {alg}")
+    
+        rs_payload = {
+            'mode': 'PMP',
+            'task_id': task_id,
+            'algorithm': alg,
+            'model_name': chosen_model,
+            'accumulated_latency': 0.0,
+            'tensor': fake_img,
+            'batch': chosen_bs,
+            'route': ordered_route,
+            'layer_plan': plan,
+            'exp_meta': {
+                'run_id': run_id,
+                'exp_type': exp_type,
+                'mode': 'physical',
+                'model_name': chosen_model,
+                'batch_size': chosen_bs,
+                'input_h': chosen_res[0],
+                'input_w': chosen_res[1],
+                'standardized_csv_file': 'results_long.csv',
+            }
+        }
+    
+        node.handle_message({
+            'type': 'NEW_TASK',
+            'src': 'system_trigger',
+            'payload': rs_payload
+        })
 
     # 预留返回值，便于后续实验编排层复用
     return {
@@ -293,7 +331,14 @@ def _run_single_rs_task_iteration(node, net_config_path, qos_client, task_index,
     }
 
 
-def run_rs_pmp_dynamic_bandwidth_experiment(node, net_config_path, num_tasks=50):
+def run_rs_pmp_dynamic_bandwidth_experiment(
+    node,
+    net_config_path,
+    num_tasks=50,
+    exp_mode="hybrid",
+    run_id=None,
+    exp_type="algo_effectiveness",
+):
     """RS 侧实验入口：保留原有行为，后续可被独立实验脚本直接调用。"""
     router_ip = "192.168.10.1"
     router_user = "root"
@@ -315,6 +360,9 @@ def run_rs_pmp_dynamic_bandwidth_experiment(node, net_config_path, num_tasks=50)
         "vit_huge": [(224, 224)],
     }
 
+    if run_id is None:
+        run_id = f"run_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+
     try:
         for i in range(0, num_tasks):
             _run_single_rs_task_iteration(
@@ -325,6 +373,9 @@ def run_rs_pmp_dynamic_bandwidth_experiment(node, net_config_path, num_tasks=50)
                 model_pool=model_pool,
                 batch_pool=batch_pool,
                 res_pool=res_pool,
+                run_id=run_id,
+                exp_type=exp_type,
+                exp_mode=exp_mode,
             )
     finally:
         global_qos_client.close()
@@ -335,6 +386,9 @@ def run_rs_pmp_dynamic_bandwidth_experiment(node, net_config_path, num_tasks=50)
 def main():
     parser = argparse.ArgumentParser(description="Distributed Satellite Node")
     parser.add_argument('--id', type=str, required=True, help="节点ID，如 Sat_1, RS, GS")
+    parser.add_argument('--exp-mode', type=str, default='hybrid', choices=['hybrid', 'theory', 'physical'], help="RS 实验模式")
+    parser.add_argument('--run-id', type=str, default=None, help="实验批次ID，不传则自动生成")
+    parser.add_argument('--exp-type', type=str, default='algo_effectiveness', help="实验类型标签")
     args = parser.parse_args()
 
     # 1. 直接固定加载网络拓扑配置
@@ -394,6 +448,9 @@ def main():
             node=node,
             net_config_path=net_config_path,
             num_tasks=50,
+            exp_mode=args.exp_mode,
+            run_id=args.run_id,
+            exp_type=args.exp_type,
         )
 
     # ========== 7. 保持进程循环以维持监听 ==========

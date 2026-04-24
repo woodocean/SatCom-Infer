@@ -1,6 +1,7 @@
 import json
 import os
 import csv
+from datetime import datetime
 from algorithms.pmp_solver import PMPSolver
 
 class Scheduler:
@@ -26,7 +27,102 @@ class Scheduler:
         with open(jetson_profiles_path, 'r', encoding='utf-8') as f:
             self.dnn_profiles["jetson"] = json.load(f)
 
-    def generate_task_and_schedule(self, task_id="task_001", model_name="yolov5", batch_size=32, target_h=640, target_w=640):
+    def _extract_bw_metrics(self, raw_links):
+        """从链路配置中提取星间/星地带宽统计，用于标准化结果表。"""
+        isl_bws = []
+        gsl_bws = []
+
+        for link_name, info in raw_links.items():
+            bw = float(info.get("bandwidth_mbps", 0.0))
+            if "GS" in link_name:
+                gsl_bws.append(bw)
+            else:
+                isl_bws.append(bw)
+
+        isl_avg = sum(isl_bws) / len(isl_bws) if isl_bws else 0.0
+        gsl_avg = sum(gsl_bws) / len(gsl_bws) if gsl_bws else 0.0
+        return isl_avg, gsl_avg
+
+    def _append_standardized_theory_rows(
+        self,
+        task_id,
+        model_name,
+        batch_size,
+        target_h,
+        target_w,
+        plans,
+        isl_avg_bw,
+        gsl_avg_bw,
+        run_id,
+        exp_type,
+        mode,
+        output_csv,
+    ):
+        """将理论调度结果写入标准化长表，便于统一分析与绘图。"""
+        file_exists = os.path.isfile(output_csv)
+        timestamp = datetime.now().isoformat(timespec="seconds")
+
+        # 归一化基线：同任务下 GS-Only 的时延
+        gs_only_latency = plans.get("GS-Only", {}).get("latency", float("inf"))
+        use_norm = gs_only_latency not in (None, float("inf"), 0.0)
+
+        with open(output_csv, 'a', newline='', encoding='utf-8') as f:
+            writer = csv.writer(f)
+            if not file_exists:
+                writer.writerow([
+                    "run_id",
+                    "exp_type",
+                    "mode",
+                    "task_id",
+                    "algorithm",
+                    "model_name",
+                    "batch_size",
+                    "input_h",
+                    "input_w",
+                    "isl_avg_bw_mbps",
+                    "gsl_avg_bw_mbps",
+                    "latency_ms",
+                    "norm_latency_vs_gs",
+                    "timestamp",
+                ])
+
+            for alg_name, data in plans.items():
+                latency = data.get("latency", float("inf"))
+                if use_norm and latency != float("inf"):
+                    norm_latency = latency / gs_only_latency
+                else:
+                    norm_latency = ""
+
+                writer.writerow([
+                    run_id,
+                    exp_type,
+                    mode,
+                    task_id,
+                    alg_name,
+                    model_name,
+                    batch_size,
+                    target_h,
+                    target_w,
+                    f"{isl_avg_bw:.4f}",
+                    f"{gsl_avg_bw:.4f}",
+                    latency,
+                    norm_latency,
+                    timestamp,
+                ])
+
+    def generate_task_and_schedule(
+        self,
+        task_id="task_001",
+        model_name="yolov5",
+        batch_size=32,
+        target_h=640,
+        target_w=640,
+        run_id="default",
+        exp_type="algo_effectiveness",
+        mode="theory",
+        standardized_csv_file="results_long.csv",
+        persist_theory=True,
+    ):
         # print(f"\n[{task_id}] 接收任务: {model_name} | 规格: b{batch_size}_{target_h}x{target_w}")
         
         # ================= 1. 物理档案查表提取 =================
@@ -100,6 +196,9 @@ class Scheduler:
             "reference_compute_speed": self.net_config.get("reference_compute_speed", 100.0)
         }
 
+        # 为标准化结果表提取带宽变量
+        isl_avg_bw, gsl_avg_bw = self._extract_bw_metrics(raw_links)
+
         # ================= 3. 执行六大算法 (对标实验核心) =================
         solver = PMPSolver(model_profile, env_status)
         plans = {}
@@ -140,14 +239,31 @@ class Scheduler:
             lat_str = f"{data['latency']:.2f} ms" if data['latency'] != float('inf') else "无解/越界"
             print(f"| {name.ljust(15)} | 预计时延: {lat_str.ljust(12)} | 层级决策: {data['plan']}")
 
-        # 记录到 CSV 中
-        csv_file = "theoretical_results.csv"
-        file_exists = os.path.isfile(csv_file)
-        with open(csv_file, 'a', newline='') as f:
-            writer = csv.writer(f)
-            # if not file_exists:
-            #     writer.writerow(["TaskID", "Model", "Algorithm", "Latency_ms"])
-            for name, data in plans.items():
-                writer.writerow([task_id,name, data['latency']])
+        if persist_theory:
+            # 记录到 CSV 中
+            csv_file = "theoretical_results.csv"
+            file_exists = os.path.isfile(csv_file)
+            with open(csv_file, 'a', newline='') as f:
+                writer = csv.writer(f)
+                # if not file_exists:
+                #     writer.writerow(["TaskID", "Model", "Algorithm", "Latency_ms"])
+                for name, data in plans.items():
+                    writer.writerow([task_id,name, data['latency']])
+
+            # 双写：新增标准化长表输出，不影响旧流程读取。
+            self._append_standardized_theory_rows(
+                task_id=task_id,
+                model_name=model_name,
+                batch_size=batch_size,
+                target_h=target_h,
+                target_w=target_w,
+                plans=plans,
+                isl_avg_bw=isl_avg_bw,
+                gsl_avg_bw=gsl_avg_bw,
+                run_id=run_id,
+                exp_type=exp_type,
+                mode=mode,
+                output_csv=standardized_csv_file,
+            )
 
         return {k: v['plan'] for k, v in plans.items()}
