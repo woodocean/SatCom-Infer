@@ -130,7 +130,7 @@
       "propagation_delay_ms": 3.86
     },
     "RS_to_GS": {
-      "bandwidth_mbps": 242.6966,
+      "bandwidth_mbps": 144,
       "propagation_delay_ms": 1.29
     },
     "SAT-01_to_SAT-03": {
@@ -138,7 +138,7 @@
       "propagation_delay_ms": 2.44
     },
     "SAT-01_to_GS": {
-      "bandwidth_mbps": 180.3371,
+      "bandwidth_mbps": 107,
       "propagation_delay_ms": 1.31
     },
     "SAT-02_to_SAT-03": {
@@ -154,7 +154,7 @@
       "propagation_delay_ms": 4.63
     },
     "SAT-05_to_GS": {
-      "bandwidth_mbps": 176.9663,
+      "bandwidth_mbps": 105,
       "propagation_delay_ms": 1.65
     }
   },

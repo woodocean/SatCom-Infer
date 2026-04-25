@@ -40,6 +40,10 @@ class PMPSolver:
         else:
             self.layers = model_profile['layers']
             self.layers_dict = {"pc": self.layers, "jetson": self.layers}  # fallback
+        if self.layers and "weight_size_mb" in self.layers[0]:
+            self.memory_layers = self.layers
+        else:
+            self.memory_layers = self.layers_dict.get("jetson", self.layers)
             
         self.L: int = len(self.layers)
 
@@ -57,7 +61,7 @@ class PMPSolver:
             if "jetson" in self.layers_dict:
                 self.prefix_latency["jetson"][i+1] = self.prefix_latency["jetson"][i] + self.layers_dict["jetson"][i].get('latency_mean_ms', 0.0)
             
-            self.prefix_weight[i+1] = self.prefix_weight[i] + self.layers[i].get('weight_size_mb', 0.0)
+            self.prefix_weight[i+1] = self.prefix_weight[i] + self.memory_layers[i].get('weight_size_mb', 0.0)
             # 纯特征图大小：我们用前缀最大值数组（非前缀和）——但为简化，我们改用滑动窗口在 DP 中动态求 max
         # 说明：max(comm_pure_mb) 无法用前缀和直接表示，因此我们将在内存检查时用 O(1) 区间查询（需额外维护 RMQ 或直接遍历小段）。
         # 由于 L 一般 ≤ 50，此处可接受 O(L) 检查，或你可后续加 Sparse Table。此处为简洁，用遍历。
@@ -73,23 +77,40 @@ class PMPSolver:
     # =================== 工具函数：检查内存约束（核心逻辑） ===================
     def _check_memory(self, node_idx: int, start: int, end: int) -> Tuple[bool, float]:
         """
-        检查节点 node_idx 是否能承载 [start, end) 层
-        内存约束 = 权重和 + max(comm_pure_mb) * 2
+        Check whether node_idx can hold layers [start, end).
+        Thesis-style model in MB: weights + input/intermediate activation sum.
+        The profile fields are already in MB, so no extra 1/8 conversion is needed.
         """
         if start >= end:
             return True, 0.0  # 中继节点无内存占用
 
         weight_sum: float = self.prefix_weight[end] - self.prefix_weight[start]
-        # 求区间 [start, end) 内最大的 comm_pure_mb
-        max_pure = 0.0
+        activation_sum = 0.0
+        if start == 0:
+            activation_sum += self.input_size_raw
+        else:
+            activation_sum += self.layers[start - 1].get('comm_pure_mb', 0.0)
         for i in range(start, end):
-            pure = self.layers[i].get('comm_pure_mb', 0.0)
-            if pure > max_pure:
-                max_pure = pure
-        mem_required = weight_sum + max_pure * 2.0
+            activation_sum += self.layers[i].get('comm_pure_mb', 0.0)
+        mem_required = weight_sum + activation_sum
 
         node_mem = self.nodes[node_idx].get('memory_mb', 8192)
         return mem_required <= node_mem, mem_required
+
+    def _check_segment_constraints(self, node_idx: int, start: int, end: int) -> Tuple[bool, Dict]:
+        """
+        Unified feasibility check for assigning layers [start, end) to node_idx.
+        Currently this only enforces memory; energy and visibility constraints can
+        be added here later so every algorithm uses the same feasibility rule.
+        """
+        mem_ok, mem_required = self._check_memory(node_idx, start, end)
+        if not mem_ok:
+            return False, {
+                "reason": "memory",
+                "memory_required_mb": mem_required,
+                "memory_limit_mb": self.nodes[node_idx].get('memory_mb', 8192),
+            }
+        return True, {"memory_required_mb": mem_required}
 
     # =================== 工具函数：计算某段层的计算时延（ms） ===================
     def _compute_delay(self, node_idx: int, start: int, end: int) -> float:
@@ -144,9 +165,9 @@ class PMPSolver:
 
                     # --- 情况2: 计算模式 (prev_l < l) ---
                     # 内存检查 (因当前暂不考虑任何内存和能力约束，将其全注释掉)
-                    # mem_ok, _ = self._check_memory(node_idx, prev_l, l)
-                    # if not mem_ok:
-                    #     continue
+                    feasible, _ = self._check_segment_constraints(node_idx, prev_l, l)
+                    if not feasible:
+                        continue
 
                     # 计算时延
                     t_comp = self._compute_delay(node_idx, prev_l, l)
@@ -196,8 +217,8 @@ class PMPSolver:
             # 现在的“聪明”贪心会综合评估 (本跳计算 + 下一跳传输) 的局部总延时
             for next_l in range(curr_l, self.L + 1):
                 if next_l > curr_l:
-                    mem_ok, _ = self._check_memory(node_idx, curr_l, next_l)
-                    if not mem_ok:
+                    feasible, _ = self._check_segment_constraints(node_idx, curr_l, next_l)
+                    if not feasible:
                         break  # 内存超限，后续更大区间必超，剪枝
 
                 # 计算当前选择下在本节点的计算时延 (next_l == curr_l 时为 0)
@@ -208,9 +229,12 @@ class PMPSolver:
                 # 处理末尾情况：如果已经是最后一层且是最后的节点，就不需要继续往下传了
                 if next_l == self.L and k == self.K - 1:
                     t_trans_next = 0.0
+                elif k == self.K - 1:
+                    # Last node cannot forward unfinished layers to a non-existent next hop.
+                    t_trans_next = float('inf')
                 else:
-                    bw_next = self.B[k]  # 去往下一跳的链路带宽
-                    t_trans_next = self._comm_delay_ms(output_comm, bw_next, self.P[k])
+                    bw_next = self.B[k + 1]  # 去往下一跳的链路带宽
+                    t_trans_next = self._comm_delay_ms(output_comm, bw_next, self.P[k + 1])
                 
                 # 局部成本：在此节点计算 [curr_l, next_l) 的耗时 + 传出中间特征图的耗时
                 cost = t_comp + t_trans_next
@@ -232,6 +256,8 @@ class PMPSolver:
                 # 中继：仅传输，不计算
                 total_latency += t_trans_in
 
+        if curr_l < self.L:
+            return float('inf'), {}
         return total_latency, plan
 
     # =================== 3. Uniform Partition ===================
@@ -247,7 +273,7 @@ class PMPSolver:
 
             node_idx = k
             # 内存退避：从 end 往回缩
-            while end > start and not self._check_memory(node_idx, start, end)[0]:
+            while end > start and not self._check_segment_constraints(node_idx, start, end)[0]:
                 end -= 1
 
             input_comm = self.layers[start - 1]['comm_total_mb'] if start > 0 else self.input_size_raw
@@ -261,6 +287,8 @@ class PMPSolver:
             else:
                 total_latency += t_trans  # 中继
 
+        if curr_l < self.L:
+            return float('inf'), {}
         return total_latency, plan
 
     # =================== 4. Bent-Pipe ===================
@@ -269,6 +297,9 @@ class PMPSolver:
         t_trans_total = sum(self._comm_delay_ms(self.input_size_raw, self.B[i], self.P[i]) for i in range(self.K))
         gs_node = self.nodes[-1]
         gs_idx = len(self.nodes) - 1
+        feasible, _ = self._check_segment_constraints(gs_idx, 0, self.L)
+        if not feasible:
+            return float('inf'), {}
         t_comp = self._compute_delay(gs_idx, 0, self.L)
         return t_trans_total + t_comp, {gs_node['id']: [0, self.L - 1]}
 
@@ -310,8 +341,8 @@ class PMPSolver:
                     continue
 
                 node_idx = k
-                mem_ok, _ = self._check_memory(node_idx, start, end)
-                if not mem_ok:
+                feasible, _ = self._check_segment_constraints(node_idx, start, end)
+                if not feasible:
                     valid = False
                     break
 
@@ -358,10 +389,10 @@ class PMPSolver:
                     continue
                 node_idx = k
                 
-                # ------ 去除内存约束 -------
-                # mem_ok, _ = self._check_memory(node_idx, start, end)
-                # if not mem_ok:
-                #     return -float('inf')
+                # ------ 统一约束检查 -------
+                feasible, _ = self._check_segment_constraints(node_idx, start, end)
+                if not feasible:
+                    return -float('inf')
                 # -------------------------
                 
                 t_comp: float = self._compute_delay(node_idx, start, end)
