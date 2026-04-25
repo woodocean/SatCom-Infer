@@ -1,0 +1,43 @@
+{
+  "algo_theory_20": {
+    "exp_type": "algo_effectiveness",
+    "exp_mode": "theory",
+    "num_tasks": 20
+  },
+  "isl_yolo": {
+    "exp_type": "isl_bandwidth_sensitivity",
+    "exp_mode": "theory",
+    "sweep_start": 500,
+    "sweep_stop": 20000,
+    "sweep_points": 20,
+    "repeat_per_point": 10,
+    "fixed_model": "yolov5",
+    "fixed_batch_size": 32,
+    "fixed_input_h": 640,
+    "fixed_input_w": 640
+  },
+  "gsl_yolov5": {
+    "exp_type": "gsl_bandwidth_sensitivity",
+    "exp_mode": "theory",
+    "sweep_start": 20,
+    "sweep_stop": 200,
+    "sweep_points": 20,
+    "repeat_per_point": 10,
+    "fixed_model": "yolov5",
+    "fixed_batch_size": 32,
+    "fixed_input_h": 640,
+    "fixed_input_w": 640
+  },
+  "gsl_resnet101": {
+    "exp_type": "gsl_bandwidth_sensitivity",
+    "exp_mode": "theory",
+    "sweep_start": 20,
+    "sweep_stop": 200,
+    "sweep_points": 20,
+    "repeat_per_point": 10,
+    "fixed_model": "resnet101",
+    "fixed_batch_size": 32,
+    "fixed_input_h": 224,
+    "fixed_input_w": 224
+  }
+}

@@ -1,4 +1,6 @@
 import argparse
+import copy
+import hashlib
 import json
 import os
 import random
@@ -7,16 +9,16 @@ import time
 from datetime import datetime
 
 import paramiko
+import numpy as np
 import torch
 
 from core.node import ComputeNode
-from core.router_qos import RouterQoSClient
 
 sys.path.append(os.getcwd())
 
 
 class SSHSessionPool:
-    """全局 SSH 连接池，避免频繁握手导致性能损耗。"""
+    """Lightweight SSH/SFTP pool to avoid reconnecting on every sync."""
 
     def __init__(self):
         self.clients = {}
@@ -35,13 +37,13 @@ class SSHSessionPool:
             self.clients[host] = ssh
             return ssh
         except Exception as e:
-            print(f"[POOL] 无法建立到 {host} 的 SSH 连接: {e}")
+            print(f"[POOL] Failed to create SSH connection to {host}: {e}")
             return None
 
     def get_sftp(self, host, user="nvidia", pw="nvidia"):
         if host in self.sftps:
             try:
-                self.sftps[host].stat('.')
+                self.sftps[host].stat(".")
                 return self.sftps[host]
             except Exception:
                 del self.sftps[host]
@@ -53,7 +55,7 @@ class SSHSessionPool:
                 self.sftps[host] = sftp
                 return sftp
             except Exception as e:
-                print(f"[POOL] 创建 SFTP 失败 {host}: {e}")
+                print(f"[POOL] Failed to open SFTP for {host}: {e}")
         return None
 
     def close_all(self):
@@ -74,19 +76,220 @@ class SSHSessionPool:
 
 GLOBAL_POOL = SSHSessionPool()
 
+DEFAULT_MODEL_POOL = ["vit_huge", "vgg19", "yolov5", "swin_base", "resnet101"]
+DEFAULT_BATCH_POOL = [16, 32, 64]
+DEFAULT_RES_POOL = {
+    "yolov5": [(640, 640)],
+    "resnet101": [(224, 224)],
+    "vgg19": [(224, 224)],
+    "swin_base": [(224, 224)],
+    "vit_huge": [(224, 224)],
+}
+DEFAULT_ISL_SWEEP_VALUES = [round(float(v), 6) for v in np.linspace(500, 20000, 20)]
+DEFAULT_GSL_SWEEP_VALUES = [round(float(v), 6) for v in np.linspace(20, 200, 20)]
+DEFAULT_PRESET_FILE = "config/experiment_presets.json"
+DEFAULT_PRESETS = {
+    "algo": {
+        "exp_type": "algo_effectiveness",
+        "exp_mode": "theory",
+        "num_tasks": 50,
+    },
+    "isl": {
+        "exp_type": "isl_bandwidth_sensitivity",
+        "exp_mode": "theory",
+        "sweep_start": 500,
+        "sweep_stop": 20000,
+        "sweep_points": 20,
+        "repeat_per_point": 10,
+    },
+    "gsl": {
+        "exp_type": "gsl_bandwidth_sensitivity",
+        "exp_mode": "theory",
+        "sweep_start": 20,
+        "sweep_stop": 200,
+        "sweep_points": 20,
+        "repeat_per_point": 10,
+    },
+}
+
 
 def load_config(path):
-    with open(path, 'r', encoding='utf-8') as f:
+    with open(path, "r", encoding="utf-8") as f:
         return json.load(f)
 
 
+def _clone_config(base_config):
+    return copy.deepcopy(base_config)
+
+
+def _stable_int_seed(*parts):
+    payload = "|".join(str(part) for part in parts)
+    digest = hashlib.sha256(payload.encode("utf-8")).hexdigest()
+    return int(digest[:8], 16)
+
+
+def _seed_everything(seed):
+    seed = int(seed) % (2**32 - 1)
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed_all(seed)
+
+
+def _write_config_atomic(config_path, config):
+    tmp_path = config_path + ".tmp"
+    with open(tmp_path, "w", encoding="utf-8") as f:
+        json.dump(config, f, indent=2)
+
+    for _ in range(10):
+        try:
+            os.replace(tmp_path, config_path)
+            return
+        except PermissionError:
+            time.sleep(0.02)
+
+    os.replace(tmp_path, config_path)
+
+
+def _default_bandwidth_sweep_values(exp_type):
+    if exp_type == "isl_bandwidth_sensitivity":
+        return DEFAULT_ISL_SWEEP_VALUES
+    if exp_type == "gsl_bandwidth_sensitivity":
+        return DEFAULT_GSL_SWEEP_VALUES
+    raise ValueError(f"Unsupported bandwidth sensitivity exp_type: {exp_type}")
+
+
+def _parse_bandwidth_sweep_values(raw_values):
+    if not raw_values:
+        return None
+
+    values = []
+    for item in raw_values.split(","):
+        item = item.strip()
+        if not item:
+            continue
+        values.append(float(item))
+
+    if not values:
+        raise ValueError("Empty sweep values after parsing --sweep-values")
+    return values
+
+
+def _build_sweep_values(raw_values=None, sweep_start=None, sweep_stop=None, sweep_points=None):
+    explicit_values = _parse_bandwidth_sweep_values(raw_values)
+    if explicit_values is not None:
+        return explicit_values
+
+    range_args = [sweep_start, sweep_stop, sweep_points]
+    if all(value is None for value in range_args):
+        return None
+    if any(value is None for value in range_args):
+        raise ValueError("--sweep-start, --sweep-stop and --sweep-points must be provided together")
+
+    points = int(sweep_points)
+    if points <= 0:
+        raise ValueError("--sweep-points must be greater than 0")
+    if points == 1:
+        return [float(sweep_start)]
+
+    values = np.linspace(float(sweep_start), float(sweep_stop), points)
+    return [round(float(value), 6) for value in values]
+
+
+def _load_presets(preset_file):
+    presets = _clone_config(DEFAULT_PRESETS)
+    if not preset_file or not os.path.exists(preset_file):
+        return presets
+
+    with open(preset_file, "r", encoding="utf-8") as f:
+        user_presets = json.load(f)
+
+    if not isinstance(user_presets, dict):
+        raise ValueError(f"Preset file must be a JSON object: {preset_file}")
+
+    for name, values in user_presets.items():
+        if not isinstance(values, dict):
+            raise ValueError(f"Preset '{name}' must be a JSON object")
+        presets[name] = values
+    return presets
+
+
+def _collect_explicit_cli_args(raw_args):
+    explicit = set()
+    option_to_dest = {
+        "--config": "config",
+        "--rs-id": "rs_id",
+        "--num-tasks": "num_tasks",
+        "--exp-mode": "exp_mode",
+        "--run-id": "run_id",
+        "--exp-type": "exp_type",
+        "--sweep-values": "sweep_values",
+        "--sweep-start": "sweep_start",
+        "--sweep-stop": "sweep_stop",
+        "--sweep-points": "sweep_points",
+        "--fixed-model": "fixed_model",
+        "--fixed-batch-size": "fixed_batch_size",
+        "--fixed-input-h": "fixed_input_h",
+        "--fixed-input-w": "fixed_input_w",
+        "--repeat-per-point": "repeat_per_point",
+        "--preset-file": "preset_file",
+        "--seed": "seed",
+    }
+
+    for raw_arg in raw_args:
+        option = raw_arg.split("=", 1)[0]
+        if option in option_to_dest:
+            explicit.add(option_to_dest[option])
+    return explicit
+
+
+def _apply_preset(args, explicit_cli_args=None):
+    if not args.preset:
+        return args
+    explicit_cli_args = explicit_cli_args or set()
+
+    presets = _load_presets(args.preset_file)
+    if args.preset not in presets:
+        available = ", ".join(sorted(presets.keys()))
+        raise ValueError(f"Unknown preset '{args.preset}'. Available presets: {available}")
+
+    range_keys = {"sweep_start", "sweep_stop", "sweep_points"}
+    explicit_has_range = bool(range_keys & explicit_cli_args)
+    explicit_has_values = "sweep_values" in explicit_cli_args
+
+    for key, value in presets[args.preset].items():
+        if key == "sweep_values" and explicit_has_range:
+            continue
+        if key in range_keys and explicit_has_values:
+            continue
+        if key not in explicit_cli_args:
+            setattr(args, key, value)
+
+    has_range_sweep = (
+        args.sweep_start is not None
+        or args.sweep_stop is not None
+        or args.sweep_points is not None
+    )
+    if (
+        args.exp_type in ("isl_bandwidth_sensitivity", "gsl_bandwidth_sensitivity")
+        and args.sweep_values is None
+        and not has_range_sweep
+    ):
+        args.sweep_values = ",".join(str(v) for v in _default_bandwidth_sweep_values(args.exp_type))
+
+    return args
+
+
 def _sync_config_to_jetsons(config):
-    """使用长连接池同步 network_config.json 到所有 Jetson。"""
-    jetson_ips = sorted({
-        info.get('ip')
-        for _, info in config.get('nodes', {}).items()
-        if 'jetson' in str(info.get('device', '')).lower() and info.get('ip')
-    })
+    """Synchronize the latest network_config.json to all Jetson nodes."""
+    jetson_ips = sorted(
+        {
+            info.get("ip")
+            for _, info in config.get("nodes", {}).items()
+            if "jetson" in str(info.get("device", "")).lower() and info.get("ip")
+        }
+    )
 
     if not jetson_ips:
         return
@@ -100,13 +303,13 @@ def _sync_config_to_jetsons(config):
     for host in jetson_ips:
         sftp = GLOBAL_POOL.get_sftp(host)
         if not sftp:
-            print(f"[SYNC] 无法获取 Jetson {host} 的长连接，跳过同步")
+            print(f"[SYNC] Skip Jetson {host}: cannot open SFTP")
             continue
 
         try:
             ssh = GLOBAL_POOL.get_ssh(host)
             if not ssh:
-                print(f"[SYNC] 无法获取 Jetson {host} 的 SSH 通道，跳过同步")
+                print(f"[SYNC] Skip Jetson {host}: cannot open SSH")
                 continue
 
             target_path = remote_candidates[0]
@@ -116,64 +319,103 @@ def _sync_config_to_jetsons(config):
                     target_path = candidate
                     break
 
-            with sftp.file(target_path, 'w') as f:
+            with sftp.file(target_path, "w") as f:
                 f.write(cfg_text)
-            print(f"[SYNC] [POOL] 已通过长连接同步配置到 {host}")
+            print(f"[SYNC] Config synced to Jetson {host}")
         except Exception as e:
-            print(f"[SYNC] 同步到 {host} 失败: {e}")
+            print(f"[SYNC] Failed to sync config to {host}: {e}")
 
 
-def update_network_topology(config_path, qos_client=None):
-    """动态更新带宽/算力并同步配置。"""
+def _apply_bandwidth_scale(base_config, target, desired_avg_bw):
+    """Scale only the chosen link class to the desired average bandwidth.
+
+    This preserves the original heterogeneity pattern across hops while making
+    the sweep value represent the class-level average bandwidth.
+    """
+    config = _clone_config(base_config)
+    links = config.get("links", {})
+
+    selected = []
+    for link_name, info in links.items():
+        link_type = "gsl" if "GS" in link_name else "isl"
+        if link_type == target:
+            selected.append((link_name, float(info.get("bandwidth_mbps", 0.0))))
+
+    if not selected:
+        raise ValueError(f"No {target.upper()} links found in config")
+
+    base_avg = sum(bw for _, bw in selected) / len(selected)
+    if base_avg <= 0:
+        for link_name, _ in selected:
+            links[link_name]["bandwidth_mbps"] = float(desired_avg_bw)
+        return config
+
+    scale = float(desired_avg_bw) / base_avg
+    for link_name, old_bw in selected:
+        links[link_name]["bandwidth_mbps"] = round(max(1.0, old_bw * scale), 4)
+    return config
+
+
+def update_network_topology(
+    config_path,
+    qos_client=None,
+    topology_mode="random",
+    base_config=None,
+    sweep_target=None,
+    sweep_value=None,
+    sync_remote=False,
+):
+    """Update the topology in-place and sync it to remote nodes.
+
+    topology_mode:
+        - random: preserve old behavior, randomize compute and link conditions
+        - bandwidth_sweep: keep everything from base_config except the selected bandwidth class
+    """
     try:
-        config = load_config(config_path)
+        config = _clone_config(base_config) if base_config is not None else load_config(config_path)
 
-        for node_id, node_info in config.get('nodes', {}).items():
-            hw = node_info.setdefault('hardware', {})
-            if node_id == 'GS':
-                node_tflops = 300.0
-            elif node_id.startswith('SAT'):
-                node_tflops = round(random.uniform(0.5, 10.0), 3)
-            else:
-                node_tflops = 0.0
+        if topology_mode == "random":
+            for node_id, node_info in config.get("nodes", {}).items():
+                hw = node_info.setdefault("hardware", {})
+                if node_id == "GS":
+                    node_tflops = 300.0
+                elif node_id.startswith("SAT"):
+                    node_tflops = round(random.uniform(0.5, 10.0), 3)
+                else:
+                    node_tflops = 0.0
 
-            hw['compute_speed_tflops'] = node_tflops
-            hw['compute_speed_gflops_per_ms'] = node_tflops
+                hw["compute_speed_tflops"] = node_tflops
+                hw["compute_speed_gflops_per_ms"] = node_tflops
 
-        should_close_qos = False
-        if qos_client is None:
-            qos_client = RouterQoSClient("192.168.10.1", "root", "wslhy110", ssh_timeout=3)
-            should_close_qos = True
+            for link_name, info in config["links"].items():
+                if "GS" in link_name:
+                    new_bw = random.randint(50, 200)
+                    new_delay = random.uniform(1.0, 2.0)
+                else:
+                    new_bw = random.randint(1000, 20000)
+                    new_delay = random.uniform(2.0, 5.0)
 
-        for link_name, info in config['links'].items():
-            if "GS" in link_name:
-                new_bw = random.randint(50, 200)
-                new_delay = random.uniform(1.0, 2.0)
-            else:
-                new_bw = random.randint(1000, 20000)
-                new_delay = random.uniform(2.0, 5.0)
+                info["bandwidth_mbps"] = new_bw
+                info["propagation_delay_ms"] = round(new_delay, 2)
 
-            info['bandwidth_mbps'] = new_bw
-            info['propagation_delay_ms'] = round(new_delay, 2)
+        elif topology_mode == "bandwidth_sweep":
+            if sweep_target not in ("isl", "gsl"):
+                raise ValueError(f"Invalid sweep_target: {sweep_target}")
+            if sweep_value is None:
+                raise ValueError("sweep_value is required for bandwidth_sweep mode")
 
-        if should_close_qos:
-            qos_client.close()
+            config = _apply_bandwidth_scale(config, sweep_target, sweep_value)
 
-        tmp_path = config_path + ".tmp"
-        with open(tmp_path, 'w', encoding='utf-8') as f:
-            json.dump(config, f, indent=2)
+        else:
+            raise ValueError(f"Unsupported topology_mode: {topology_mode}")
 
-        for _ in range(10):
-            try:
-                os.replace(tmp_path, config_path)
-                break
-            except PermissionError:
-                time.sleep(0.02)
-
-        _sync_config_to_jetsons(config)
-
+        _write_config_atomic(config_path, config)
+        if sync_remote:
+            _sync_config_to_jetsons(config)
+        return config
     except Exception as e:
-        print(f"更新带宽配置失败: {e}")
+        print(f"[TOPOLOGY] Failed to update network topology: {e}")
+        return None
 
 
 def _build_scheduler(net_config_path):
@@ -182,7 +424,7 @@ def _build_scheduler(net_config_path):
     return Scheduler(
         net_config_path=net_config_path,
         pc_profiles_path="config/dnn_profiles_database_pc.json",
-        jetson_profiles_path="config/dnn_profiles_database_jetson.json"
+        jetson_profiles_path="config/dnn_profiles_database_jetson.json",
     )
 
 
@@ -194,13 +436,23 @@ def _pick_task_profile(task_index, model_pool, batch_pool, res_pool):
     return chosen_model, chosen_bs, chosen_res
 
 
-def _dispatch_one_task_to_rs(rs_node, scheduler, task_id, chosen_model, chosen_bs, chosen_res, plans, run_id, exp_type):
-    """将单任务的多算法计划依次送入 RS。"""
+def _dispatch_one_task_to_rs(
+    rs_node,
+    scheduler,
+    task_id,
+    chosen_model,
+    chosen_bs,
+    chosen_res,
+    plans,
+    run_id,
+    exp_type,
+):
+    """Send every algorithm plan of one task to RS in sequence."""
     fake_img = torch.randn(chosen_bs, 3, chosen_res[0], chosen_res[1])
 
     for alg, plan in plans.items():
         if plan is None:
-            print(f"  [RS] 🛑 算法 [{alg}] 当前由于硬件约束无解，直接跳过管道仿真。")
+            print(f"  [RS] Skip algorithm [{alg}] because no valid plan was produced")
             continue
 
         if "simulation_paths" in scheduler.net_config and "pipeline" in scheduler.net_config["simulation_paths"]:
@@ -210,113 +462,229 @@ def _dispatch_one_task_to_rs(rs_node, scheduler, task_id, chosen_model, chosen_b
 
         if hasattr(rs_node, "task_ack_event"):
             if not rs_node.task_ack_event.is_set():
-                print("  [RS] ⏳ 管道占用中: 正在等待前序算法应答...")
+                print("  [RS] Channel busy, waiting for previous algorithm ack...")
             rs_node.task_ack_event.wait()
             rs_node.task_ack_event.clear()
 
         time.sleep(1.0)
-        print(f"  [RS] 🚀 正在向网络下发任务: [{task_id}] | 驱动策略: {alg}")
+        print(f"  [RS] Dispatching task [{task_id}] with algorithm: {alg}")
 
         rs_payload = {
-            'mode': 'PMP',
-            'task_id': task_id,
-            'algorithm': alg,
-            'model_name': chosen_model,
-            'accumulated_latency': 0.0,
-            'tensor': fake_img,
-            'batch': chosen_bs,
-            'route': ordered_route,
-            'layer_plan': plan,
-            'exp_meta': {
-                'run_id': run_id,
-                'exp_type': exp_type,
-                'mode': 'physical',
-                'model_name': chosen_model,
-                'batch_size': chosen_bs,
-                'input_h': chosen_res[0],
-                'input_w': chosen_res[1],
-                'standardized_csv_file': 'results_long.csv',
-            }
+            "mode": "PMP",
+            "task_id": task_id,
+            "algorithm": alg,
+            "model_name": chosen_model,
+            "accumulated_latency": 0.0,
+            "tensor": fake_img,
+            "batch": chosen_bs,
+            "route": ordered_route,
+            "layer_plan": plan,
+            "exp_meta": {
+                "run_id": run_id,
+                "exp_type": exp_type,
+                "mode": "physical",
+                "model_name": chosen_model,
+                "batch_size": chosen_bs,
+                "input_h": chosen_res[0],
+                "input_w": chosen_res[1],
+                "standardized_csv_file": "results_long.csv",
+            },
         }
 
-        rs_node.handle_message({
-            'type': 'NEW_TASK',
-            'src': 'experiment_runner',
-            'payload': rs_payload
-        })
+        rs_node.handle_message(
+            {
+                "type": "NEW_TASK",
+                "src": "experiment_runner",
+                "payload": rs_payload,
+            }
+        )
 
 
-def run_experiment(rs_node, net_config_path, num_tasks, exp_mode, run_id, exp_type):
-    router_client = RouterQoSClient("192.168.10.1", "root", "wslhy110", ssh_timeout=3)
-
-    model_pool = ["vit_huge", "vgg19", "yolov5", "swin_base", "resnet101"]
-    batch_pool = [16, 32, 64]
-    res_pool = {
-        "yolov5": [(640, 640)],
-        "resnet101": [(224, 224)],
-        "vgg19": [(224, 224)],
-        "swin_base": [(224, 224)],
-        "vit_huge": [(224, 224)],
-    }
+def _run_algorithm_effectiveness_experiment(rs_node, net_config_path, num_tasks, exp_mode, run_id, exp_type):
+    model_pool = DEFAULT_MODEL_POOL
+    batch_pool = DEFAULT_BATCH_POOL
+    res_pool = DEFAULT_RES_POOL
 
     print("\n" + "=" * 50)
-    print(f"--- 实验开始: mode={exp_mode}, run_id={run_id}, exp_type={exp_type} ---")
+    print(f"--- Experiment start: mode={exp_mode}, run_id={run_id}, exp_type={exp_type} ---")
     print("=" * 50)
 
-    try:
-        for i in range(num_tasks):
-            task_id = f"Task_{i:03d}"
-            update_network_topology(net_config_path, qos_client=router_client)
-            time.sleep(0.5)
+    for i in range(num_tasks):
+        task_id = f"Task_{i:03d}"
+        seed = _stable_int_seed(run_id, exp_type, task_id)
+        _seed_everything(seed)
+        update_network_topology(net_config_path, topology_mode="random", sync_remote=(exp_mode in ("hybrid", "physical")))
+        time.sleep(0.5)
 
-            scheduler = _build_scheduler(net_config_path)
-            chosen_model, chosen_bs, chosen_res = _pick_task_profile(i, model_pool, batch_pool, res_pool)
-            print(
-                f"\n[任务生成] ==> {task_id} | 模型: {chosen_model} | "
-                f"Batch: {chosen_bs} | 尺寸: {chosen_res[0]}x{chosen_res[1]}"
+        scheduler = _build_scheduler(net_config_path)
+        chosen_model, chosen_bs, chosen_res = _pick_task_profile(i, model_pool, batch_pool, res_pool)
+        print(
+            f"\n[Task] {task_id} | model={chosen_model} | "
+            f"batch={chosen_bs} | input={chosen_res[0]}x{chosen_res[1]}"
+        )
+
+        plans = scheduler.generate_task_and_schedule(
+            task_id=task_id,
+            model_name=chosen_model,
+            batch_size=chosen_bs,
+            target_h=chosen_res[0],
+            target_w=chosen_res[1],
+            run_id=run_id,
+            exp_type=exp_type,
+            mode="theory",
+            standardized_csv_file="results_long.csv",
+            persist_theory=(exp_mode in ("hybrid", "theory")),
+        )
+
+        if exp_mode in ("hybrid", "physical") and rs_node is not None:
+            _dispatch_one_task_to_rs(
+                rs_node=rs_node,
+                scheduler=scheduler,
+                task_id=task_id,
+                chosen_model=chosen_model,
+                chosen_bs=chosen_bs,
+                chosen_res=chosen_res,
+                plans=plans,
+                run_id=run_id,
+                exp_type=exp_type,
             )
 
+
+def _run_bandwidth_sensitivity_experiment(
+    net_config_path,
+    run_id,
+    exp_type,
+    sweep_values,
+    fixed_model,
+    fixed_batch_size,
+    fixed_input_h,
+    fixed_input_w,
+    repeat_per_point,
+):
+    sweep_target = "isl" if exp_type == "isl_bandwidth_sensitivity" else "gsl"
+    base_config = load_config(net_config_path)
+    repeat_per_point = max(1, int(repeat_per_point))
+
+    print("\n" + "=" * 50)
+    print(
+        f"--- Bandwidth sweep start: run_id={run_id}, exp_type={exp_type}, "
+        f"target={sweep_target}, repeat_per_point={repeat_per_point} ---"
+    )
+    print("=" * 50)
+
+    deterministic_algorithms = ["LA-DP", "Greedy", "Uniform", "GS-Only"]
+    stochastic_algorithms = ["Random", "GA"]
+
+    for idx, bandwidth_mbps in enumerate(sweep_values):
+        point_id = f"{exp_type}_{idx:03d}"
+        print(f"\n[Sweep] {point_id} | target={sweep_target} | bandwidth={bandwidth_mbps} Mbps")
+        update_network_topology(
+            net_config_path,
+            topology_mode="bandwidth_sweep",
+            base_config=base_config,
+            sweep_target=sweep_target,
+            sweep_value=bandwidth_mbps,
+            sync_remote=False,
+        )
+
+        det_task_id = f"{point_id}_det"
+        _seed_everything(_stable_int_seed(run_id, exp_type, point_id, bandwidth_mbps, "deterministic"))
+        scheduler = _build_scheduler(net_config_path)
+        deterministic_plans = scheduler.generate_task_and_schedule(
+            task_id=det_task_id,
+            model_name=fixed_model,
+            batch_size=fixed_batch_size,
+            target_h=fixed_input_h,
+            target_w=fixed_input_w,
+            run_id=run_id,
+            exp_type=exp_type,
+            mode="theory",
+            standardized_csv_file="results_long.csv",
+            persist_theory=True,
+            algorithm_names=deterministic_algorithms,
+            persist_algorithms=deterministic_algorithms,
+            return_full_plans=True,
+        )
+        gs_only_latency = deterministic_plans.get("GS-Only", {}).get("latency", None)
+        print(f"[Sweep] Done {det_task_id}, algorithms={list(deterministic_plans.keys())}")
+
+        for repeat_idx in range(repeat_per_point):
+            task_id = f"{point_id}_stoch_rep{repeat_idx:02d}"
+            seed = _stable_int_seed(run_id, exp_type, point_id, bandwidth_mbps, repeat_idx)
+            _seed_everything(seed)
+
+            scheduler = _build_scheduler(net_config_path)
             plans = scheduler.generate_task_and_schedule(
                 task_id=task_id,
-                model_name=chosen_model,
-                batch_size=chosen_bs,
-                target_h=chosen_res[0],
-                target_w=chosen_res[1],
+                model_name=fixed_model,
+                batch_size=fixed_batch_size,
+                target_h=fixed_input_h,
+                target_w=fixed_input_w,
                 run_id=run_id,
                 exp_type=exp_type,
                 mode="theory",
                 standardized_csv_file="results_long.csv",
-                persist_theory=(exp_mode in ("hybrid", "theory")),
+                persist_theory=True,
+                algorithm_names=stochastic_algorithms,
+                persist_algorithms=stochastic_algorithms,
+                normalization_baseline_latency=gs_only_latency,
+                return_full_plans=True,
             )
 
-            if exp_mode in ("hybrid", "physical"):
-                _dispatch_one_task_to_rs(
-                    rs_node=rs_node,
-                    scheduler=scheduler,
-                    task_id=task_id,
-                    chosen_model=chosen_model,
-                    chosen_bs=chosen_bs,
-                    chosen_res=chosen_res,
-                    plans=plans,
-                    run_id=run_id,
-                    exp_type=exp_type,
-                )
-    finally:
-        router_client.close()
+            print(
+                f"[Sweep] Done {task_id} ({repeat_idx + 1}/{repeat_per_point}), "
+                f"algorithms={list(plans.keys())}"
+            )
 
+
+def run_experiment(
+    rs_node,
+    net_config_path,
+    num_tasks,
+    exp_mode,
+    run_id,
+    exp_type,
+    sweep_values=None,
+    fixed_model="yolov5",
+    fixed_batch_size=32,
+    fixed_input_h=640,
+    fixed_input_w=640,
+    repeat_per_point=10,
+):
+    if exp_type == "algo_effectiveness":
+        return _run_algorithm_effectiveness_experiment(rs_node, net_config_path, num_tasks, exp_mode, run_id, exp_type)
+
+    if exp_type in ("isl_bandwidth_sensitivity", "gsl_bandwidth_sensitivity"):
+        if exp_mode != "theory":
+            print(f"[WARN] exp_type={exp_type} is theory-only; forcing theory mode and ignoring exp_mode={exp_mode}")
+
+        values = sweep_values or _default_bandwidth_sweep_values(exp_type)
+        return _run_bandwidth_sensitivity_experiment(
+            net_config_path=net_config_path,
+            run_id=run_id,
+            exp_type=exp_type,
+            sweep_values=values,
+            fixed_model=fixed_model,
+            fixed_batch_size=fixed_batch_size,
+            fixed_input_h=fixed_input_h,
+            fixed_input_w=fixed_input_w,
+            repeat_per_point=repeat_per_point,
+        )
+
+    raise ValueError(f"Unsupported exp_type: {exp_type}")
 
 
 def start_rs_node(net_config_path, rs_id):
     config = load_config(net_config_path)
-    if rs_id not in config.get('nodes', {}):
-        raise ValueError(f"节点 {rs_id} 不在网络配置中")
+    if rs_id not in config.get("nodes", {}):
+        raise ValueError(f"Node {rs_id} not found in network config")
 
-    rs_info = config['nodes'][rs_id]
+    rs_info = config["nodes"][rs_id]
     rs_node = ComputeNode(
         node_id=rs_id,
-        ip=rs_info['ip'],
-        port=rs_info['port'],
-        role=rs_info.get('role', 'RS')
+        ip=rs_info["ip"],
+        port=rs_info["port"],
+        role=rs_info.get("role", "RS"),
     )
 
     neighbors_parsed = []
@@ -327,25 +695,71 @@ def start_rs_node(net_config_path, rs_id):
 
     rs_node.join_network(neighbors_parsed)
     rs_node.start()
-    print(f"[{rs_id}] 已启动并监听，准备接收编排任务")
+    print(f"[{rs_id}] Node started and waiting for tasks")
     return rs_node
 
 
-
 def main():
-    parser = argparse.ArgumentParser(description="Experiment Runner (RS orchestration entry)")
-    parser.add_argument('--config', type=str, default='config/network_config.json', help='网络配置路径')
-    parser.add_argument('--rs-id', type=str, default='RS', help='RS 节点ID')
-    parser.add_argument('--num-tasks', type=int, default=50, help='任务数量')
-    parser.add_argument('--exp-mode', type=str, default='hybrid', choices=['hybrid', 'theory', 'physical'], help='实验模式')
-    parser.add_argument('--run-id', type=str, default=None, help='实验批次ID')
-    parser.add_argument('--exp-type', type=str, default='algo_effectiveness', help='实验类型标签')
+    parser = argparse.ArgumentParser(description="Experiment Runner")
+    parser.add_argument("--config", type=str, default="config/network_config.json", help="Path to network config")
+    parser.add_argument("--rs-id", type=str, default="RS", help="RS node ID")
+    parser.add_argument("--num-tasks", type=int, default=50, help="Number of tasks for algo effectiveness experiments")
+    parser.add_argument(
+        "--exp-mode",
+        type=str,
+        default="hybrid",
+        choices=["hybrid", "theory", "physical"],
+        help="Experiment mode",
+    )
+    parser.add_argument("--run-id", type=str, default=None, help="Experiment batch ID")
+    parser.add_argument(
+        "--exp-type",
+        type=str,
+        default="algo_effectiveness",
+        choices=["algo_effectiveness", "isl_bandwidth_sensitivity", "gsl_bandwidth_sensitivity"],
+        help="Experiment type",
+    )
+    parser.add_argument(
+        "--sweep-values",
+        type=str,
+        default=None,
+        help="Comma-separated bandwidth sweep values, e.g. 500,1000,2000",
+    )
+    parser.add_argument("--sweep-start", type=float, default=None, help="Sweep range start bandwidth in Mbps")
+    parser.add_argument("--sweep-stop", type=float, default=None, help="Sweep range stop bandwidth in Mbps")
+    parser.add_argument("--sweep-points", type=int, default=None, help="Number of evenly spaced sweep points")
+    parser.add_argument("--fixed-model", type=str, default="yolov5", help="Fixed model for bandwidth sensitivity")
+    parser.add_argument("--fixed-batch-size", type=int, default=32, help="Fixed batch size for bandwidth sensitivity")
+    parser.add_argument("--fixed-input-h", type=int, default=640, help="Fixed input height for bandwidth sensitivity")
+    parser.add_argument("--fixed-input-w", type=int, default=640, help="Fixed input width for bandwidth sensitivity")
+    parser.add_argument(
+        "--repeat-per-point",
+        type=int,
+        default=10,
+        help="Repeated measurements per bandwidth point for sensitivity experiments",
+    )
+    parser.add_argument(
+        "--preset",
+        type=str,
+        default=None,
+        help="Shortcut preset for common experiments",
+    )
+    parser.add_argument("--preset-file", type=str, default=DEFAULT_PRESET_FILE, help="JSON preset file path")
+    parser.add_argument("--seed", type=int, default=42, help="Base seed for deterministic runs")
+    explicit_cli_args = _collect_explicit_cli_args(sys.argv[1:])
     args = parser.parse_args()
+
+    args = _apply_preset(args, explicit_cli_args)
 
     run_id = args.run_id or f"run_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
     rs_node = None
+
     try:
-        rs_node = start_rs_node(args.config, args.rs_id)
+        _seed_everything(_stable_int_seed(args.seed, run_id, args.exp_type))
+        needs_rs_node = args.exp_type == "algo_effectiveness" and args.exp_mode in ("hybrid", "physical")
+        if needs_rs_node:
+            rs_node = start_rs_node(args.config, args.rs_id)
+
         run_experiment(
             rs_node=rs_node,
             net_config_path=args.config,
@@ -353,6 +767,17 @@ def main():
             exp_mode=args.exp_mode,
             run_id=run_id,
             exp_type=args.exp_type,
+            sweep_values=_build_sweep_values(
+                raw_values=args.sweep_values,
+                sweep_start=args.sweep_start,
+                sweep_stop=args.sweep_stop,
+                sweep_points=args.sweep_points,
+            ),
+            fixed_model=args.fixed_model,
+            fixed_batch_size=args.fixed_batch_size,
+            fixed_input_h=args.fixed_input_h,
+            fixed_input_w=args.fixed_input_w,
+            repeat_per_point=args.repeat_per_point,
         )
     finally:
         if rs_node is not None:
@@ -360,5 +785,5 @@ def main():
         GLOBAL_POOL.close_all()
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

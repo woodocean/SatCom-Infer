@@ -57,14 +57,19 @@ class Scheduler:
         exp_type,
         mode,
         output_csv,
+        persist_algorithms=None,
+        normalization_baseline_latency=None,
     ):
         """将理论调度结果写入标准化长表，便于统一分析与绘图。"""
         file_exists = os.path.isfile(output_csv)
         timestamp = datetime.now().isoformat(timespec="seconds")
 
         # 归一化基线：同任务下 GS-Only 的时延
-        gs_only_latency = plans.get("GS-Only", {}).get("latency", float("inf"))
+        gs_only_latency = normalization_baseline_latency
+        if gs_only_latency is None:
+            gs_only_latency = plans.get("GS-Only", {}).get("latency", float("inf"))
         use_norm = gs_only_latency not in (None, float("inf"), 0.0)
+        persist_algorithms = set(persist_algorithms) if persist_algorithms else None
 
         with open(output_csv, 'a', newline='', encoding='utf-8') as f:
             writer = csv.writer(f)
@@ -87,6 +92,8 @@ class Scheduler:
                 ])
 
             for alg_name, data in plans.items():
+                if persist_algorithms is not None and alg_name not in persist_algorithms:
+                    continue
                 latency = data.get("latency", float("inf"))
                 if use_norm and latency != float("inf"):
                     norm_latency = latency / gs_only_latency
@@ -122,6 +129,10 @@ class Scheduler:
         mode="theory",
         standardized_csv_file="results_long.csv",
         persist_theory=True,
+        algorithm_names=None,
+        persist_algorithms=None,
+        normalization_baseline_latency=None,
+        return_full_plans=False,
     ):
         # print(f"\n[{task_id}] 接收任务: {model_name} | 规格: b{batch_size}_{target_h}x{target_w}")
         
@@ -202,36 +213,46 @@ class Scheduler:
         # ================= 3. 执行六大算法 (对标实验核心) =================
         solver = PMPSolver(model_profile, env_status)
         plans = {}
+        selected_algorithms = set(algorithm_names) if algorithm_names else None
 
-        try:
-            la_lat, la_plan = solver.solve_la_dp()
-            plans["LA-DP"] = {"plan": la_plan, "latency": la_lat}
-        except Exception as e: plans["LA-DP"] = {"plan": None, "latency": float('inf')}
+        def should_run(algorithm_name):
+            return selected_algorithms is None or algorithm_name in selected_algorithms
 
-        try:
-            gr_lat, gr_plan = solver.solve_communication_greedy()
-            plans["Greedy"] = {"plan": gr_plan, "latency": gr_lat}
-        except Exception as e: plans["Greedy"] = {"plan": None, "latency": float('inf')}
+        if should_run("LA-DP"):
+            try:
+                la_lat, la_plan = solver.solve_la_dp()
+                plans["LA-DP"] = {"plan": la_plan, "latency": la_lat}
+            except Exception as e: plans["LA-DP"] = {"plan": None, "latency": float('inf')}
 
-        try:
-            un_lat, un_plan = solver.solve_uniform_partition()
-            plans["Uniform"] = {"plan": un_plan, "latency": un_lat}
-        except Exception as e: plans["Uniform"] = {"plan": None, "latency": float('inf')}
+        if should_run("Greedy"):
+            try:
+                gr_lat, gr_plan = solver.solve_communication_greedy()
+                plans["Greedy"] = {"plan": gr_plan, "latency": gr_lat}
+            except Exception as e: plans["Greedy"] = {"plan": None, "latency": float('inf')}
 
-        try:
-            rd_lat, rd_plan = solver.solve_random_split(n_trials=1)
-            plans["Random"] = {"plan": rd_plan, "latency": rd_lat}
-        except Exception as e: plans["Random"] = {"plan": None, "latency": float('inf')}
+        if should_run("Uniform"):
+            try:
+                un_lat, un_plan = solver.solve_uniform_partition()
+                plans["Uniform"] = {"plan": un_plan, "latency": un_lat}
+            except Exception as e: plans["Uniform"] = {"plan": None, "latency": float('inf')}
 
-        try:
-            bp_lat, bp_plan = solver.solve_bent_pipe()
-            plans["GS-Only"] = {"plan": bp_plan, "latency": bp_lat}
-        except Exception as e: plans["GS-Only"] = {"plan": None, "latency": float('inf')}
+        if should_run("Random"):
+            try:
+                rd_lat, rd_plan = solver.solve_random_split(n_trials=1)
+                plans["Random"] = {"plan": rd_plan, "latency": rd_lat}
+            except Exception as e: plans["Random"] = {"plan": None, "latency": float('inf')}
 
-        try:
-            ga_lat, ga_plan = solver.solve_ga(pop_size=30, generations=500, mutation_rate=0.2)
-            plans["GA"] = {"plan": ga_plan, "latency": ga_lat}
-        except Exception as e: plans["GA"] = {"plan": None, "latency": float('inf')}
+        if should_run("GS-Only"):
+            try:
+                bp_lat, bp_plan = solver.solve_bent_pipe()
+                plans["GS-Only"] = {"plan": bp_plan, "latency": bp_lat}
+            except Exception as e: plans["GS-Only"] = {"plan": None, "latency": float('inf')}
+
+        if should_run("GA"):
+            try:
+                ga_lat, ga_plan = solver.solve_ga(pop_size=30, generations=500, mutation_rate=0.2)
+                plans["GA"] = {"plan": ga_plan, "latency": ga_lat}
+            except Exception as e: plans["GA"] = {"plan": None, "latency": float('inf')}
 
         # ================= 4. 终端打印与日志记录 =================
         print(f"\n--- 调度结果汇总 ({task_id}) ---")
@@ -240,6 +261,7 @@ class Scheduler:
             print(f"| {name.ljust(15)} | 预计时延: {lat_str.ljust(12)} | 层级决策: {data['plan']}")
 
         if persist_theory:
+            persist_algorithms_set = set(persist_algorithms) if persist_algorithms else None
             # 记录到 CSV 中
             csv_file = "theoretical_results.csv"
             file_exists = os.path.isfile(csv_file)
@@ -248,6 +270,8 @@ class Scheduler:
                 # if not file_exists:
                 #     writer.writerow(["TaskID", "Model", "Algorithm", "Latency_ms"])
                 for name, data in plans.items():
+                    if persist_algorithms_set is not None and name not in persist_algorithms_set:
+                        continue
                     writer.writerow([task_id,name, data['latency']])
 
             # 双写：新增标准化长表输出，不影响旧流程读取。
@@ -264,6 +288,10 @@ class Scheduler:
                 exp_type=exp_type,
                 mode=mode,
                 output_csv=standardized_csv_file,
+                persist_algorithms=persist_algorithms,
+                normalization_baseline_latency=normalization_baseline_latency,
             )
 
+        if return_full_plans:
+            return plans
         return {k: v['plan'] for k, v in plans.items()}
