@@ -189,6 +189,24 @@ isl_df = df[df["exp_type"] == "isl_bandwidth_sensitivity"]
 summary = isl_df.groupby(["isl_avg_bw_mbps", "algorithm"])["norm_latency_vs_gs"].mean()
 ```
 
+每次实验也会自动归档到：
+
+```text
+result/runs/<本次实验目录>/
+```
+
+该目录会保存本次实验的数据切片、配置快照、metadata 和 README。实验总目录见：
+
+```text
+result/EXPERIMENT_INDEX.md
+```
+
+更完整的归档说明见：
+
+```text
+doc/experiment_result_archive.md
+```
+
 ## 8. 必要提醒
 
 `experiments_runner.py` 会写回 `config/network_config.json`。理论实验通常没问题，但如果你要保留某个手工网络配置，跑实验前最好先确认当前配置。

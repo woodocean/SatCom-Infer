@@ -13,6 +13,14 @@ import numpy as np
 import torch
 
 from core.node import ComputeNode
+from core.experiment_archive import (
+    append_experiment_index,
+    build_artifact_stem,
+    create_run_archive,
+    export_run_rows,
+    now_stamp,
+    update_run_metadata,
+)
 
 sys.path.append(os.getcwd())
 
@@ -195,6 +203,32 @@ def _build_sweep_values(raw_values=None, sweep_start=None, sweep_stop=None, swee
 
     values = np.linspace(float(sweep_start), float(sweep_stop), points)
     return [round(float(value), 6) for value in values]
+
+
+def _build_run_metadata(args, run_id, sweep_values, started_at, started_at_compact):
+    return {
+        "run_id": run_id,
+        "started_at": started_at,
+        "started_at_compact": started_at_compact,
+        "status": "running",
+        "command": " ".join(sys.argv),
+        "config": args.config,
+        "preset": args.preset,
+        "preset_file": args.preset_file,
+        "seed": args.seed,
+        "exp_type": args.exp_type,
+        "exp_mode": args.exp_mode,
+        "num_tasks": args.num_tasks,
+        "sweep_values": sweep_values,
+        "sweep_start": args.sweep_start,
+        "sweep_stop": args.sweep_stop,
+        "sweep_points": args.sweep_points,
+        "fixed_model": args.fixed_model,
+        "fixed_batch_size": args.fixed_batch_size,
+        "fixed_input_h": args.fixed_input_h,
+        "fixed_input_w": args.fixed_input_w,
+        "repeat_per_point": args.repeat_per_point,
+    }
 
 
 def _load_presets(preset_file):
@@ -753,8 +787,28 @@ def main():
 
     run_id = args.run_id or f"run_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
     rs_node = None
+    archive_dir = None
+    metadata = None
+    sweep_values = _build_sweep_values(
+        raw_values=args.sweep_values,
+        sweep_start=args.sweep_start,
+        sweep_stop=args.sweep_stop,
+        sweep_points=args.sweep_points,
+    )
+    started_at = datetime.now().isoformat(timespec="seconds")
+    started_at_compact = now_stamp()
 
     try:
+        metadata = _build_run_metadata(args, run_id, sweep_values, started_at, started_at_compact)
+        archive_dir = create_run_archive(
+            metadata,
+            snapshot_paths={
+                "network_config": args.config,
+                "experiment_presets": args.preset_file,
+            },
+        )
+        print(f"[ARCHIVE] Run archive: {archive_dir}")
+
         _seed_everything(_stable_int_seed(args.seed, run_id, args.exp_type))
         needs_rs_node = args.exp_type == "algo_effectiveness" and args.exp_mode in ("hybrid", "physical")
         if needs_rs_node:
@@ -767,18 +821,39 @@ def main():
             exp_mode=args.exp_mode,
             run_id=run_id,
             exp_type=args.exp_type,
-            sweep_values=_build_sweep_values(
-                raw_values=args.sweep_values,
-                sweep_start=args.sweep_start,
-                sweep_stop=args.sweep_stop,
-                sweep_points=args.sweep_points,
-            ),
+            sweep_values=sweep_values,
             fixed_model=args.fixed_model,
             fixed_batch_size=args.fixed_batch_size,
             fixed_input_h=args.fixed_input_h,
             fixed_input_w=args.fixed_input_w,
             repeat_per_point=args.repeat_per_point,
         )
+        if archive_dir is not None:
+            stem = build_artifact_stem(metadata)
+            data_path = archive_dir / "data" / f"results_long_{stem}.csv"
+            rows = export_run_rows("results_long.csv", run_id, data_path)
+            metadata = update_run_metadata(
+                archive_dir,
+                {
+                    "status": "completed",
+                    "completed_at": datetime.now().isoformat(timespec="seconds"),
+                    "exported_results_csv": str(data_path),
+                    "exported_rows": rows,
+                },
+            )
+            append_experiment_index(metadata, archive_dir)
+            print(f"[ARCHIVE] Exported {rows} rows to {data_path}")
+    except Exception:
+        if archive_dir is not None:
+            metadata = update_run_metadata(
+                archive_dir,
+                {
+                    "status": "failed",
+                    "completed_at": datetime.now().isoformat(timespec="seconds"),
+                },
+            )
+            append_experiment_index(metadata, archive_dir)
+        raise
     finally:
         if rs_node is not None:
             rs_node.stop()

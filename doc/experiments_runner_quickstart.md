@@ -32,6 +32,18 @@ python experiments_runner.py --preset gsl
 python plot_avg_tho_vs_real.py --exp-type auto --no-show
 ```
 
+实验数据、配置快照、图片和 summary 会归档到：
+
+```text
+result/runs/
+```
+
+总目录：
+
+```text
+result/EXPERIMENT_INDEX.md
+```
+
 ## 常用自定义
 
 指定批次名：
@@ -73,3 +85,7 @@ config/experiment_presets.json
 `doc/experiments_runner_usage.md`：
 
 放完整说明，包括参数含义、preset 怎么写、结果表怎么理解、随机性和带宽扫参口径。
+
+`doc/experiment_result_archive.md`：
+
+说明实验结果、图片、summary 和总目录如何归档。

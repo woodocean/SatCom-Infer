@@ -6,6 +6,16 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 
+from core.experiment_archive import (
+    append_experiment_index,
+    build_artifact_stem,
+    create_run_archive,
+    export_run_rows,
+    find_run_archive,
+    now_stamp,
+    update_run_metadata,
+)
+
 warnings.filterwarnings("ignore")
 
 
@@ -94,6 +104,78 @@ def _infer_exp_type(df):
 
 def _preferred_algorithms(available):
     return [alg for alg in ALGO_ORDER if alg in available]
+
+
+def _single_or_mixed(series):
+    values = [v for v in series.dropna().unique().tolist()]
+    if len(values) == 1:
+        return values[0]
+    return "mixed"
+
+
+def _metadata_from_df(df, exp_type, run_id):
+    first_timestamp = df["timestamp"].dropna().iloc[0] if "timestamp" in df and not df["timestamp"].dropna().empty else ""
+    metadata = {
+        "run_id": run_id,
+        "started_at": first_timestamp,
+        "started_at_compact": now_stamp(),
+        "status": "plotted",
+        "exp_type": exp_type,
+        "exp_mode": _single_or_mixed(df["mode"]) if "mode" in df else "mixed",
+        "fixed_model": _single_or_mixed(df["model_name"]) if "model_name" in df else "mixed",
+        "fixed_batch_size": _single_or_mixed(df["batch_size"]) if "batch_size" in df else "mixed",
+        "fixed_input_h": _single_or_mixed(df["input_h"]) if "input_h" in df else "mixed",
+        "fixed_input_w": _single_or_mixed(df["input_w"]) if "input_w" in df else "mixed",
+    }
+    if exp_type in ("isl_bandwidth_sensitivity", "gsl_bandwidth_sensitivity"):
+        x_col, _ = _bandwidth_x_column(exp_type)
+        bw_values = sorted(pd.to_numeric(df[x_col], errors="coerce").dropna().unique().tolist())
+        if bw_values:
+            metadata["sweep_start"] = round(float(bw_values[0]), 6)
+            metadata["sweep_stop"] = round(float(bw_values[-1]), 6)
+            metadata["sweep_points"] = len(bw_values)
+    return metadata
+
+
+def _resolve_archive(df, exp_type, run_id):
+    archive_dir = find_run_archive(run_id)
+    if archive_dir is not None:
+        return archive_dir
+
+    metadata = _metadata_from_df(df, exp_type, run_id)
+    archive_dir = create_run_archive(metadata)
+    append_experiment_index(metadata, archive_dir)
+    return archive_dir
+
+
+def _export_summary(df, exp_type, archive_dir, stem):
+    archive_dir = os.path.abspath(archive_dir)
+    summary_path = os.path.join(archive_dir, "data", f"summary_{stem}.csv")
+
+    work = df.copy()
+    work["latency_ms"] = pd.to_numeric(work["latency_ms"], errors="coerce")
+    work["norm_latency_vs_gs"] = pd.to_numeric(work["norm_latency_vs_gs"], errors="coerce")
+
+    if exp_type in ("isl_bandwidth_sensitivity", "gsl_bandwidth_sensitivity"):
+        x_col, _ = _bandwidth_x_column(exp_type)
+        group_cols = ["run_id", "exp_type", "mode", x_col, "algorithm", "model_name", "batch_size", "input_h", "input_w"]
+    else:
+        group_cols = ["run_id", "exp_type", "mode", "model_name", "algorithm"]
+
+    summary = (
+        work.groupby(group_cols, dropna=False)
+        .agg(
+            mean_latency_ms=("latency_ms", "mean"),
+            std_latency_ms=("latency_ms", "std"),
+            mean_norm_latency_vs_gs=("norm_latency_vs_gs", "mean"),
+            std_norm_latency_vs_gs=("norm_latency_vs_gs", "std"),
+            samples=("norm_latency_vs_gs", "count"),
+        )
+        .reset_index()
+    )
+    os.makedirs(os.path.dirname(summary_path), exist_ok=True)
+    summary.to_csv(summary_path, index=False, encoding="utf-8")
+    return summary_path
 
 
 def draw_bar_chart(ax, mode_df, title):
@@ -306,13 +388,36 @@ def plot_experiment_results(results_csv="results_long.csv", run_id=None, exp_typ
         detected_exp_type = _infer_exp_type(df)
         print(f"[INFO] Auto-detected exp_type: {detected_exp_type}")
 
+    actual_run_id = run_id or df["run_id"].iloc[0]
+    archive_dir = _resolve_archive(df, detected_exp_type, actual_run_id)
+    metadata = _metadata_from_df(df, detected_exp_type, actual_run_id)
+    stem = build_artifact_stem(metadata)
+    if output_path is None:
+        output_path = os.path.join(archive_dir, "figures", f"{stem}.png")
+    exported_data_path = os.path.join(archive_dir, "data", f"results_long_{stem}.csv")
+    exported_rows = export_run_rows(results_csv, actual_run_id, exported_data_path)
+
     if detected_exp_type == "algo_effectiveness":
-        return _plot_algo_effectiveness(df, run_id, output_path, show)
+        figure_path = _plot_algo_effectiveness(df, actual_run_id, output_path, show)
+    elif detected_exp_type in ("isl_bandwidth_sensitivity", "gsl_bandwidth_sensitivity"):
+        figure_path = _plot_bandwidth_sensitivity(df, detected_exp_type, actual_run_id, output_path, show)
+    else:
+        raise ValueError(f"Unsupported exp_type: {detected_exp_type}")
 
-    if detected_exp_type in ("isl_bandwidth_sensitivity", "gsl_bandwidth_sensitivity"):
-        return _plot_bandwidth_sensitivity(df, detected_exp_type, run_id, output_path, show)
-
-    raise ValueError(f"Unsupported exp_type: {detected_exp_type}")
+    summary_path = _export_summary(df, detected_exp_type, archive_dir, stem)
+    update_run_metadata(
+        archive_dir,
+        {
+            "plot_status": "plotted",
+            "last_plotted_at": now_stamp(),
+            "figure_path": str(figure_path),
+            "summary_csv": str(summary_path),
+            "plot_exported_results_csv": str(exported_data_path),
+            "plot_exported_rows": exported_rows,
+        },
+    )
+    print(f"[OK] Saved summary to {summary_path}")
+    return figure_path
 
 
 def main():
