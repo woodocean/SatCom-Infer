@@ -28,6 +28,7 @@ MODE_LABELS = {
 }
 EXP_TYPE_LABELS = {
     "algo_effectiveness": "算法有效性",
+    "energy_comparison": "理论能耗对比",
     "isl_bandwidth_sensitivity": "ISL 带宽敏感性",
     "gsl_bandwidth_sensitivity": "GSL 带宽敏感性",
     "node_count_sensitivity": "节点数敏感性",
@@ -56,6 +57,33 @@ def _normalize_within_task_mode(df):
     work.loc[gs_self, "norm_latency_vs_gs"] = 1.0
 
     return work.drop(columns=["gs_latency"])
+
+
+def _normalize_energy_within_task_mode(df):
+    """Fill missing normalized energy using GS-Only within the same task and mode."""
+    required = {"satellite_energy_j", "norm_energy_vs_gs"}
+    if not required.issubset(set(df.columns)):
+        return df
+
+    work = df.copy()
+    work["satellite_energy_j"] = pd.to_numeric(work["satellite_energy_j"], errors="coerce")
+    work["norm_energy_vs_gs"] = pd.to_numeric(work["norm_energy_vs_gs"], errors="coerce")
+
+    gs_rows = work[work["algorithm"] == "GS-Only"][["run_id", "task_id", "mode", "satellite_energy_j"]].copy()
+    gs_rows = gs_rows.rename(columns={"satellite_energy_j": "gs_energy"})
+    work = work.merge(gs_rows, on=["run_id", "task_id", "mode"], how="left")
+
+    missing_norm = work["norm_energy_vs_gs"].isna()
+    valid_gs = work["gs_energy"].notna() & (work["gs_energy"] != 0)
+    valid_energy = work["satellite_energy_j"].notna()
+    fill_mask = missing_norm & valid_gs & valid_energy
+    work.loc[fill_mask, "norm_energy_vs_gs"] = (
+        work.loc[fill_mask, "satellite_energy_j"] / work.loc[fill_mask, "gs_energy"]
+    )
+
+    gs_self = (work["algorithm"] == "GS-Only") & work["norm_energy_vs_gs"].isna()
+    work.loc[gs_self, "norm_energy_vs_gs"] = 1.0
+    return work.drop(columns=["gs_energy"])
 
 
 def load_long_results(csv_path="results_long.csv", run_id=None, exp_type=None):
@@ -96,6 +124,7 @@ def load_long_results(csv_path="results_long.csv", run_id=None, exp_type=None):
         return None
 
     df = _normalize_within_task_mode(df)
+    df = _normalize_energy_within_task_mode(df)
     df = (
         df.sort_values("timestamp")
         .drop_duplicates(subset=["run_id", "task_id", "mode", "algorithm"], keep="last")
@@ -173,6 +202,9 @@ def _export_summary(df, exp_type, archive_dir, stem):
     work = df.copy()
     work["latency_ms"] = pd.to_numeric(work["latency_ms"], errors="coerce")
     work["norm_latency_vs_gs"] = pd.to_numeric(work["norm_latency_vs_gs"], errors="coerce")
+    for col in ["satellite_energy_j", "energy_compute_j", "energy_comm_j", "norm_energy_vs_gs"]:
+        if col in work.columns:
+            work[col] = pd.to_numeric(work[col], errors="coerce")
 
     if exp_type in ("isl_bandwidth_sensitivity", "gsl_bandwidth_sensitivity"):
         x_col, _ = _bandwidth_x_column(exp_type)
@@ -190,6 +222,12 @@ def _export_summary(df, exp_type, archive_dir, stem):
             std_latency_ms=("latency_ms", "std"),
             mean_norm_latency_vs_gs=("norm_latency_vs_gs", "mean"),
             std_norm_latency_vs_gs=("norm_latency_vs_gs", "std"),
+            mean_satellite_energy_j=("satellite_energy_j", "mean") if "satellite_energy_j" in work.columns else ("latency_ms", "count"),
+            std_satellite_energy_j=("satellite_energy_j", "std") if "satellite_energy_j" in work.columns else ("latency_ms", "count"),
+            mean_energy_compute_j=("energy_compute_j", "mean") if "energy_compute_j" in work.columns else ("latency_ms", "count"),
+            mean_energy_comm_j=("energy_comm_j", "mean") if "energy_comm_j" in work.columns else ("latency_ms", "count"),
+            mean_norm_energy_vs_gs=("norm_energy_vs_gs", "mean") if "norm_energy_vs_gs" in work.columns else ("latency_ms", "count"),
+            std_norm_energy_vs_gs=("norm_energy_vs_gs", "std") if "norm_energy_vs_gs" in work.columns else ("latency_ms", "count"),
             samples=("norm_latency_vs_gs", "count"),
         )
         .reset_index()
@@ -268,6 +306,59 @@ def draw_bar_chart(ax, mode_df, title):
                 va="bottom",
                 fontsize=7,
             )
+
+
+def draw_energy_bar_chart(ax, mode_df, title):
+    """Draw absolute satellite-side energy comparison in Joules."""
+    if mode_df is None or mode_df.empty or "satellite_energy_j" not in mode_df.columns:
+        ax.text(0.5, 0.5, "无数据", ha="center", va="center", fontsize=12)
+        ax.set_title(title)
+        return
+
+    labels = _preferred_algorithms(mode_df["algorithm"].unique())
+    colors = ALGO_COLORS[: len(labels)]
+    work = mode_df.copy()
+    work["satellite_energy_j"] = pd.to_numeric(work["satellite_energy_j"], errors="coerce")
+    grouped = (
+        work.groupby("algorithm")["satellite_energy_j"]
+        .mean()
+        .reindex(labels)
+        .dropna()
+    )
+
+    if grouped.empty:
+        ax.text(0.5, 0.5, "无数据", ha="center", va="center", fontsize=12)
+        ax.set_title(title)
+        return
+
+    x = np.arange(len(grouped.index))
+    bars = ax.bar(
+        x,
+        grouped.values,
+        width=0.55,
+        color=[colors[labels.index(alg)] for alg in grouped.index],
+        edgecolor="black",
+        linewidth=0.8,
+    )
+    ax.set_xlabel("算法", fontsize=10)
+    ax.set_ylabel("平均卫星能耗 (J)", fontsize=10)
+    ax.set_title(title, fontsize=11, fontweight="bold")
+    ax.set_xticks(x)
+    ax.set_xticklabels(grouped.index, fontsize=10)
+    ax.grid(axis="y", linestyle=":", alpha=0.6)
+
+    for bar in bars:
+        height = bar.get_height()
+        if np.isnan(height):
+            continue
+        ax.text(
+            bar.get_x() + bar.get_width() / 2.0,
+            height + 0.01,
+            f"{height:.2f}",
+            ha="center",
+            va="bottom",
+            fontsize=8,
+        )
 
 
 def _bandwidth_x_column(exp_type):
@@ -428,6 +519,41 @@ def _plot_algo_effectiveness(df, run_id, output_path, show):
     return output_path
 
 
+def _plot_energy_comparison(df, run_id, output_path, show):
+    theory_df = df[df["mode"] == "theory"]
+    physical_df = df[df["mode"] == "physical"]
+
+    mode_panels = []
+    if not theory_df.empty:
+        mode_panels.append(("theory", theory_df, "理论卫星能耗对比"))
+    if not physical_df.empty:
+        mode_panels.append(("physical", physical_df, "实物卫星能耗对比"))
+
+    if not mode_panels:
+        print("[WARN] No theory/physical data available for energy_comparison.")
+        return None
+
+    fig, axes = plt.subplots(1, len(mode_panels), figsize=(7 * len(mode_panels), 6))
+    if len(mode_panels) == 1:
+        axes = [axes]
+
+    for ax, (_, mode_df, title) in zip(axes, mode_panels):
+        draw_energy_bar_chart(ax, mode_df, title)
+
+    suptitle = f"实验批次：{run_id} | 实验类型：理论能耗对比" if run_id else "实验类型：理论能耗对比"
+    fig.suptitle(suptitle, fontsize=11)
+    plt.tight_layout()
+
+    output_path = output_path or "energy_comparison_analysis.png"
+    plt.savefig(output_path, dpi=300, bbox_inches="tight")
+    print(f"[OK] Saved figure to {output_path}")
+    if show:
+        plt.show()
+    else:
+        plt.close(fig)
+    return output_path
+
+
 def _plot_bandwidth_sensitivity(df, exp_type, run_id, output_path, show):
     x_col, x_label = _bandwidth_x_column(exp_type)
     modes = [m for m in ["theory", "physical"] if m in df["mode"].unique().tolist()]
@@ -513,6 +639,8 @@ def plot_experiment_results(results_csv="results_long.csv", run_id=None, exp_typ
 
     if detected_exp_type == "algo_effectiveness":
         figure_path = _plot_algo_effectiveness(df, actual_run_id, output_path, show)
+    elif detected_exp_type == "energy_comparison":
+        figure_path = _plot_energy_comparison(df, actual_run_id, output_path, show)
     elif detected_exp_type in ("isl_bandwidth_sensitivity", "gsl_bandwidth_sensitivity"):
         figure_path = _plot_bandwidth_sensitivity(df, detected_exp_type, actual_run_id, output_path, show)
     elif detected_exp_type == "node_count_sensitivity":
@@ -547,6 +675,7 @@ def main():
         choices=[
             "auto",
             "algo_effectiveness",
+            "energy_comparison",
             "isl_bandwidth_sensitivity",
             "gsl_bandwidth_sensitivity",
             "node_count_sensitivity",

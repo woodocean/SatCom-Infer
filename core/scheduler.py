@@ -24,6 +24,14 @@ STANDARDIZED_RESULT_FIELDS = [
     "sweep_value",
     "latency_ms",
     "norm_latency_vs_gs",
+    "energy_compute_j",
+    "energy_comm_j",
+    "energy_total_j",
+    "satellite_energy_j",
+    "norm_energy_vs_gs",
+    "satellite_compute_time_ms",
+    "satellite_tx_time_ms",
+    "energy_model",
     "timestamp",
 ]
 
@@ -110,6 +118,7 @@ class Scheduler:
         output_csv,
         persist_algorithms=None,
         normalization_baseline_latency=None,
+        normalization_baseline_energy=None,
         metadata_extra=None,
     ):
         """将理论调度结果写入标准化长表，便于统一分析与绘图。"""
@@ -126,6 +135,10 @@ class Scheduler:
         if gs_only_latency is None:
             gs_only_latency = plans.get("GS-Only", {}).get("latency", float("inf"))
         use_norm = gs_only_latency not in (None, float("inf"), 0.0)
+        gs_only_energy = normalization_baseline_energy
+        if gs_only_energy is None:
+            gs_only_energy = plans.get("GS-Only", {}).get("satellite_energy_j", float("inf"))
+        use_energy_norm = gs_only_energy not in (None, float("inf"), 0.0)
         persist_algorithms = set(persist_algorithms) if persist_algorithms else None
 
         with open(output_csv, 'a', newline='', encoding='utf-8') as f:
@@ -141,6 +154,11 @@ class Scheduler:
                     norm_latency = latency / gs_only_latency
                 else:
                     norm_latency = ""
+                satellite_energy = data.get("satellite_energy_j", float("inf"))
+                if use_energy_norm and satellite_energy != float("inf"):
+                    norm_energy = satellite_energy / gs_only_energy
+                else:
+                    norm_energy = ""
 
                 row = {
                     "run_id": run_id,
@@ -161,6 +179,14 @@ class Scheduler:
                     "sweep_value": metadata_extra.get("sweep_value", ""),
                     "latency_ms": latency,
                     "norm_latency_vs_gs": norm_latency,
+                    "energy_compute_j": data.get("energy_compute_j", ""),
+                    "energy_comm_j": data.get("energy_comm_j", ""),
+                    "energy_total_j": data.get("energy_total_j", ""),
+                    "satellite_energy_j": satellite_energy,
+                    "norm_energy_vs_gs": norm_energy,
+                    "satellite_compute_time_ms": data.get("satellite_compute_time_ms", ""),
+                    "satellite_tx_time_ms": data.get("satellite_tx_time_ms", ""),
+                    "energy_model": data.get("energy_model", "satellite_only:P_compute=15W,P_tx=10W"),
                     "timestamp": timestamp,
                 }
                 writer.writerow(row)
@@ -180,6 +206,7 @@ class Scheduler:
         algorithm_names=None,
         persist_algorithms=None,
         normalization_baseline_latency=None,
+        normalization_baseline_energy=None,
         return_full_plans=False,
         metadata_extra=None,
     ):
@@ -303,11 +330,30 @@ class Scheduler:
                 plans["GA"] = {"plan": ga_plan, "latency": ga_lat}
             except Exception as e: plans["GA"] = {"plan": None, "latency": float('inf')}
 
+        for data in plans.values():
+            plan = data.get("plan")
+            latency = data.get("latency", float("inf"))
+            if plan is None or latency == float("inf"):
+                energy = {
+                    "energy_compute_j": float("inf"),
+                    "energy_comm_j": float("inf"),
+                    "energy_total_j": float("inf"),
+                    "satellite_energy_j": float("inf"),
+                    "satellite_compute_time_ms": float("inf"),
+                    "satellite_tx_time_ms": float("inf"),
+                }
+            else:
+                energy = solver.estimate_satellite_energy(plan)
+            data.update(energy)
+            data["energy_model"] = "satellite_only:P_compute=15W,P_tx=10W"
+
         # ================= 4. 终端打印与日志记录 =================
         print(f"\n--- 调度结果汇总 ({task_id}) ---")
         for name, data in plans.items():
             lat_str = f"{data['latency']:.2f} ms" if data['latency'] != float('inf') else "无解/越界"
-            print(f"| {name.ljust(15)} | 预计时延: {lat_str.ljust(12)} | 层级决策: {data['plan']}")
+            energy = data.get("satellite_energy_j", float("inf"))
+            energy_str = f"{energy:.4f} J" if energy != float("inf") else "无解/越界"
+            print(f"| {name.ljust(15)} | 预计时延: {lat_str.ljust(12)} | 卫星能耗: {energy_str.ljust(12)} | 层级决策: {data['plan']}")
 
         if persist_theory:
             persist_algorithms_set = set(persist_algorithms) if persist_algorithms else None
@@ -339,6 +385,7 @@ class Scheduler:
                 output_csv=standardized_csv_file,
                 persist_algorithms=persist_algorithms,
                 normalization_baseline_latency=normalization_baseline_latency,
+                normalization_baseline_energy=normalization_baseline_energy,
                 metadata_extra=metadata_extra,
             )
 

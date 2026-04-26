@@ -74,6 +74,77 @@ class PMPSolver:
         tx_ms = (comm_mb * 8.0 / bandwidth_mbps) * 1000.0
         return tx_ms + max(0.0, propagation_delay_ms)
 
+    def _tx_delay_ms(self, comm_mb: float, bandwidth_mbps: float) -> float:
+        """有效传输时间，不包含传播时延，用于理论通信能耗计算。"""
+        if bandwidth_mbps <= 0:
+            return float('inf')
+        return (comm_mb * 8.0 / bandwidth_mbps) * 1000.0
+
+    def _is_satellite_node(self, node_id: str) -> bool:
+        return str(node_id).upper().startswith("SAT")
+
+    def estimate_satellite_energy(
+        self,
+        plan: Dict,
+        satellite_compute_power_w: float = 15.0,
+        satellite_tx_power_w: float = 10.0,
+    ) -> Dict[str, float]:
+        """Estimate satellite-side theoretical energy for a solved PMP plan.
+
+        The scheduler still optimizes latency. This method only evaluates the
+        resulting plan. Communication energy follows the thesis link-budget
+        convention and counts satellite transmitter energy only:
+        E_comm = P_tx * T_tx, where T_tx excludes propagation delay.
+        """
+        if not plan:
+            return {
+                "energy_compute_j": float("inf"),
+                "energy_comm_j": float("inf"),
+                "energy_total_j": float("inf"),
+                "satellite_energy_j": float("inf"),
+                "satellite_compute_time_ms": float("inf"),
+                "satellite_tx_time_ms": float("inf"),
+            }
+
+        compute_energy_j = 0.0
+        comm_energy_j = 0.0
+        satellite_compute_time_ms = 0.0
+        satellite_tx_time_ms = 0.0
+        current_layer = 0
+        previous_node_id = "RS"
+
+        for node_idx, node in enumerate(self.nodes):
+            node_id = node["id"]
+            input_comm = self.layers[current_layer - 1]["comm_total_mb"] if current_layer > 0 else self.input_size_raw
+            tx_ms = self._tx_delay_ms(input_comm, self.B[node_idx])
+
+            if self._is_satellite_node(previous_node_id):
+                satellite_tx_time_ms += tx_ms
+                comm_energy_j += satellite_tx_power_w * (tx_ms / 1000.0)
+
+            segment = plan.get(node_id)
+            if segment is not None:
+                start, end_inclusive = int(segment[0]), int(segment[1])
+                end = end_inclusive + 1
+                if start < end:
+                    t_comp = self._compute_delay(node_idx, start, end)
+                    if self._is_satellite_node(node_id):
+                        satellite_compute_time_ms += t_comp
+                        compute_energy_j += satellite_compute_power_w * (t_comp / 1000.0)
+                    current_layer = max(current_layer, end)
+
+            previous_node_id = node_id
+
+        total_energy_j = compute_energy_j + comm_energy_j
+        return {
+            "energy_compute_j": compute_energy_j,
+            "energy_comm_j": comm_energy_j,
+            "energy_total_j": total_energy_j,
+            "satellite_energy_j": total_energy_j,
+            "satellite_compute_time_ms": satellite_compute_time_ms,
+            "satellite_tx_time_ms": satellite_tx_time_ms,
+        }
+
     # =================== 工具函数：检查内存约束（核心逻辑） ===================
     def _check_memory(self, node_idx: int, start: int, end: int) -> Tuple[bool, float]:
         """

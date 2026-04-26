@@ -125,6 +125,15 @@ DEFAULT_PRESETS = {
         "sweep_values": "1,2,3,4,5",
         "repeat_per_point": 10,
     },
+    "energy": {
+        "exp_type": "energy_comparison",
+        "exp_mode": "theory",
+        "num_tasks": 30,
+        "fixed_model": "yolov5",
+        "fixed_batch_size": 32,
+        "fixed_input_h": 640,
+        "fixed_input_w": 640,
+    },
 }
 
 
@@ -758,6 +767,7 @@ def _run_bandwidth_sensitivity_experiment(
             return_full_plans=True,
         )
         gs_only_latency = deterministic_plans.get("GS-Only", {}).get("latency", None)
+        gs_only_energy = deterministic_plans.get("GS-Only", {}).get("satellite_energy_j", None)
         print(f"[Sweep] Done {det_task_id}, algorithms={list(deterministic_plans.keys())}")
 
         for repeat_idx in range(repeat_per_point):
@@ -780,6 +790,7 @@ def _run_bandwidth_sensitivity_experiment(
                 algorithm_names=stochastic_algorithms,
                 persist_algorithms=stochastic_algorithms,
                 normalization_baseline_latency=gs_only_latency,
+                normalization_baseline_energy=gs_only_energy,
                 return_full_plans=True,
             )
 
@@ -866,6 +877,51 @@ def _run_node_count_sensitivity_experiment(
             )
 
 
+def _run_energy_comparison_experiment(
+    net_config_path,
+    num_tasks,
+    run_id,
+    exp_type,
+    fixed_model,
+    fixed_batch_size,
+    fixed_input_h,
+    fixed_input_w,
+):
+    print("\n" + "=" * 50)
+    print(
+        f"--- Energy comparison start: run_id={run_id}, exp_type={exp_type}, "
+        f"model={fixed_model}, batch={fixed_batch_size}, tasks={num_tasks} ---"
+    )
+    print("=" * 50)
+
+    algorithms = ["LA-DP", "Greedy", "Uniform", "GS-Only", "Random", "GA"]
+
+    for i in range(num_tasks):
+        task_id = f"energy_{i:03d}"
+        seed = _stable_int_seed(run_id, exp_type, task_id)
+        _seed_everything(seed)
+        update_network_topology(net_config_path, topology_mode="random", sync_remote=False)
+        time.sleep(0.1)
+
+        scheduler = _build_scheduler(net_config_path)
+        scheduler.generate_task_and_schedule(
+            task_id=task_id,
+            model_name=fixed_model,
+            batch_size=fixed_batch_size,
+            target_h=fixed_input_h,
+            target_w=fixed_input_w,
+            run_id=run_id,
+            exp_type=exp_type,
+            mode="theory",
+            standardized_csv_file="results_long.csv",
+            persist_theory=True,
+            algorithm_names=algorithms,
+            persist_algorithms=algorithms,
+            return_full_plans=True,
+        )
+        print(f"[Energy] Done {task_id} ({i + 1}/{num_tasks})")
+
+
 def run_experiment(
     rs_node,
     net_config_path,
@@ -882,6 +938,20 @@ def run_experiment(
 ):
     if exp_type == "algo_effectiveness":
         return _run_algorithm_effectiveness_experiment(rs_node, net_config_path, num_tasks, exp_mode, run_id, exp_type)
+
+    if exp_type == "energy_comparison":
+        if exp_mode != "theory":
+            print(f"[WARN] exp_type={exp_type} is theory-only for now; forcing theory mode and ignoring exp_mode={exp_mode}")
+        return _run_energy_comparison_experiment(
+            net_config_path=net_config_path,
+            num_tasks=num_tasks,
+            run_id=run_id,
+            exp_type=exp_type,
+            fixed_model=fixed_model,
+            fixed_batch_size=fixed_batch_size,
+            fixed_input_h=fixed_input_h,
+            fixed_input_w=fixed_input_w,
+        )
 
     if exp_type in ("isl_bandwidth_sensitivity", "gsl_bandwidth_sensitivity"):
         if exp_mode != "theory":
@@ -964,6 +1034,7 @@ def main():
         default="algo_effectiveness",
         choices=[
             "algo_effectiveness",
+            "energy_comparison",
             "isl_bandwidth_sensitivity",
             "gsl_bandwidth_sensitivity",
             "node_count_sensitivity",

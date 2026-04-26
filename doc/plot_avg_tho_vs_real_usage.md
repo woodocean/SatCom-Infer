@@ -5,6 +5,7 @@
 它会根据 `exp_type` 自动选择图形：
 
 - `algo_effectiveness`：算法对比柱状图
+- `energy_comparison`：理论卫星能耗对比柱状图
 - `isl_bandwidth_sensitivity`：ISL 带宽敏感性折线图
 - `gsl_bandwidth_sensitivity`：GSL 带宽敏感性折线图
 - `node_count_sensitivity`：协作节点数敏感性折线图
@@ -27,6 +28,7 @@ python plot_avg_tho_vs_real.py --exp-type auto --no-show
 
 ```bash
 python plot_avg_tho_vs_real.py --exp-type algo_effectiveness
+python plot_avg_tho_vs_real.py --exp-type energy_comparison
 python plot_avg_tho_vs_real.py --exp-type isl_bandwidth_sensitivity
 python plot_avg_tho_vs_real.py --exp-type gsl_bandwidth_sensitivity
 python plot_avg_tho_vs_real.py --exp-type node_count_sensitivity
@@ -89,6 +91,14 @@ norm_latency_vs_gs
 - `1.0` 表示和 `GS-Only` 一样
 - 小于 `1.0` 表示比 `GS-Only` 更快
 - 大于 `1.0` 表示比 `GS-Only` 更慢
+
+理论能耗对比图的纵轴使用：
+
+```text
+satellite_energy_j
+```
+
+含义是卫星侧绝对理论能耗，单位为 J。`GS-Only` 也会保留，因为其卫星侧通信中继能耗仍属于卫星系统能耗。
 
 带宽敏感性图的横轴：
 

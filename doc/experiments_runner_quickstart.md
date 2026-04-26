@@ -26,6 +26,14 @@ python experiments_runner.py --preset gsl
 
 默认会在 20 到 200 Mbps 之间生成 20 个等间隔点。确定性算法每个点跑 1 次，`Random/GA` 每个点重复 10 次取平均。
 
+理论能耗对比实验：
+
+```bash
+python experiments_runner.py --preset energy
+```
+
+默认固定 YOLOv5 b32 640x640，生成 30 个随机网络资源场景，输出卫星侧理论能耗。
+
 节点数敏感性实验：
 
 ```bash
@@ -91,6 +99,16 @@ python experiments_runner.py --preset nodes_resnet101
 python experiments_runner.py --preset nodes_vgg19
 python experiments_runner.py --preset nodes_swin_base
 python experiments_runner.py --preset nodes_vit_huge
+```
+
+其他模型的理论能耗 preset：
+
+```bash
+python experiments_runner.py --preset energy_yolo
+python experiments_runner.py --preset energy_resnet101
+python experiments_runner.py --preset energy_vgg19
+python experiments_runner.py --preset energy_swin_base
+python experiments_runner.py --preset energy_vit_huge
 ```
 
 默认自定义 preset 文件是：

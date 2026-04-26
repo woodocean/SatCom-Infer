@@ -9,6 +9,7 @@
 目前支持四个功能模块：
 
 - `algo_effectiveness`：算法有效性实验，用随机网络条件比较不同调度算法。
+- `energy_comparison`：理论能耗对比实验，固定任务并比较卫星侧理论能耗。
 - `isl_bandwidth_sensitivity`：星间链路带宽敏感性实验，只扫 ISL 平均带宽。
 - `gsl_bandwidth_sensitivity`：星地链路带宽敏感性实验，只扫 GSL 平均带宽。
 - `node_count_sensitivity`：节点数/跳数敏感性实验，改变 PMP 流水线拓扑长度。
@@ -23,6 +24,7 @@
 
 ```bash
 python experiments_runner.py --preset algo
+python experiments_runner.py --preset energy
 python experiments_runner.py --preset isl
 python experiments_runner.py --preset gsl
 python experiments_runner.py --preset nodes
@@ -40,7 +42,7 @@ python experiments_runner.py --preset nodes
 
 实验类型参数：
 
-- `--exp-type`：实验类型，可选 `algo_effectiveness`、`isl_bandwidth_sensitivity`、`gsl_bandwidth_sensitivity`、`node_count_sensitivity`
+- `--exp-type`：实验类型，可选 `algo_effectiveness`、`energy_comparison`、`isl_bandwidth_sensitivity`、`gsl_bandwidth_sensitivity`、`node_count_sensitivity`
 - `--exp-mode`：实验模式，可选 `theory`、`physical`、`hybrid`
 - `--num-tasks`：算法有效性实验的任务数量
 
@@ -133,7 +135,30 @@ python experiments_runner.py --preset isl --sweep-start 500 --sweep-stop 20000 -
 
 脚本不会把每条链路都改成完全一样的带宽，而是按基线比例缩放同类链路。这样可以保留链路之间的异构性，同时让这一类链路的平均带宽等于目标扫参值。
 
-## 6. 节点数/跳数敏感性实验口径
+## 6. 理论能耗实验口径
+
+`energy_comparison` 当前只作为评价指标，不作为调度约束。调度器仍然按时延生成切分方案，然后附带估算卫星侧理论能耗。
+
+当前理论功率参数：
+
+```text
+卫星计算功率 P_compute = 15 W
+卫星发射功率 P_tx = 10 W
+```
+
+能耗模型：
+
+```text
+E_compute = P_compute * T_compute
+E_comm = P_tx * T_tx
+E_sat = E_compute + E_comm
+```
+
+其中 `T_tx` 只表示有效传输时间，不包含传播时延。能耗只统计卫星侧，GS 计算能耗暂不计入主指标。
+
+通信能耗按“卫星发送端”统计：当某一跳的发送节点是卫星时，计入 `P_tx * T_tx`；RS 发往第一颗卫星的链路不计入卫星发射能耗。
+
+## 7. 节点数/跳数敏感性实验口径
 
 `node_count_sensitivity` 的 sweep 值表示 PMP 流水线中的协作卫星数量，不包含 `RS` 和 `GS`。
 
@@ -155,7 +180,7 @@ RS -> SAT-01 -> SAT-02 -> SAT-03 -> GS
 
 为减小单一异构拓扑带来的偶然波动，节点数实验会对每个节点数生成 `repeat_per_point` 个随机资源场景。每个场景会随机采样卫星算力、链路带宽和传播时延，然后让所有算法在同一场景下运行，最终画图时按节点数和算法取平均。
 
-## 7. 随机性说明
+## 8. 随机性说明
 
 脚本会根据 `seed + run_id + exp_type + task_id` 固定随机种子。
 
@@ -175,6 +200,8 @@ RS -> SAT-01 -> SAT-02 -> SAT-03 -> GS
 - 所有算法都会按 `repeat_per_point` 重复运行。
 - 每次重复使用不同 seed，但同一次重复中的所有算法共享同一个拓扑资源场景。
 
+能耗对比实验会固定模型、batch 和输入尺寸，并生成 `num_tasks` 个随机资源场景。每个场景下所有算法共享同一网络条件，最终按算法统计平均卫星能耗。
+
 如果你想复现实验，建议显式指定 `--run-id` 和 `--seed`。
 
 例子：
@@ -183,7 +210,7 @@ RS -> SAT-01 -> SAT-02 -> SAT-03 -> GS
 python experiments_runner.py --preset isl --run-id paper_isl_001 --seed 42
 ```
 
-## 8. 结果文件
+## 9. 结果文件
 
 理论结果会写入：
 
@@ -217,6 +244,14 @@ theoretical_results.csv
 - `sweep_value`
 - `latency_ms`
 - `norm_latency_vs_gs`
+- `energy_compute_j`
+- `energy_comm_j`
+- `energy_total_j`
+- `satellite_energy_j`
+- `norm_energy_vs_gs`
+- `satellite_compute_time_ms`
+- `satellite_tx_time_ms`
+- `energy_model`
 - `timestamp`
 
 长表不是混乱，而是方便筛选和分组。比如：
@@ -233,6 +268,14 @@ summary = isl_df.groupby(["isl_avg_bw_mbps", "algorithm"])["norm_latency_vs_gs"]
 df = pd.read_csv("results_long.csv")
 node_df = df[df["exp_type"] == "node_count_sensitivity"]
 summary = node_df.groupby(["pipeline_node_count", "algorithm"])["norm_latency_vs_gs"].mean()
+```
+
+理论能耗对比：
+
+```python
+df = pd.read_csv("results_long.csv")
+energy_df = df[df["exp_type"] == "energy_comparison"]
+summary = energy_df.groupby("algorithm")["satellite_energy_j"].mean()
 ```
 
 每次实验也会自动归档到：
@@ -253,7 +296,7 @@ result/EXPERIMENT_INDEX.md
 doc/experiment_result_archive.md
 ```
 
-## 9. 必要提醒
+## 10. 必要提醒
 
 `experiments_runner.py` 会写回 `config/network_config.json`。理论实验通常没问题，但如果你要保留某个手工网络配置，跑实验前最好先确认当前配置。
 
