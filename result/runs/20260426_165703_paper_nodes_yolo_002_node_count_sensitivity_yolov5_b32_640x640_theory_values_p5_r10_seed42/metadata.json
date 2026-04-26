@@ -1,0 +1,33 @@
+{
+  "run_id": "paper_nodes_yolo_002",
+  "started_at": "2026-04-26T16:57:03",
+  "started_at_compact": "20260426_165703",
+  "status": "completed",
+  "command": "experiments_runner.py --preset nodes_yolo --run-id paper_nodes_yolo_002",
+  "config": "config/network_config.json",
+  "preset": "nodes_yolo",
+  "preset_file": "config/experiment_presets.json",
+  "seed": 42,
+  "exp_type": "node_count_sensitivity",
+  "exp_mode": "theory",
+  "num_tasks": 50,
+  "sweep_values": [
+    1.0,
+    2.0,
+    3.0,
+    4.0,
+    5.0
+  ],
+  "sweep_start": null,
+  "sweep_stop": null,
+  "sweep_points": null,
+  "fixed_model": "yolov5",
+  "fixed_batch_size": 32,
+  "fixed_input_h": 640,
+  "fixed_input_w": 640,
+  "repeat_per_point": 10,
+  "archive_dir": "result\\runs\\20260426_165703_paper_nodes_yolo_002_node_count_sensitivity_yolov5_b32_640x640_theory_values_p5_r10_seed42",
+  "completed_at": "2026-04-26T16:57:22",
+  "exported_results_csv": "result\\runs\\20260426_165703_paper_nodes_yolo_002_node_count_sensitivity_yolov5_b32_640x640_theory_values_p5_r10_seed42\\data\\results_long_node_count_sensitivity_yolov5_b32_640x640_theory_values_p5_r10_seed42.csv",
+  "exported_rows": 300
+}

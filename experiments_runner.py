@@ -95,6 +95,7 @@ DEFAULT_RES_POOL = {
 }
 DEFAULT_ISL_SWEEP_VALUES = [round(float(v), 6) for v in np.linspace(500, 20000, 20)]
 DEFAULT_GSL_SWEEP_VALUES = [round(float(v), 6) for v in np.linspace(20, 200, 20)]
+DEFAULT_NODE_COUNT_SWEEP_VALUES = [1, 2, 3, 4, 5]
 DEFAULT_PRESET_FILE = "config/experiment_presets.json"
 DEFAULT_PRESETS = {
     "algo": {
@@ -116,6 +117,12 @@ DEFAULT_PRESETS = {
         "sweep_start": 20,
         "sweep_stop": 200,
         "sweep_points": 20,
+        "repeat_per_point": 10,
+    },
+    "nodes": {
+        "exp_type": "node_count_sensitivity",
+        "exp_mode": "theory",
+        "sweep_values": "1,2,3,4,5",
         "repeat_per_point": 10,
     },
 }
@@ -166,6 +173,12 @@ def _default_bandwidth_sweep_values(exp_type):
     if exp_type == "gsl_bandwidth_sensitivity":
         return DEFAULT_GSL_SWEEP_VALUES
     raise ValueError(f"Unsupported bandwidth sensitivity exp_type: {exp_type}")
+
+
+def _default_sweep_values(exp_type):
+    if exp_type == "node_count_sensitivity":
+        return DEFAULT_NODE_COUNT_SWEEP_VALUES
+    return _default_bandwidth_sweep_values(exp_type)
 
 
 def _parse_bandwidth_sweep_values(raw_values):
@@ -306,11 +319,11 @@ def _apply_preset(args, explicit_cli_args=None):
         or args.sweep_points is not None
     )
     if (
-        args.exp_type in ("isl_bandwidth_sensitivity", "gsl_bandwidth_sensitivity")
+        args.exp_type in ("isl_bandwidth_sensitivity", "gsl_bandwidth_sensitivity", "node_count_sensitivity")
         and args.sweep_values is None
         and not has_range_sweep
     ):
-        args.sweep_values = ",".join(str(v) for v in _default_bandwidth_sweep_values(args.exp_type))
+        args.sweep_values = ",".join(str(v) for v in _default_sweep_values(args.exp_type))
 
     return args
 
@@ -390,6 +403,126 @@ def _apply_bandwidth_scale(base_config, target, desired_avg_bw):
     return config
 
 
+def _apply_random_resource_profile(base_config):
+    config = _clone_config(base_config)
+    for node_id, node_info in config.get("nodes", {}).items():
+        hw = node_info.setdefault("hardware", {})
+        if node_id == "GS":
+            node_tflops = 300.0
+        elif node_id.startswith("SAT"):
+            node_tflops = round(random.uniform(0.5, 10.0), 3)
+        else:
+            node_tflops = 0.0
+
+        hw["compute_speed_tflops"] = node_tflops
+        hw["compute_speed_gflops_per_ms"] = node_tflops
+
+    for link_name, info in config.get("links", {}).items():
+        if "GS" in link_name:
+            new_bw = random.randint(50, 200)
+            new_delay = random.uniform(1.0, 2.0)
+        else:
+            new_bw = random.randint(1000, 20000)
+            new_delay = random.uniform(2.0, 5.0)
+
+        info["bandwidth_mbps"] = new_bw
+        info["propagation_delay_ms"] = round(new_delay, 2)
+    return config
+
+
+def _link_class(link_name):
+    return "gsl" if "GS" in link_name else "isl"
+
+
+def _link_class_defaults(links):
+    stats = {
+        "isl": {"bandwidths": [], "delays": []},
+        "gsl": {"bandwidths": [], "delays": []},
+    }
+    for link_name, info in links.items():
+        cls = _link_class(link_name)
+        stats[cls]["bandwidths"].append(float(info.get("bandwidth_mbps", 100.0)))
+        stats[cls]["delays"].append(float(info.get("propagation_delay_ms", 1.0)))
+
+    defaults = {}
+    for cls, values in stats.items():
+        bws = values["bandwidths"]
+        delays = values["delays"]
+        defaults[cls] = {
+            "bandwidth_mbps": sum(bws) / len(bws) if bws else (150.0 if cls == "gsl" else 10000.0),
+            "propagation_delay_ms": sum(delays) / len(delays) if delays else (1.5 if cls == "gsl" else 3.0),
+        }
+    return defaults
+
+
+def _find_existing_link(links, src, dst):
+    forward_key = f"{src}_to_{dst}"
+    backward_key = f"{dst}_to_{src}"
+    if forward_key in links:
+        return forward_key, links[forward_key]
+    if backward_key in links:
+        return backward_key, links[backward_key]
+    return None, None
+
+
+def _apply_pipeline_node_count(base_config, node_count):
+    """Build a linear RS -> SAT-* -> GS pipeline for node-count sensitivity.
+
+    Missing adjacent links are synthesized from the average bandwidth/delay of
+    the same link class. This makes the theory experiment runnable today while
+    keeping the generated topology explicit for future physical orchestration.
+    """
+    config = _clone_config(base_config)
+    nodes = config.get("nodes", {})
+    links = config.setdefault("links", {})
+
+    sat_ids = sorted(node_id for node_id in nodes if node_id.startswith("SAT"))
+    node_count = int(node_count)
+    if node_count < 1:
+        raise ValueError("node_count must be at least 1")
+    if node_count > len(sat_ids):
+        raise ValueError(f"node_count={node_count} exceeds available satellites: {len(sat_ids)}")
+
+    selected_sats = sat_ids[:node_count]
+    pipeline = ["RS"] + selected_sats + ["GS"]
+    defaults = _link_class_defaults(links)
+
+    for src, dst in zip(pipeline[:-1], pipeline[1:]):
+        _, existing = _find_existing_link(links, src, dst)
+        if existing is not None:
+            continue
+
+        link_name = f"{src}_to_{dst}"
+        cls = _link_class(link_name)
+        links[link_name] = {
+            "bandwidth_mbps": round(float(defaults[cls]["bandwidth_mbps"]), 4),
+            "propagation_delay_ms": round(float(defaults[cls]["propagation_delay_ms"]), 4),
+            "synthetic_for_node_count_sweep": True,
+        }
+
+    for node_id, info in nodes.items():
+        if node_id not in pipeline:
+            info["neighbors"] = []
+            continue
+
+        idx = pipeline.index(node_id)
+        neighbors = []
+        if idx > 0:
+            neighbors.append(pipeline[idx - 1])
+        if idx < len(pipeline) - 1:
+            neighbors.append(pipeline[idx + 1])
+        info["neighbors"] = neighbors
+
+    simulation_paths = config.setdefault("simulation_paths", {})
+    simulation_paths["pipeline"] = pipeline
+    simulation_paths["node_count_sweep"] = {
+        "pipeline_node_count": node_count,
+        "pipeline_hop_count": len(pipeline) - 1,
+        "selected_satellites": selected_sats,
+    }
+    return config
+
+
 def update_network_topology(
     config_path,
     qos_client=None,
@@ -404,33 +537,13 @@ def update_network_topology(
     topology_mode:
         - random: preserve old behavior, randomize compute and link conditions
         - bandwidth_sweep: keep everything from base_config except the selected bandwidth class
+        - node_count_sweep: keep resources fixed while changing simulation_paths.pipeline
     """
     try:
         config = _clone_config(base_config) if base_config is not None else load_config(config_path)
 
         if topology_mode == "random":
-            for node_id, node_info in config.get("nodes", {}).items():
-                hw = node_info.setdefault("hardware", {})
-                if node_id == "GS":
-                    node_tflops = 300.0
-                elif node_id.startswith("SAT"):
-                    node_tflops = round(random.uniform(0.5, 10.0), 3)
-                else:
-                    node_tflops = 0.0
-
-                hw["compute_speed_tflops"] = node_tflops
-                hw["compute_speed_gflops_per_ms"] = node_tflops
-
-            for link_name, info in config["links"].items():
-                if "GS" in link_name:
-                    new_bw = random.randint(50, 200)
-                    new_delay = random.uniform(1.0, 2.0)
-                else:
-                    new_bw = random.randint(1000, 20000)
-                    new_delay = random.uniform(2.0, 5.0)
-
-                info["bandwidth_mbps"] = new_bw
-                info["propagation_delay_ms"] = round(new_delay, 2)
+            config = _apply_random_resource_profile(config)
 
         elif topology_mode == "bandwidth_sweep":
             if sweep_target not in ("isl", "gsl"):
@@ -439,6 +552,11 @@ def update_network_topology(
                 raise ValueError("sweep_value is required for bandwidth_sweep mode")
 
             config = _apply_bandwidth_scale(config, sweep_target, sweep_value)
+
+        elif topology_mode == "node_count_sweep":
+            if sweep_value is None:
+                raise ValueError("sweep_value is required for node_count_sweep mode")
+            config = _apply_pipeline_node_count(config, int(round(float(sweep_value))))
 
         else:
             raise ValueError(f"Unsupported topology_mode: {topology_mode}")
@@ -671,6 +789,83 @@ def _run_bandwidth_sensitivity_experiment(
             )
 
 
+def _run_node_count_sensitivity_experiment(
+    net_config_path,
+    run_id,
+    exp_type,
+    sweep_values,
+    fixed_model,
+    fixed_batch_size,
+    fixed_input_h,
+    fixed_input_w,
+    repeat_per_point,
+):
+    base_config = load_config(net_config_path)
+    repeat_per_point = max(1, int(repeat_per_point))
+    node_counts = [int(round(float(value))) for value in sweep_values]
+
+    print("\n" + "=" * 50)
+    print(
+        f"--- Node-count sweep start: run_id={run_id}, exp_type={exp_type}, "
+        f"node_counts={node_counts}, repeat_per_point={repeat_per_point} ---"
+    )
+    print("=" * 50)
+
+    algorithms = ["LA-DP", "Greedy", "Uniform", "GS-Only", "Random", "GA"]
+
+    for idx, node_count in enumerate(node_counts):
+        point_id = f"{exp_type}_{idx:03d}"
+        print(f"\n[Sweep] {point_id} | pipeline_node_count={node_count}")
+
+        for repeat_idx in range(repeat_per_point):
+            task_id = f"{point_id}_rep{repeat_idx:02d}"
+            seed = _stable_int_seed(run_id, exp_type, point_id, node_count, repeat_idx)
+            _seed_everything(seed)
+
+            scenario_base_config = _apply_random_resource_profile(base_config)
+            config = update_network_topology(
+                net_config_path,
+                topology_mode="node_count_sweep",
+                base_config=scenario_base_config,
+                sweep_value=node_count,
+                sync_remote=False,
+            )
+            if config is None:
+                raise RuntimeError(f"Failed to build node-count topology for node_count={node_count}")
+
+            pipeline = config.get("simulation_paths", {}).get("pipeline", [])
+            metadata_extra = {
+                "pipeline_node_count": max(0, len(pipeline) - 2),
+                "pipeline_hop_count": max(0, len(pipeline) - 1),
+                "pipeline_path": "->".join(pipeline),
+                "sweep_param": "pipeline_node_count",
+                "sweep_value": node_count,
+            }
+
+            scheduler = _build_scheduler(net_config_path)
+            plans = scheduler.generate_task_and_schedule(
+                task_id=task_id,
+                model_name=fixed_model,
+                batch_size=fixed_batch_size,
+                target_h=fixed_input_h,
+                target_w=fixed_input_w,
+                run_id=run_id,
+                exp_type=exp_type,
+                mode="theory",
+                standardized_csv_file="results_long.csv",
+                persist_theory=True,
+                algorithm_names=algorithms,
+                persist_algorithms=algorithms,
+                return_full_plans=True,
+                metadata_extra=metadata_extra,
+            )
+
+            print(
+                f"[Sweep] Done {task_id} ({repeat_idx + 1}/{repeat_per_point}), "
+                f"path={' -> '.join(pipeline)}, algorithms={list(plans.keys())}"
+            )
+
+
 def run_experiment(
     rs_node,
     net_config_path,
@@ -694,6 +889,23 @@ def run_experiment(
 
         values = sweep_values or _default_bandwidth_sweep_values(exp_type)
         return _run_bandwidth_sensitivity_experiment(
+            net_config_path=net_config_path,
+            run_id=run_id,
+            exp_type=exp_type,
+            sweep_values=values,
+            fixed_model=fixed_model,
+            fixed_batch_size=fixed_batch_size,
+            fixed_input_h=fixed_input_h,
+            fixed_input_w=fixed_input_w,
+            repeat_per_point=repeat_per_point,
+        )
+
+    if exp_type == "node_count_sensitivity":
+        if exp_mode != "theory":
+            print(f"[WARN] exp_type={exp_type} is theory-only for now; forcing theory mode and ignoring exp_mode={exp_mode}")
+
+        values = sweep_values or DEFAULT_NODE_COUNT_SWEEP_VALUES
+        return _run_node_count_sensitivity_experiment(
             net_config_path=net_config_path,
             run_id=run_id,
             exp_type=exp_type,
@@ -750,7 +962,12 @@ def main():
         "--exp-type",
         type=str,
         default="algo_effectiveness",
-        choices=["algo_effectiveness", "isl_bandwidth_sensitivity", "gsl_bandwidth_sensitivity"],
+        choices=[
+            "algo_effectiveness",
+            "isl_bandwidth_sensitivity",
+            "gsl_bandwidth_sensitivity",
+            "node_count_sensitivity",
+        ],
         help="Experiment type",
     )
     parser.add_argument(

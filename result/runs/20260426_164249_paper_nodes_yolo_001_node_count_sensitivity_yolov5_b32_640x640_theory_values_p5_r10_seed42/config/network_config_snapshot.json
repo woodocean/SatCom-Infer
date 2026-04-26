@@ -10,7 +10,10 @@
       "role": "remote_sensing",
       "device": "PC",
       "neighbors": [
-        "SAT-01"
+        "SAT-01",
+        "SAT-02",
+        "SAT-03",
+        "GS"
       ],
       "hardware": {
         "compute_speed_gflops_per_ms": 0.0,
@@ -25,12 +28,13 @@
       "device": "Jetson_1",
       "neighbors": [
         "RS",
-        "SAT-02"
+        "SAT-03",
+        "GS"
       ],
       "hardware": {
-        "compute_speed_gflops_per_ms": 5.551,
+        "compute_speed_gflops_per_ms": 8.558,
         "memory_mb": 4096,
-        "compute_speed_tflops": 5.551
+        "compute_speed_tflops": 8.558
       }
     },
     "SAT-02": {
@@ -39,13 +43,13 @@
       "role": "leo_computing",
       "device": "Jetson_2",
       "neighbors": [
-        "SAT-01",
+        "RS",
         "SAT-03"
       ],
       "hardware": {
-        "compute_speed_gflops_per_ms": 0.99,
+        "compute_speed_gflops_per_ms": 2.209,
         "memory_mb": 2048,
-        "compute_speed_tflops": 0.99
+        "compute_speed_tflops": 2.209
       }
     },
     "SAT-03": {
@@ -55,13 +59,15 @@
       "device": "Jetson_1",
       "is_aggregator": true,
       "neighbors": [
+        "RS",
+        "SAT-01",
         "SAT-02",
         "SAT-04"
       ],
       "hardware": {
-        "compute_speed_gflops_per_ms": 2.617,
+        "compute_speed_gflops_per_ms": 4.791,
         "memory_mb": 4096,
-        "compute_speed_tflops": 2.617
+        "compute_speed_tflops": 4.791
       }
     },
     "SAT-04": {
@@ -74,9 +80,9 @@
         "SAT-05"
       ],
       "hardware": {
-        "compute_speed_gflops_per_ms": 5.585,
+        "compute_speed_gflops_per_ms": 9.182,
         "memory_mb": 2048,
-        "compute_speed_tflops": 5.585
+        "compute_speed_tflops": 9.182
       }
     },
     "SAT-05": {
@@ -89,9 +95,9 @@
         "GS"
       ],
       "hardware": {
-        "compute_speed_gflops_per_ms": 4.543,
+        "compute_speed_gflops_per_ms": 6.985,
         "memory_mb": 4096,
-        "compute_speed_tflops": 4.543
+        "compute_speed_tflops": 6.985
       }
     },
     "GS": {
@@ -100,6 +106,7 @@
       "role": "ground_station",
       "device": "PC",
       "neighbors": [
+        "RS",
         "SAT-05"
       ],
       "hardware": {
@@ -111,56 +118,49 @@
   },
   "links": {
     "RS_to_SAT-01": {
-      "bandwidth_mbps": 19850,
-      "propagation_delay_ms": 4.46
+      "bandwidth_mbps": 11348.7388,
+      "propagation_delay_ms": 4.77
     },
     "RS_to_SAT-02": {
-      "bandwidth_mbps": 19650,
-      "propagation_delay_ms": 3.97
+      "bandwidth_mbps": 21560.1357,
+      "propagation_delay_ms": 4.79
     },
     "RS_to_SAT-03": {
-      "bandwidth_mbps": 8698,
-      "propagation_delay_ms": 4.31
+      "bandwidth_mbps": 4131.8623,
+      "propagation_delay_ms": 3.86
     },
     "RS_to_GS": {
-      "bandwidth_mbps": 114,
-      "propagation_delay_ms": 1.62
+      "bandwidth_mbps": 242.6966,
+      "propagation_delay_ms": 1.29
     },
     "SAT-01_to_SAT-03": {
-      "bandwidth_mbps": 16171,
+      "bandwidth_mbps": 35790.2778,
       "propagation_delay_ms": 2.44
     },
     "SAT-01_to_GS": {
-      "bandwidth_mbps": 84,
-      "propagation_delay_ms": 1.97
+      "bandwidth_mbps": 180.3371,
+      "propagation_delay_ms": 1.31
     },
     "SAT-02_to_SAT-03": {
-      "bandwidth_mbps": 2260,
-      "propagation_delay_ms": 3.81
+      "bandwidth_mbps": 25667.3179,
+      "propagation_delay_ms": 3.47
     },
     "SAT-03_to_SAT-04": {
-      "bandwidth_mbps": 2196,
-      "propagation_delay_ms": 3.43
+      "bandwidth_mbps": 5308.2811,
+      "propagation_delay_ms": 3.3
     },
     "SAT-04_to_SAT-05": {
-      "bandwidth_mbps": 2015,
-      "propagation_delay_ms": 3.12
+      "bandwidth_mbps": 36193.3863,
+      "propagation_delay_ms": 4.63
     },
     "SAT-05_to_GS": {
-      "bandwidth_mbps": 105,
+      "bandwidth_mbps": 176.9663,
       "propagation_delay_ms": 1.65
-    },
-    "SAT-01_to_SAT-02": {
-      "bandwidth_mbps": 13577,
-      "propagation_delay_ms": 4.06,
-      "synthetic_for_node_count_sweep": true
     }
   },
   "simulation_paths": {
     "pipeline": [
       "RS",
-      "SAT-01",
-      "SAT-02",
       "SAT-03",
       "SAT-04",
       "SAT-05",
@@ -171,17 +171,6 @@
       "SAT-02",
       "SAT-03"
     ],
-    "parallel_aggregator": "SAT-03",
-    "node_count_sweep": {
-      "pipeline_node_count": 5,
-      "pipeline_hop_count": 6,
-      "selected_satellites": [
-        "SAT-01",
-        "SAT-02",
-        "SAT-03",
-        "SAT-04",
-        "SAT-05"
-      ]
-    }
+    "parallel_aggregator": "SAT-03"
   }
 }

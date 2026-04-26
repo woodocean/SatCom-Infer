@@ -26,6 +26,14 @@ python experiments_runner.py --preset gsl
 
 默认会在 20 到 200 Mbps 之间生成 20 个等间隔点。确定性算法每个点跑 1 次，`Random/GA` 每个点重复 10 次取平均。
 
+节点数敏感性实验：
+
+```bash
+python experiments_runner.py --preset nodes
+```
+
+默认会生成 1 到 5 个协作卫星的线性流水线拓扑。每个拓扑会生成 10 个随机资源场景，所有算法都在这些场景上取平均。
+
 画最新一批结果：
 
 ```bash
@@ -68,6 +76,21 @@ python experiments_runner.py --preset isl --sweep-start 500 --sweep-stop 20000 -
 
 ```bash
 python experiments_runner.py --preset isl_yolo
+```
+
+使用 YOLOv5 的节点数敏感性 preset：
+
+```bash
+python experiments_runner.py --preset nodes_yolo
+```
+
+其他模型的节点数敏感性 preset：
+
+```bash
+python experiments_runner.py --preset nodes_resnet101
+python experiments_runner.py --preset nodes_vgg19
+python experiments_runner.py --preset nodes_swin_base
+python experiments_runner.py --preset nodes_vit_huge
 ```
 
 默认自定义 preset 文件是：

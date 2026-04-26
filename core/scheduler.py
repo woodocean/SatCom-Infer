@@ -4,6 +4,57 @@ import csv
 from datetime import datetime
 from algorithms.pmp_solver import PMPSolver
 
+
+STANDARDIZED_RESULT_FIELDS = [
+    "run_id",
+    "exp_type",
+    "mode",
+    "task_id",
+    "algorithm",
+    "model_name",
+    "batch_size",
+    "input_h",
+    "input_w",
+    "isl_avg_bw_mbps",
+    "gsl_avg_bw_mbps",
+    "pipeline_node_count",
+    "pipeline_hop_count",
+    "pipeline_path",
+    "sweep_param",
+    "sweep_value",
+    "latency_ms",
+    "norm_latency_vs_gs",
+    "timestamp",
+]
+
+
+def _ensure_csv_schema(output_csv, fieldnames):
+    """Keep the long table append-safe when new metadata columns are added."""
+    if not os.path.exists(output_csv) or os.path.getsize(output_csv) == 0:
+        return False
+
+    with open(output_csv, "r", newline="", encoding="utf-8") as f:
+        reader = csv.DictReader(f)
+        old_fields = reader.fieldnames or []
+        if old_fields == fieldnames:
+            return True
+        rows = list(reader)
+
+    merged_fields = list(fieldnames)
+    for field in old_fields:
+        if field not in merged_fields:
+            merged_fields.append(field)
+
+    tmp_path = output_csv + ".schema_tmp"
+    with open(tmp_path, "w", newline="", encoding="utf-8") as f:
+        writer = csv.DictWriter(f, fieldnames=merged_fields)
+        writer.writeheader()
+        for row in rows:
+            writer.writerow({field: row.get(field, "") for field in merged_fields})
+
+    os.replace(tmp_path, output_csv)
+    return True
+
 class Scheduler:
     def __init__(self, net_config_path="config/network_config.json", 
                  pc_profiles_path="config/dnn_profiles_database_pc.json", 
@@ -59,10 +110,16 @@ class Scheduler:
         output_csv,
         persist_algorithms=None,
         normalization_baseline_latency=None,
+        metadata_extra=None,
     ):
         """将理论调度结果写入标准化长表，便于统一分析与绘图。"""
-        file_exists = os.path.isfile(output_csv)
+        file_exists = _ensure_csv_schema(output_csv, STANDARDIZED_RESULT_FIELDS)
         timestamp = datetime.now().isoformat(timespec="seconds")
+        metadata_extra = metadata_extra or {}
+        pipeline = self.net_config.get("simulation_paths", {}).get("pipeline", [])
+        pipeline_node_count = max(0, len(pipeline) - 2) if pipeline else ""
+        pipeline_hop_count = max(0, len(pipeline) - 1) if pipeline else ""
+        pipeline_path = "->".join(pipeline) if pipeline else ""
 
         # 归一化基线：同任务下 GS-Only 的时延
         gs_only_latency = normalization_baseline_latency
@@ -72,24 +129,9 @@ class Scheduler:
         persist_algorithms = set(persist_algorithms) if persist_algorithms else None
 
         with open(output_csv, 'a', newline='', encoding='utf-8') as f:
-            writer = csv.writer(f)
+            writer = csv.DictWriter(f, fieldnames=STANDARDIZED_RESULT_FIELDS)
             if not file_exists:
-                writer.writerow([
-                    "run_id",
-                    "exp_type",
-                    "mode",
-                    "task_id",
-                    "algorithm",
-                    "model_name",
-                    "batch_size",
-                    "input_h",
-                    "input_w",
-                    "isl_avg_bw_mbps",
-                    "gsl_avg_bw_mbps",
-                    "latency_ms",
-                    "norm_latency_vs_gs",
-                    "timestamp",
-                ])
+                writer.writeheader()
 
             for alg_name, data in plans.items():
                 if persist_algorithms is not None and alg_name not in persist_algorithms:
@@ -100,22 +142,28 @@ class Scheduler:
                 else:
                     norm_latency = ""
 
-                writer.writerow([
-                    run_id,
-                    exp_type,
-                    mode,
-                    task_id,
-                    alg_name,
-                    model_name,
-                    batch_size,
-                    target_h,
-                    target_w,
-                    f"{isl_avg_bw:.4f}",
-                    f"{gsl_avg_bw:.4f}",
-                    latency,
-                    norm_latency,
-                    timestamp,
-                ])
+                row = {
+                    "run_id": run_id,
+                    "exp_type": exp_type,
+                    "mode": mode,
+                    "task_id": task_id,
+                    "algorithm": alg_name,
+                    "model_name": model_name,
+                    "batch_size": batch_size,
+                    "input_h": target_h,
+                    "input_w": target_w,
+                    "isl_avg_bw_mbps": f"{isl_avg_bw:.4f}",
+                    "gsl_avg_bw_mbps": f"{gsl_avg_bw:.4f}",
+                    "pipeline_node_count": metadata_extra.get("pipeline_node_count", pipeline_node_count),
+                    "pipeline_hop_count": metadata_extra.get("pipeline_hop_count", pipeline_hop_count),
+                    "pipeline_path": metadata_extra.get("pipeline_path", pipeline_path),
+                    "sweep_param": metadata_extra.get("sweep_param", ""),
+                    "sweep_value": metadata_extra.get("sweep_value", ""),
+                    "latency_ms": latency,
+                    "norm_latency_vs_gs": norm_latency,
+                    "timestamp": timestamp,
+                }
+                writer.writerow(row)
 
     def generate_task_and_schedule(
         self,
@@ -133,6 +181,7 @@ class Scheduler:
         persist_algorithms=None,
         normalization_baseline_latency=None,
         return_full_plans=False,
+        metadata_extra=None,
     ):
         # print(f"\n[{task_id}] 接收任务: {model_name} | 规格: b{batch_size}_{target_h}x{target_w}")
         
@@ -290,6 +339,7 @@ class Scheduler:
                 output_csv=standardized_csv_file,
                 persist_algorithms=persist_algorithms,
                 normalization_baseline_latency=normalization_baseline_latency,
+                metadata_extra=metadata_extra,
             )
 
         if return_full_plans:

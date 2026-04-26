@@ -6,13 +6,16 @@
 
 ## 1. 当前能做什么
 
-目前支持三个功能模块：
+目前支持四个功能模块：
 
 - `algo_effectiveness`：算法有效性实验，用随机网络条件比较不同调度算法。
 - `isl_bandwidth_sensitivity`：星间链路带宽敏感性实验，只扫 ISL 平均带宽。
 - `gsl_bandwidth_sensitivity`：星地链路带宽敏感性实验，只扫 GSL 平均带宽。
+- `node_count_sensitivity`：节点数/跳数敏感性实验，改变 PMP 流水线拓扑长度。
 
 带宽敏感性实验当前是理论模式。它固定模型、batch、输入尺寸，只改变目标链路类别的平均带宽。
+
+节点数敏感性实验当前也是理论模式。它固定模型、batch 和输入尺寸，改变 `simulation_paths.pipeline` 中的协作卫星数量，并对每个节点数生成多个随机资源场景取平均。
 
 ## 2. 推荐用法
 
@@ -22,6 +25,7 @@
 python experiments_runner.py --preset algo
 python experiments_runner.py --preset isl
 python experiments_runner.py --preset gsl
+python experiments_runner.py --preset nodes
 ```
 
 这三个是内置 preset。你也可以在 `config/experiment_presets.json` 里添加自己的 preset。
@@ -30,17 +34,17 @@ python experiments_runner.py --preset gsl
 
 高频参数：
 
-- `--preset`：快捷实验配置，例如 `algo`、`isl`、`gsl`、`isl_yolo`
+- `--preset`：快捷实验配置，例如 `algo`、`isl`、`gsl`、`nodes`、`isl_yolo`
 - `--run-id`：实验批次名，不传会自动生成
 - `--seed`：基础随机种子，默认 `42`
 
 实验类型参数：
 
-- `--exp-type`：实验类型，可选 `algo_effectiveness`、`isl_bandwidth_sensitivity`、`gsl_bandwidth_sensitivity`
+- `--exp-type`：实验类型，可选 `algo_effectiveness`、`isl_bandwidth_sensitivity`、`gsl_bandwidth_sensitivity`、`node_count_sensitivity`
 - `--exp-mode`：实验模式，可选 `theory`、`physical`、`hybrid`
 - `--num-tasks`：算法有效性实验的任务数量
 
-带宽敏感性参数：
+敏感性实验参数：
 
 - `--sweep-values`：扫参点，逗号分隔，例如 `500,1000,2000`
 - `--sweep-start`：扫参范围起点，单位 Mbps
@@ -117,7 +121,9 @@ python experiments_runner.py --preset isl --sweep-start 500 --sweep-stop 20000 -
 
 - `isl`：500 到 20000 Mbps，共 20 个点
 - `gsl`：20 到 200 Mbps，共 20 个点
-- 每个频点默认对 `Random/GA` 重复 10 次，使用不同随机种子；确定性算法每个频点只运行 1 次
+- `nodes`：1 到 5 个协作卫星，共 5 个拓扑点
+- 带宽频点默认对 `Random/GA` 重复 10 次，使用不同随机种子；确定性算法每个频点只运行 1 次
+- 节点数拓扑默认生成 10 个随机资源场景，所有算法都参与取平均
 
 ## 5. 带宽敏感性实验口径
 
@@ -127,7 +133,29 @@ python experiments_runner.py --preset isl --sweep-start 500 --sweep-stop 20000 -
 
 脚本不会把每条链路都改成完全一样的带宽，而是按基线比例缩放同类链路。这样可以保留链路之间的异构性，同时让这一类链路的平均带宽等于目标扫参值。
 
-## 6. 随机性说明
+## 6. 节点数/跳数敏感性实验口径
+
+`node_count_sensitivity` 的 sweep 值表示 PMP 流水线中的协作卫星数量，不包含 `RS` 和 `GS`。
+
+例如 `sweep_value=3` 时，脚本会生成类似下面的路径：
+
+```text
+RS -> SAT-01 -> SAT-02 -> SAT-03 -> GS
+```
+
+脚本会写入这些字段，便于后续分析：
+
+- `pipeline_node_count`：协作卫星数量
+- `pipeline_hop_count`：通信跳数，等于 `pipeline_node_count + 1`
+- `pipeline_path`：实际生成的流水线路径
+- `sweep_param`：当前为 `pipeline_node_count`
+- `sweep_value`：当前扫到的节点数
+
+如果基线 `network_config` 中缺少某条相邻链路，脚本会用同类链路的平均带宽和平均传播时延补齐一条临时链路，并标记为 `synthetic_for_node_count_sweep`。这样理论实验可以先跑通，后续实物仿真再用 SSH 编排器按同一条 `pipeline` 启动对应节点。
+
+为减小单一异构拓扑带来的偶然波动，节点数实验会对每个节点数生成 `repeat_per_point` 个随机资源场景。每个场景会随机采样卫星算力、链路带宽和传播时延，然后让所有算法在同一场景下运行，最终画图时按节点数和算法取平均。
+
+## 7. 随机性说明
 
 脚本会根据 `seed + run_id + exp_type + task_id` 固定随机种子。
 
@@ -140,7 +168,12 @@ python experiments_runner.py --preset isl --sweep-start 500 --sweep-stop 20000 -
 带宽敏感性实验会对每个频点分两段运行：
 
 - `LA-DP`、`Greedy`、`Uniform`、`GS-Only` 是确定性算法，每个频点只运行 1 次。
-- `Random` 和 `GA` 会按 `repeat_per_point` 重复运行，每次使用不同 seed，绘图时按带宽和算法取平均。
+- `Random` 和 `GA` 会按 `repeat_per_point` 重复运行，每次使用不同 seed。
+
+节点数敏感性实验会对每个节点数生成多个随机资源场景：
+
+- 所有算法都会按 `repeat_per_point` 重复运行。
+- 每次重复使用不同 seed，但同一次重复中的所有算法共享同一个拓扑资源场景。
 
 如果你想复现实验，建议显式指定 `--run-id` 和 `--seed`。
 
@@ -150,7 +183,7 @@ python experiments_runner.py --preset isl --sweep-start 500 --sweep-stop 20000 -
 python experiments_runner.py --preset isl --run-id paper_isl_001 --seed 42
 ```
 
-## 7. 结果文件
+## 8. 结果文件
 
 理论结果会写入：
 
@@ -177,6 +210,11 @@ theoretical_results.csv
 - `input_w`
 - `isl_avg_bw_mbps`
 - `gsl_avg_bw_mbps`
+- `pipeline_node_count`
+- `pipeline_hop_count`
+- `pipeline_path`
+- `sweep_param`
+- `sweep_value`
 - `latency_ms`
 - `norm_latency_vs_gs`
 - `timestamp`
@@ -187,6 +225,14 @@ theoretical_results.csv
 df = pd.read_csv("results_long.csv")
 isl_df = df[df["exp_type"] == "isl_bandwidth_sensitivity"]
 summary = isl_df.groupby(["isl_avg_bw_mbps", "algorithm"])["norm_latency_vs_gs"].mean()
+```
+
+节点数敏感性：
+
+```python
+df = pd.read_csv("results_long.csv")
+node_df = df[df["exp_type"] == "node_count_sensitivity"]
+summary = node_df.groupby(["pipeline_node_count", "algorithm"])["norm_latency_vs_gs"].mean()
 ```
 
 每次实验也会自动归档到：
@@ -207,8 +253,8 @@ result/EXPERIMENT_INDEX.md
 doc/experiment_result_archive.md
 ```
 
-## 8. 必要提醒
+## 9. 必要提醒
 
 `experiments_runner.py` 会写回 `config/network_config.json`。理论实验通常没问题，但如果你要保留某个手工网络配置，跑实验前最好先确认当前配置。
 
-`physical` 和 `hybrid` 目前主要服务 `algo_effectiveness`。带宽敏感性实验当前会按理论实验执行。
+`physical` 和 `hybrid` 目前主要服务 `algo_effectiveness`。带宽敏感性和节点数敏感性实验当前会按理论实验执行。

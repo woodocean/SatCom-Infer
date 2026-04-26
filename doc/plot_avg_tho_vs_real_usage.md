@@ -7,6 +7,7 @@
 - `algo_effectiveness`：算法对比柱状图
 - `isl_bandwidth_sensitivity`：ISL 带宽敏感性折线图
 - `gsl_bandwidth_sensitivity`：GSL 带宽敏感性折线图
+- `node_count_sensitivity`：协作节点数敏感性折线图
 
 ## 1. 最常用命令
 
@@ -28,6 +29,7 @@ python plot_avg_tho_vs_real.py --exp-type auto --no-show
 python plot_avg_tho_vs_real.py --exp-type algo_effectiveness
 python plot_avg_tho_vs_real.py --exp-type isl_bandwidth_sensitivity
 python plot_avg_tho_vs_real.py --exp-type gsl_bandwidth_sensitivity
+python plot_avg_tho_vs_real.py --exp-type node_count_sensitivity
 ```
 
 ## 3. 指定 run_id
@@ -93,6 +95,11 @@ norm_latency_vs_gs
 - ISL 图使用 `isl_avg_bw_mbps`
 - GSL 图使用 `gsl_avg_bw_mbps`
 
+节点数敏感性图的横轴：
+
+- 优先使用 `pipeline_node_count`
+- 旧数据没有该列时，退回使用 `sweep_value`
+
 如果同一个频点有多次重复测量，脚本会按：
 
 ```text
@@ -101,7 +108,9 @@ norm_latency_vs_gs
 
 自动取 `norm_latency_vs_gs` 的平均值后再画线。
 
-当前带宽敏感性实验里，通常只有 `Random` 和 `GA` 会有多次重复测量；确定性算法每个频点只写入一次。
+带宽敏感性实验里，通常只有 `Random` 和 `GA` 会有多次重复测量；确定性算法每个频点只写入一次。
+
+节点数敏感性实验里，所有算法都会在多个随机资源场景上重复测量，脚本按节点数和算法自动取平均。
 
 ## 7. 推荐工作流
 
@@ -123,4 +132,3 @@ python plot_avg_tho_vs_real.py --run-id paper_isl_001 --exp-type isl_bandwidth_s
 result/EXPERIMENT_INDEX.md
 result/runs/<本次实验目录>/
 ```
-

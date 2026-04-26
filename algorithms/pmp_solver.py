@@ -401,7 +401,20 @@ class PMPSolver:
                 total_lat += t_comp + t_trans
             return -total_lat  # 负值，最大化适应度 = 最小化时延
 
-        population = [np.random.randint(1, self.L, size=self.K - 1) for _ in range(pop_size)]
+        cut_count = max(0, self.K - 1)
+        if cut_count == 0:
+            return self.solve_bent_pipe()
+
+        population = [np.random.randint(1, self.L, size=cut_count) for _ in range(pop_size)]
+
+        # Seed the population with stable baselines so short paths do not fail
+        # just because random initialization missed the feasible region.
+        seed_individuals = [
+            np.linspace(1, self.L - 1, cut_count, dtype=int),
+        ]
+        for idx, seed in enumerate(seed_individuals[:pop_size]):
+            population[idx] = seed
+
         best_score = -float('inf')
         best_plan: Dict = {}
 
@@ -427,8 +440,11 @@ class PMPSolver:
             next_gen = selected.copy()
             while len(next_gen) < pop_size:
                 p1, p2 = random.sample(selected, 2)
-                cut = random.randint(1, len(p1) - 1)
-                child: np.ndarray = np.concatenate([p1[:cut], p2[cut:]])
+                if len(p1) <= 1:
+                    child = random.choice([p1, p2]).copy()
+                else:
+                    cut = random.randint(1, len(p1) - 1)
+                    child = np.concatenate([p1[:cut], p2[cut:]])
                 next_gen.append(child)
 
             # 变异
@@ -439,4 +455,6 @@ class PMPSolver:
 
             population = next_gen
 
+        if best_score == -float('inf'):
+            return self.solve_la_dp()
         return -best_score, best_plan
