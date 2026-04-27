@@ -1,0 +1,34 @@
+{
+  "run_id": "mode_selection_yolo_stage3_pmp_gs_sat",
+  "exp_type": "mode_selection",
+  "stage": "stage3_slot_scene_pmp_gs_sat_only",
+  "source_stk_run_dir": "result\\stk_dynamic\\stk_dynamic_yolo_001",
+  "source_run_id": "stk_dynamic_yolo_001",
+  "started_at": "2026-04-28T00:28:56",
+  "completed_at": "2026-04-28T00:29:25",
+  "implemented_modes": [
+    "PMP",
+    "GS-Only",
+    "Sat-Only"
+  ],
+  "implemented_algorithms": {
+    "PMP": "LA-DP",
+    "GS-Only": "Min-Latency-Route",
+    "Sat-Only": "Min-Latency-Single-Sat"
+  },
+  "pending_modes": [
+    "CDP",
+    "FWMS"
+  ],
+  "route_policy": {
+    "PMP": "selected_path",
+    "GS-Only": "min_predicted_gs_only_latency",
+    "Sat-Only": "best_single_satellite_over_candidate_paths"
+  },
+  "slot_scene_count": 42,
+  "mode_result_rows": 126,
+  "feasible_rows": 126,
+  "scenes_dir": "result\\mode_selection\\mode_selection_yolo_stage3_pmp_gs_sat\\scenes",
+  "configs_dir": "result\\mode_selection\\mode_selection_yolo_stage3_pmp_gs_sat\\configs",
+  "slot_mode_results_csv": "result\\mode_selection\\mode_selection_yolo_stage3_pmp_gs_sat\\data\\slot_mode_results.csv"
+}

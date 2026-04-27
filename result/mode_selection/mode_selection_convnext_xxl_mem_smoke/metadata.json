@@ -1,0 +1,47 @@
+{
+  "run_id": "mode_selection_convnext_xxl_mem_smoke",
+  "exp_type": "mode_selection",
+  "stage": "stage4_slot_scene_pmp_gs_sat_cdp",
+  "source_stk_run_dir": "result\\stk_dynamic\\stk_dynamic_yolo_001",
+  "source_run_id": "stk_dynamic_yolo_001",
+  "started_at": "2026-04-28T01:29:21",
+  "completed_at": "2026-04-28T01:29:31",
+  "implemented_modes": [
+    "PMP",
+    "GS-Only",
+    "Sat-Only",
+    "CDP"
+  ],
+  "implemented_algorithms": {
+    "PMP": "LA-DP",
+    "GS-Only": "Min-Latency-Route",
+    "Sat-Only": "Min-Latency-Single-Sat",
+    "CDP": "LAWA-Discrete"
+  },
+  "pending_modes": [
+    "FWMS"
+  ],
+  "route_policy": {
+    "PMP": "selected_path",
+    "GS-Only": "min_predicted_gs_only_latency",
+    "Sat-Only": "best_single_satellite_over_candidate_paths",
+    "CDP": "best_lawa_worker_set_no_aggregator"
+  },
+  "batch_size_override": 64,
+  "model_name_override": "convnext_xxl",
+  "input_h_override": 224,
+  "input_w_override": 224,
+  "effective_task": {
+    "model_name": "convnext_xxl",
+    "batch_size": 64,
+    "input_h": 224,
+    "input_w": 224
+  },
+  "cdp_max_workers": 4,
+  "slot_scene_count": 2,
+  "mode_result_rows": 8,
+  "feasible_rows": 8,
+  "scenes_dir": "result\\mode_selection\\mode_selection_convnext_xxl_mem_smoke\\scenes",
+  "configs_dir": "result\\mode_selection\\mode_selection_convnext_xxl_mem_smoke\\configs",
+  "slot_mode_results_csv": "result\\mode_selection\\mode_selection_convnext_xxl_mem_smoke\\data\\slot_mode_results.csv"
+}

@@ -1,0 +1,27 @@
+{
+  "run_id": "mode_selection_yolo_stage1_smoke",
+  "exp_type": "mode_selection",
+  "stage": "stage1_slot_scene_pmp",
+  "source_stk_run_dir": "result\\stk_dynamic\\stk_dynamic_yolo_001",
+  "source_run_id": "stk_dynamic_yolo_001",
+  "started_at": "2026-04-28T00:11:19",
+  "completed_at": "2026-04-28T00:11:19",
+  "implemented_modes": [
+    "PMP"
+  ],
+  "implemented_algorithms": {
+    "PMP": "LA-DP"
+  },
+  "pending_modes": [
+    "GS-Only",
+    "Sat-Only",
+    "CDP",
+    "FWMS"
+  ],
+  "route_policy": "selected_path",
+  "slot_scene_count": 2,
+  "mode_result_rows": 2,
+  "feasible_rows": 2,
+  "scenes_dir": "result\\mode_selection\\mode_selection_yolo_stage1_smoke\\scenes",
+  "slot_mode_results_csv": "result\\mode_selection\\mode_selection_yolo_stage1_smoke\\data\\slot_mode_results.csv"
+}

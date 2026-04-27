@@ -16,13 +16,14 @@ ALGO_COLORS = {
     "Uniform": "#8c564b",
     "GS-Only": "#d62728",
 }
-MODEL_ORDER = ["yolov5", "resnet101", "vgg19", "swin_base", "vit_huge"]
+MODEL_ORDER = ["yolov5", "resnet101", "vgg19", "swin_base", "vit_huge", "convnext_xxl"]
 MODEL_LABELS = {
     "yolov5": "YOLOv5",
     "resnet101": "ResNet101",
     "vgg19": "VGG19",
     "swin_base": "Swin-Base",
     "vit_huge": "ViT-Huge",
+    "convnext_xxl": "ConvNeXt-XXL",
 }
 
 

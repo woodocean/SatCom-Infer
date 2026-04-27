@@ -84,7 +84,7 @@ class SSHSessionPool:
 
 GLOBAL_POOL = SSHSessionPool()
 
-DEFAULT_MODEL_POOL = ["vit_huge", "vgg19", "yolov5", "swin_base", "resnet101"]
+DEFAULT_MODEL_POOL = ["vit_huge", "vgg19", "yolov5", "swin_base", "resnet101", "convnext_xxl"]
 DEFAULT_BATCH_POOL = [16, 32, 64]
 DEFAULT_RES_POOL = {
     "yolov5": [(640, 640)],
@@ -92,6 +92,7 @@ DEFAULT_RES_POOL = {
     "vgg19": [(224, 224)],
     "swin_base": [(224, 224)],
     "vit_huge": [(224, 224)],
+    "convnext_xxl": [(224, 224)],
 }
 DEFAULT_ISL_SWEEP_VALUES = [round(float(v), 6) for v in np.linspace(500, 20000, 20)]
 DEFAULT_GSL_SWEEP_VALUES = [round(float(v), 6) for v in np.linspace(20, 200, 20)]

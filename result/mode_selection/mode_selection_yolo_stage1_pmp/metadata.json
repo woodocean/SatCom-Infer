@@ -1,0 +1,27 @@
+{
+  "run_id": "mode_selection_yolo_stage1_pmp",
+  "exp_type": "mode_selection",
+  "stage": "stage1_slot_scene_pmp",
+  "source_stk_run_dir": "result\\stk_dynamic\\stk_dynamic_yolo_001",
+  "source_run_id": "stk_dynamic_yolo_001",
+  "started_at": "2026-04-28T00:12:13",
+  "completed_at": "2026-04-28T00:12:13",
+  "implemented_modes": [
+    "PMP"
+  ],
+  "implemented_algorithms": {
+    "PMP": "LA-DP"
+  },
+  "pending_modes": [
+    "GS-Only",
+    "Sat-Only",
+    "CDP",
+    "FWMS"
+  ],
+  "route_policy": "selected_path",
+  "slot_scene_count": 42,
+  "mode_result_rows": 42,
+  "feasible_rows": 42,
+  "scenes_dir": "result\\mode_selection\\mode_selection_yolo_stage1_pmp\\scenes",
+  "slot_mode_results_csv": "result\\mode_selection\\mode_selection_yolo_stage1_pmp\\data\\slot_mode_results.csv"
+}

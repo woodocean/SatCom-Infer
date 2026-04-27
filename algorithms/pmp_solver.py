@@ -146,6 +146,11 @@ class PMPSolver:
         }
 
     # =================== 工具函数：检查内存约束（核心逻辑） ===================
+    def _node_memory_mb(self, node_idx: int) -> float:
+        node = self.nodes[node_idx]
+        hardware = node.get('hardware', {}) if isinstance(node.get('hardware', {}), dict) else {}
+        return float(node.get('memory_mb', hardware.get('memory_mb', 8192)))
+
     def _check_memory(self, node_idx: int, start: int, end: int) -> Tuple[bool, float]:
         """
         Check whether node_idx can hold layers [start, end).
@@ -165,7 +170,7 @@ class PMPSolver:
             activation_sum += self.layers[i].get('comm_pure_mb', 0.0)
         mem_required = weight_sum + activation_sum
 
-        node_mem = self.nodes[node_idx].get('memory_mb', 8192)
+        node_mem = self._node_memory_mb(node_idx)
         return mem_required <= node_mem, mem_required
 
     def _check_segment_constraints(self, node_idx: int, start: int, end: int) -> Tuple[bool, Dict]:
@@ -179,7 +184,7 @@ class PMPSolver:
             return False, {
                 "reason": "memory",
                 "memory_required_mb": mem_required,
-                "memory_limit_mb": self.nodes[node_idx].get('memory_mb', 8192),
+                "memory_limit_mb": self._node_memory_mb(node_idx),
             }
         return True, {"memory_required_mb": mem_required}
 
