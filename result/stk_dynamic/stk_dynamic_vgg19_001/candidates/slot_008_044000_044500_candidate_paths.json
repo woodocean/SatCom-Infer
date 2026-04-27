@@ -1,0 +1,599 @@
+{
+  "slot_id": "slot_008_044000_044500",
+  "slot_start": "14 Apr 2026 04:40:00.000",
+  "slot_stop": "14 Apr 2026 04:45:00.000",
+  "paths": [
+    {
+      "rank": 1,
+      "path": [
+        "RS",
+        "LEO056",
+        "LEO036",
+        "LEO016",
+        "LEO174",
+        "Shenzhen"
+      ],
+      "hop_count": 5,
+      "satellite_count": 4,
+      "common_start": "14 Apr 2026 04:40:57.442",
+      "common_stop": "14 Apr 2026 04:45:00.000",
+      "common_duration_s": 242.558,
+      "total_range_km": 17368.414641933334,
+      "total_propagation_delay_ms": 57.93479515062829
+    },
+    {
+      "rank": 2,
+      "path": [
+        "RS",
+        "LEO147",
+        "LEO036",
+        "LEO016",
+        "LEO174",
+        "Shenzhen"
+      ],
+      "hop_count": 5,
+      "satellite_count": 4,
+      "common_start": "14 Apr 2026 04:40:57.442",
+      "common_stop": "14 Apr 2026 04:45:00.000",
+      "common_duration_s": 242.558,
+      "total_range_km": 17446.2155418,
+      "total_propagation_delay_ms": 58.19431101832455
+    },
+    {
+      "rank": 3,
+      "path": [
+        "RS",
+        "LEO148",
+        "LEO128",
+        "LEO108",
+        "LEO174",
+        "Shenzhen"
+      ],
+      "hop_count": 5,
+      "satellite_count": 4,
+      "common_start": "14 Apr 2026 04:40:57.442",
+      "common_stop": "14 Apr 2026 04:45:00.000",
+      "common_duration_s": 242.558,
+      "total_range_km": 20550.8371148,
+      "total_propagation_delay_ms": 68.55021387762864
+    },
+    {
+      "rank": 4,
+      "path": [
+        "RS",
+        "LEO157",
+        "LEO046",
+        "LEO036",
+        "LEO016",
+        "LEO174",
+        "Shenzhen"
+      ],
+      "hop_count": 6,
+      "satellite_count": 5,
+      "common_start": "14 Apr 2026 04:40:57.442",
+      "common_stop": "14 Apr 2026 04:45:00.000",
+      "common_duration_s": 242.558,
+      "total_range_km": 17414.26625613333,
+      "total_propagation_delay_ms": 58.08773967266826
+    },
+    {
+      "rank": 5,
+      "path": [
+        "RS",
+        "LEO157",
+        "LEO046",
+        "LEO026",
+        "LEO016",
+        "LEO174",
+        "Shenzhen"
+      ],
+      "hop_count": 6,
+      "satellite_count": 5,
+      "common_start": "14 Apr 2026 04:40:57.442",
+      "common_stop": "14 Apr 2026 04:45:00.000",
+      "common_duration_s": 242.558,
+      "total_range_km": 17416.512895966665,
+      "total_propagation_delay_ms": 58.095233656500675
+    },
+    {
+      "rank": 6,
+      "path": [
+        "RS",
+        "LEO157",
+        "LEO046",
+        "LEO026",
+        "LEO184",
+        "LEO174",
+        "Shenzhen"
+      ],
+      "hop_count": 6,
+      "satellite_count": 5,
+      "common_start": "14 Apr 2026 04:40:57.442",
+      "common_stop": "14 Apr 2026 04:45:00.000",
+      "common_duration_s": 242.558,
+      "total_range_km": 17418.285929633334,
+      "total_propagation_delay_ms": 58.10114786020846
+    },
+    {
+      "rank": 7,
+      "path": [
+        "RS",
+        "LEO056",
+        "LEO046",
+        "LEO036",
+        "LEO016",
+        "LEO174",
+        "Shenzhen"
+      ],
+      "hop_count": 6,
+      "satellite_count": 5,
+      "common_start": "14 Apr 2026 04:40:57.442",
+      "common_stop": "14 Apr 2026 04:45:00.000",
+      "common_duration_s": 242.558,
+      "total_range_km": 17438.68986593333,
+      "total_propagation_delay_ms": 58.16920806571236
+    },
+    {
+      "rank": 8,
+      "path": [
+        "RS",
+        "LEO056",
+        "LEO046",
+        "LEO026",
+        "LEO016",
+        "LEO174",
+        "Shenzhen"
+      ],
+      "hop_count": 6,
+      "satellite_count": 5,
+      "common_start": "14 Apr 2026 04:40:57.442",
+      "common_stop": "14 Apr 2026 04:45:00.000",
+      "common_duration_s": 242.558,
+      "total_range_km": 17440.936505766666,
+      "total_propagation_delay_ms": 58.17670204954478
+    },
+    {
+      "rank": 9,
+      "path": [
+        "RS",
+        "LEO056",
+        "LEO046",
+        "LEO026",
+        "LEO184",
+        "LEO174",
+        "Shenzhen"
+      ],
+      "hop_count": 6,
+      "satellite_count": 5,
+      "common_start": "14 Apr 2026 04:40:57.442",
+      "common_stop": "14 Apr 2026 04:45:00.000",
+      "common_duration_s": 242.558,
+      "total_range_km": 17442.709539433334,
+      "total_propagation_delay_ms": 58.18261625325256
+    },
+    {
+      "rank": 10,
+      "path": [
+        "RS",
+        "LEO056",
+        "LEO036",
+        "LEO026",
+        "LEO016",
+        "LEO174",
+        "Shenzhen"
+      ],
+      "hop_count": 6,
+      "satellite_count": 5,
+      "common_start": "14 Apr 2026 04:40:57.442",
+      "common_stop": "14 Apr 2026 04:45:00.000",
+      "common_duration_s": 242.558,
+      "total_range_km": 17443.302420266664,
+      "total_propagation_delay_ms": 58.184593890839864
+    },
+    {
+      "rank": 11,
+      "path": [
+        "RS",
+        "LEO056",
+        "LEO036",
+        "LEO026",
+        "LEO184",
+        "LEO174",
+        "Shenzhen"
+      ],
+      "hop_count": 6,
+      "satellite_count": 5,
+      "common_start": "14 Apr 2026 04:40:57.442",
+      "common_stop": "14 Apr 2026 04:45:00.000",
+      "common_duration_s": 242.558,
+      "total_range_km": 17445.075453933332,
+      "total_propagation_delay_ms": 58.190508094547646
+    },
+    {
+      "rank": 12,
+      "path": [
+        "RS",
+        "LEO056",
+        "LEO036",
+        "LEO016",
+        "LEO088",
+        "Shenzhen"
+      ],
+      "hop_count": 5,
+      "satellite_count": 4,
+      "common_start": "14 Apr 2026 04:41:26.905",
+      "common_stop": "14 Apr 2026 04:45:00.000",
+      "common_duration_s": 213.095,
+      "total_range_km": 17655.181504066666,
+      "total_propagation_delay_ms": 58.89134643963148
+    },
+    {
+      "rank": 13,
+      "path": [
+        "RS",
+        "LEO147",
+        "LEO036",
+        "LEO016",
+        "LEO088",
+        "Shenzhen"
+      ],
+      "hop_count": 5,
+      "satellite_count": 4,
+      "common_start": "14 Apr 2026 04:41:26.905",
+      "common_stop": "14 Apr 2026 04:45:00.000",
+      "common_duration_s": 213.095,
+      "total_range_km": 17732.982403933336,
+      "total_propagation_delay_ms": 59.150862307327735
+    },
+    {
+      "rank": 14,
+      "path": [
+        "RS",
+        "LEO148",
+        "LEO128",
+        "LEO108",
+        "LEO088",
+        "Shenzhen"
+      ],
+      "hop_count": 5,
+      "satellite_count": 4,
+      "common_start": "14 Apr 2026 04:41:26.905",
+      "common_stop": "14 Apr 2026 04:45:00.000",
+      "common_duration_s": 213.095,
+      "total_range_km": 20784.27823616667,
+      "total_propagation_delay_ms": 69.32888964193579
+    },
+    {
+      "rank": 15,
+      "path": [
+        "RS",
+        "LEO176",
+        "LEO136",
+        "LEO165",
+        "LEO078",
+        "LEO088",
+        "Shenzhen"
+      ],
+      "hop_count": 6,
+      "satellite_count": 5,
+      "common_start": "14 Apr 2026 04:41:26.905",
+      "common_stop": "14 Apr 2026 04:45:00.000",
+      "common_duration_s": 213.095,
+      "total_range_km": 17631.3670461,
+      "total_propagation_delay_ms": 58.81190995838862
+    },
+    {
+      "rank": 16,
+      "path": [
+        "RS",
+        "LEO176",
+        "LEO146",
+        "LEO165",
+        "LEO078",
+        "LEO088",
+        "Shenzhen"
+      ],
+      "hop_count": 6,
+      "satellite_count": 5,
+      "common_start": "14 Apr 2026 04:41:26.905",
+      "common_stop": "14 Apr 2026 04:45:00.000",
+      "common_duration_s": 213.095,
+      "total_range_km": 17649.4670787,
+      "total_propagation_delay_ms": 58.87228516836138
+    },
+    {
+      "rank": 17,
+      "path": [
+        "RS",
+        "LEO157",
+        "LEO046",
+        "LEO036",
+        "LEO016",
+        "LEO088",
+        "Shenzhen"
+      ],
+      "hop_count": 6,
+      "satellite_count": 5,
+      "common_start": "14 Apr 2026 04:41:26.905",
+      "common_stop": "14 Apr 2026 04:45:00.000",
+      "common_duration_s": 213.095,
+      "total_range_km": 17701.033118266667,
+      "total_propagation_delay_ms": 59.04429096167145
+    },
+    {
+      "rank": 18,
+      "path": [
+        "RS",
+        "LEO157",
+        "LEO046",
+        "LEO026",
+        "LEO016",
+        "LEO088",
+        "Shenzhen"
+      ],
+      "hop_count": 6,
+      "satellite_count": 5,
+      "common_start": "14 Apr 2026 04:41:26.905",
+      "common_stop": "14 Apr 2026 04:45:00.000",
+      "common_duration_s": 213.095,
+      "total_range_km": 17703.2797581,
+      "total_propagation_delay_ms": 59.05178494550386
+    },
+    {
+      "rank": 19,
+      "path": [
+        "RS",
+        "LEO056",
+        "LEO046",
+        "LEO036",
+        "LEO016",
+        "LEO088",
+        "Shenzhen"
+      ],
+      "hop_count": 6,
+      "satellite_count": 5,
+      "common_start": "14 Apr 2026 04:41:26.905",
+      "common_stop": "14 Apr 2026 04:45:00.000",
+      "common_duration_s": 213.095,
+      "total_range_km": 17725.456728066667,
+      "total_propagation_delay_ms": 59.12575935471555
+    },
+    {
+      "rank": 20,
+      "path": [
+        "RS",
+        "LEO056",
+        "LEO046",
+        "LEO026",
+        "LEO016",
+        "LEO088",
+        "Shenzhen"
+      ],
+      "hop_count": 6,
+      "satellite_count": 5,
+      "common_start": "14 Apr 2026 04:41:26.905",
+      "common_stop": "14 Apr 2026 04:45:00.000",
+      "common_duration_s": 213.095,
+      "total_range_km": 17727.7033679,
+      "total_propagation_delay_ms": 59.133253338547966
+    },
+    {
+      "rank": 21,
+      "path": [
+        "RS",
+        "LEO056",
+        "LEO036",
+        "LEO026",
+        "LEO016",
+        "LEO088",
+        "Shenzhen"
+      ],
+      "hop_count": 6,
+      "satellite_count": 5,
+      "common_start": "14 Apr 2026 04:41:26.905",
+      "common_stop": "14 Apr 2026 04:45:00.000",
+      "common_duration_s": 213.095,
+      "total_range_km": 17730.0692824,
+      "total_propagation_delay_ms": 59.14114517984305
+    },
+    {
+      "rank": 22,
+      "path": [
+        "RS",
+        "LEO157",
+        "LEO137",
+        "LEO026",
+        "LEO016",
+        "LEO088",
+        "Shenzhen"
+      ],
+      "hop_count": 6,
+      "satellite_count": 5,
+      "common_start": "14 Apr 2026 04:41:26.905",
+      "common_stop": "14 Apr 2026 04:45:00.000",
+      "common_duration_s": 213.095,
+      "total_range_km": 17748.8158112,
+      "total_propagation_delay_ms": 59.20367686901583
+    },
+    {
+      "rank": 23,
+      "path": [
+        "RS",
+        "LEO176",
+        "LEO136",
+        "LEO165",
+        "LEO088",
+        "Shenzhen"
+      ],
+      "hop_count": 5,
+      "satellite_count": 4,
+      "common_start": "14 Apr 2026 04:41:26.905",
+      "common_stop": "14 Apr 2026 04:44:32.554",
+      "common_duration_s": 185.649,
+      "total_range_km": 16376.530582099998,
+      "total_propagation_delay_ms": 54.626226061030536
+    },
+    {
+      "rank": 24,
+      "path": [
+        "RS",
+        "LEO176",
+        "LEO146",
+        "LEO165",
+        "LEO088",
+        "Shenzhen"
+      ],
+      "hop_count": 5,
+      "satellite_count": 4,
+      "common_start": "14 Apr 2026 04:41:26.905",
+      "common_stop": "14 Apr 2026 04:44:32.554",
+      "common_duration_s": 185.649,
+      "total_range_km": 16394.6306147,
+      "total_propagation_delay_ms": 54.68660127100329
+    },
+    {
+      "rank": 25,
+      "path": [
+        "RS",
+        "LEO176",
+        "LEO077",
+        "LEO165",
+        "LEO088",
+        "Shenzhen"
+      ],
+      "hop_count": 5,
+      "satellite_count": 4,
+      "common_start": "14 Apr 2026 04:41:26.905",
+      "common_stop": "14 Apr 2026 04:44:32.554",
+      "common_duration_s": 185.649,
+      "total_range_km": 16642.8051827,
+      "total_propagation_delay_ms": 55.514422523264415
+    },
+    {
+      "rank": 26,
+      "path": [
+        "RS",
+        "LEO186",
+        "LEO136",
+        "LEO165",
+        "LEO088",
+        "Shenzhen"
+      ],
+      "hop_count": 5,
+      "satellite_count": 4,
+      "common_start": "14 Apr 2026 04:41:26.905",
+      "common_stop": "14 Apr 2026 04:44:32.554",
+      "common_duration_s": 185.649,
+      "total_range_km": 16789.7717319,
+      "total_propagation_delay_ms": 56.004650163347335
+    },
+    {
+      "rank": 27,
+      "path": [
+        "RS",
+        "LEO186",
+        "LEO146",
+        "LEO165",
+        "LEO088",
+        "Shenzhen"
+      ],
+      "hop_count": 5,
+      "satellite_count": 4,
+      "common_start": "14 Apr 2026 04:41:26.905",
+      "common_stop": "14 Apr 2026 04:44:32.554",
+      "common_duration_s": 185.649,
+      "total_range_km": 16970.5528703,
+      "total_propagation_delay_ms": 56.607671131940215
+    },
+    {
+      "rank": 28,
+      "path": [
+        "RS",
+        "LEO046",
+        "LEO036",
+        "LEO016",
+        "LEO174",
+        "Shenzhen"
+      ],
+      "hop_count": 5,
+      "satellite_count": 4,
+      "common_start": "14 Apr 2026 04:40:57.442",
+      "common_stop": "14 Apr 2026 04:44:01.064",
+      "common_duration_s": 183.622,
+      "total_range_km": 17231.679874766665,
+      "total_propagation_delay_ms": 57.47869706170749
+    },
+    {
+      "rank": 29,
+      "path": [
+        "RS",
+        "LEO046",
+        "LEO026",
+        "LEO016",
+        "LEO174",
+        "Shenzhen"
+      ],
+      "hop_count": 5,
+      "satellite_count": 4,
+      "common_start": "14 Apr 2026 04:40:57.442",
+      "common_stop": "14 Apr 2026 04:44:01.064",
+      "common_duration_s": 183.622,
+      "total_range_km": 17233.9265146,
+      "total_propagation_delay_ms": 57.48619104553991
+    },
+    {
+      "rank": 30,
+      "path": [
+        "RS",
+        "LEO046",
+        "LEO026",
+        "LEO184",
+        "LEO174",
+        "Shenzhen"
+      ],
+      "hop_count": 5,
+      "satellite_count": 4,
+      "common_start": "14 Apr 2026 04:40:57.442",
+      "common_stop": "14 Apr 2026 04:44:01.064",
+      "common_duration_s": 183.622,
+      "total_range_km": 17235.699548266668,
+      "total_propagation_delay_ms": 57.49210524924769
+    },
+    {
+      "rank": 31,
+      "path": [
+        "RS",
+        "LEO046",
+        "LEO026",
+        "LEO098",
+        "LEO174",
+        "Shenzhen"
+      ],
+      "hop_count": 5,
+      "satellite_count": 4,
+      "common_start": "14 Apr 2026 04:40:57.442",
+      "common_stop": "14 Apr 2026 04:44:01.064",
+      "common_duration_s": 183.622,
+      "total_range_km": 17586.025113766667,
+      "total_propagation_delay_ms": 58.660665552055576
+    },
+    {
+      "rank": 32,
+      "path": [
+        "RS",
+        "LEO046",
+        "LEO026",
+        "LEO108",
+        "LEO174",
+        "Shenzhen"
+      ],
+      "hop_count": 5,
+      "satellite_count": 4,
+      "common_start": "14 Apr 2026 04:40:57.442",
+      "common_stop": "14 Apr 2026 04:44:01.064",
+      "common_duration_s": 183.622,
+      "total_range_km": 18109.670025166666,
+      "total_propagation_delay_ms": 60.40735696281815
+    }
+  ]
+}

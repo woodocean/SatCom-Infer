@@ -1,0 +1,39 @@
+{
+  "run_id": "stk_dynamic_vit_huge_001",
+  "exp_type": "stk_dynamic_pmp",
+  "created_at": "2026-04-27T22:05:38",
+  "time_start": "14 Apr 2026 04:00:00.000",
+  "time_stop": "14 Apr 2026 08:00:00.000",
+  "slot_minutes": 5.0,
+  "max_hops": 6,
+  "path_selection": "max_common_duration_s",
+  "bandwidth_model": "effective_random_uniform",
+  "isl_range_mbps": [
+    1000.0,
+    20000.0
+  ],
+  "gsl_range_mbps": [
+    50.0,
+    300.0
+  ],
+  "model_name": "vit_huge",
+  "batch_size": 32,
+  "input_h": 224,
+  "input_w": 224,
+  "repeat_per_slot": 1,
+  "seed": 42,
+  "stk_reports": {
+    "chain2_access_data": "data\\stk\\Chain2_Access_Data.txt",
+    "chain2_aer": "data\\stk\\Chain2_Access_AER.txt",
+    "chain4_access_data": "data\\stk\\Chain4_Access_Data.txt",
+    "chain4_aer": "data\\stk\\Chain4_Access_AER.txt",
+    "chain5_access_data": "data\\stk\\Chain5_Access_Data.txt",
+    "chain5_aer": "data\\stk\\Chain5_Access_AER.txt"
+  },
+  "completed_at": "2026-04-27T22:06:20",
+  "completed_slots": 42,
+  "skipped_slots": 6,
+  "slots_csv": "result\\stk_dynamic\\stk_dynamic_vit_huge_001\\stk_dynamic_slots.csv",
+  "results_csv": "result\\stk_dynamic\\stk_dynamic_vit_huge_001\\results_long_stk_dynamic.csv",
+  "configs_dir": "result\\stk_dynamic\\stk_dynamic_vit_huge_001\\configs"
+}

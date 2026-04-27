@@ -1,0 +1,100 @@
+{
+  "global_settings": {
+    "base_gpu_speed_gflops_per_ms": 100.0,
+    "hardware_baseline_mbps": 800.0
+  },
+  "nodes": {
+    "RS": {
+      "ip": "192.168.10.165",
+      "port": 8000,
+      "role": "remote_sensing",
+      "device": "PC",
+      "hardware": {
+        "compute_speed_gflops_per_ms": 0.0,
+        "memory_mb": 0,
+        "compute_speed_tflops": 0.0
+      },
+      "neighbors": [
+        "SAT-01"
+      ]
+    },
+    "SAT-01": {
+      "ip": "192.168.10.181",
+      "port": 8001,
+      "role": "leo_computing",
+      "device": "Jetson_1",
+      "hardware": {
+        "compute_speed_gflops_per_ms": 4.106,
+        "memory_mb": 4096,
+        "compute_speed_tflops": 4.106
+      },
+      "stk_id": "LEO176",
+      "neighbors": [
+        "RS",
+        "GS"
+      ]
+    },
+    "GS": {
+      "ip": "192.168.10.165",
+      "port": 8006,
+      "role": "ground_station",
+      "device": "PC",
+      "hardware": {
+        "compute_speed_gflops_per_ms": 300.0,
+        "memory_mb": 64000,
+        "compute_speed_tflops": 300.0
+      },
+      "neighbors": [
+        "SAT-01"
+      ]
+    }
+  },
+  "links": {
+    "RS_to_SAT-01": {
+      "bandwidth_mbps": 10000.0,
+      "propagation_delay_ms": 11.157547,
+      "stk_from": "RS",
+      "stk_to": "LEO176",
+      "stk_link_type": "RS-SAT",
+      "avg_range_km": 3344.948402,
+      "sample_count": 220,
+      "window_count": 1,
+      "visibility_duration_s": 13125.443
+    },
+    "SAT-01_to_GS": {
+      "bandwidth_mbps": 200.0,
+      "propagation_delay_ms": 3.380868,
+      "stk_from": "LEO176",
+      "stk_to": "Shenzhen",
+      "stk_link_type": "SAT-GS",
+      "avg_range_km": 1013.558839,
+      "sample_count": 7,
+      "window_count": 1,
+      "visibility_duration_s": 348.804
+    }
+  },
+  "simulation_paths": {
+    "pipeline": [
+      "RS",
+      "SAT-01",
+      "GS"
+    ],
+    "parallel_candidates": [
+      "SAT-01"
+    ],
+    "parallel_aggregator": "SAT-01",
+    "stk_path": {
+      "rank": 2,
+      "original_path": [
+        "RS",
+        "LEO176",
+        "Shenzhen"
+      ],
+      "common_start_utcg": "14 Apr 2026 04:21:14.557",
+      "common_stop_utcg": "14 Apr 2026 04:23:09.115",
+      "common_duration_s": 114.558,
+      "total_range_km": 4358.50724,
+      "total_propagation_delay_ms": 14.538415
+    }
+  }
+}

@@ -1,0 +1,25 @@
+{
+  "run_id": "stk_dynamic_vit_huge_001",
+  "started_at": "2026-04-27T22:05:49",
+  "started_at_compact": "20260427_220621",
+  "status": "plotted",
+  "exp_type": "stk_dynamic_pmp",
+  "exp_mode": "theory",
+  "fixed_model": "vit_huge",
+  "fixed_batch_size": 32,
+  "fixed_input_h": 224,
+  "fixed_input_w": 224,
+  "sweep_param": "time_slot",
+  "sweep_points": 42,
+  "archive_dir": "result\\runs\\20260427_220621_stk_dynamic_vit_huge_001_stk_dynamic_pmp_vit_huge_b32_224x224_theory_nosweep",
+  "plot_status": "plotted",
+  "last_plotted_at": "20260427_220622",
+  "summary_csv": "E:\\Workspace\\Python_pycharm_workspace\\Projects\\Collabrative_Inference\\Neurosurgeon-main\\result\\runs\\20260427_220621_stk_dynamic_vit_huge_001_stk_dynamic_pmp_vit_huge_b32_224x224_theory_nosweep\\data\\summary_stk_dynamic_pmp_vit_huge_b32_224x224_theory_nosweep.csv",
+  "plot_exported_results_csv": "result\\runs\\20260427_220621_stk_dynamic_vit_huge_001_stk_dynamic_pmp_vit_huge_b32_224x224_theory_nosweep\\data\\results_long_stk_dynamic_pmp_vit_huge_b32_224x224_theory_nosweep.csv",
+  "plot_exported_rows": 252,
+  "figure_path": "result\\stk_dynamic\\stk_dynamic_vit_huge_001\\stk_dynamic_plot_lines.png",
+  "figure_paths": {
+    "line": "result\\stk_dynamic\\stk_dynamic_vit_huge_001\\stk_dynamic_plot_lines.png",
+    "bar": "result\\stk_dynamic\\stk_dynamic_vit_huge_001\\stk_dynamic_plot_bars.png"
+  }
+}

@@ -1,0 +1,460 @@
+[
+  {
+    "rank": 1,
+    "path": [
+      "RS",
+      "LEO177",
+      "Shenzhen"
+    ],
+    "hop_count": 2,
+    "satellite_count": 1,
+    "common_start": "14 Apr 2026 04:05:49.966",
+    "common_stop": "14 Apr 2026 04:11:02.218",
+    "common_duration_s": 312.252,
+    "total_range_km": 4300.674934844537,
+    "total_propagation_delay_ms": 14.345507433827898,
+    "link_metrics": [
+      {
+        "from_id": "RS",
+        "to_id": "LEO177",
+        "link_type": "RS-SAT",
+        "avg_range_km": 3153.193221558823,
+        "propagation_delay_ms": 10.51792043934215,
+        "sample_count": 238,
+        "window_count": 1,
+        "visibility_duration_s": 14181.502
+      },
+      {
+        "from_id": "LEO177",
+        "to_id": "Shenzhen",
+        "link_type": "SAT-GS",
+        "avg_range_km": 1147.4817132857145,
+        "propagation_delay_ms": 3.827586994485747,
+        "sample_count": 7,
+        "window_count": 1,
+        "visibility_duration_s": 312.252
+      }
+    ]
+  },
+  {
+    "rank": 2,
+    "path": [
+      "RS",
+      "LEO176",
+      "Shenzhen"
+    ],
+    "hop_count": 2,
+    "satellite_count": 1,
+    "common_start": "14 Apr 2026 04:21:14.557",
+    "common_stop": "14 Apr 2026 04:23:09.115",
+    "common_duration_s": 114.558,
+    "total_range_km": 4358.50724036169,
+    "total_propagation_delay_ms": 14.538415240458416,
+    "link_metrics": [
+      {
+        "from_id": "RS",
+        "to_id": "LEO176",
+        "link_type": "RS-SAT",
+        "avg_range_km": 3344.948401504547,
+        "propagation_delay_ms": 11.157546870323692,
+        "sample_count": 220,
+        "window_count": 1,
+        "visibility_duration_s": 13125.443
+      },
+      {
+        "from_id": "LEO176",
+        "to_id": "Shenzhen",
+        "link_type": "SAT-GS",
+        "avg_range_km": 1013.5588388571429,
+        "propagation_delay_ms": 3.3808683701347246,
+        "sample_count": 7,
+        "window_count": 1,
+        "visibility_duration_s": 348.804
+      }
+    ]
+  },
+  {
+    "rank": 3,
+    "path": [
+      "RS",
+      "LEO167",
+      "LEO177",
+      "Shenzhen"
+    ],
+    "hop_count": 3,
+    "satellite_count": 2,
+    "common_start": "14 Apr 2026 04:05:49.966",
+    "common_stop": "14 Apr 2026 04:11:02.218",
+    "common_duration_s": 312.252,
+    "total_range_km": 5052.190034426796,
+    "total_propagation_delay_ms": 16.852291976026947,
+    "link_metrics": [
+      {
+        "from_id": "RS",
+        "to_id": "LEO167",
+        "link_type": "RS-SAT",
+        "avg_range_km": 2151.044414203321,
+        "propagation_delay_ms": 7.175111837547698,
+        "sample_count": 241,
+        "window_count": 1,
+        "visibility_duration_s": 14400.0
+      },
+      {
+        "from_id": "LEO167",
+        "to_id": "LEO177",
+        "link_type": "SAT-SAT",
+        "avg_range_km": 1753.6639069377604,
+        "propagation_delay_ms": 5.849593143993504,
+        "sample_count": 241,
+        "window_count": 1,
+        "visibility_duration_s": 14400.0
+      },
+      {
+        "from_id": "LEO177",
+        "to_id": "Shenzhen",
+        "link_type": "SAT-GS",
+        "avg_range_km": 1147.4817132857145,
+        "propagation_delay_ms": 3.827586994485747,
+        "sample_count": 7,
+        "window_count": 1,
+        "visibility_duration_s": 312.252
+      }
+    ]
+  },
+  {
+    "rank": 4,
+    "path": [
+      "RS",
+      "LEO177",
+      "LEO187",
+      "Shenzhen"
+    ],
+    "hop_count": 3,
+    "satellite_count": 2,
+    "common_start": "14 Apr 2026 05:38:47.579",
+    "common_stop": "14 Apr 2026 05:44:39.477",
+    "common_duration_s": 351.898,
+    "total_range_km": 5907.563683549932,
+    "total_propagation_delay_ms": 19.705511349287953,
+    "link_metrics": [
+      {
+        "from_id": "RS",
+        "to_id": "LEO177",
+        "link_type": "RS-SAT",
+        "avg_range_km": 3153.193221558823,
+        "propagation_delay_ms": 10.51792043934215,
+        "sample_count": 238,
+        "window_count": 1,
+        "visibility_duration_s": 14181.502
+      },
+      {
+        "from_id": "LEO177",
+        "to_id": "LEO187",
+        "link_type": "SAT-SAT",
+        "avg_range_km": 1753.8820447053938,
+        "propagation_delay_ms": 5.8503207732643965,
+        "sample_count": 241,
+        "window_count": 1,
+        "visibility_duration_s": 14400.0
+      },
+      {
+        "from_id": "LEO187",
+        "to_id": "Shenzhen",
+        "link_type": "SAT-GS",
+        "avg_range_km": 1000.4884172857144,
+        "propagation_delay_ms": 3.337270136681405,
+        "sample_count": 7,
+        "window_count": 1,
+        "visibility_duration_s": 351.898
+      }
+    ]
+  },
+  {
+    "rank": 5,
+    "path": [
+      "RS",
+      "LEO073",
+      "LEO083",
+      "Shenzhen"
+    ],
+    "hop_count": 3,
+    "satellite_count": 2,
+    "common_start": "14 Apr 2026 04:05:44.350",
+    "common_stop": "14 Apr 2026 04:11:34.125",
+    "common_duration_s": 349.775,
+    "total_range_km": 6088.986804094092,
+    "total_propagation_delay_ms": 20.31067373981133,
+    "link_metrics": [
+      {
+        "from_id": "RS",
+        "to_id": "LEO073",
+        "link_type": "RS-SAT",
+        "avg_range_km": 3338.0530435333335,
+        "propagation_delay_ms": 11.13454643189634,
+        "sample_count": 75,
+        "window_count": 5,
+        "visibility_duration_s": 4021.585
+      },
+      {
+        "from_id": "LEO073",
+        "to_id": "LEO083",
+        "link_type": "SAT-SAT",
+        "avg_range_km": 1738.7842058464726,
+        "propagation_delay_ms": 5.79995980368016,
+        "sample_count": 241,
+        "window_count": 1,
+        "visibility_duration_s": 14400.0
+      },
+      {
+        "from_id": "LEO083",
+        "to_id": "Shenzhen",
+        "link_type": "SAT-GS",
+        "avg_range_km": 1012.1495547142857,
+        "propagation_delay_ms": 3.3761675042348327,
+        "sample_count": 7,
+        "window_count": 1,
+        "visibility_duration_s": 349.775
+      }
+    ]
+  },
+  {
+    "rank": 6,
+    "path": [
+      "RS",
+      "LEO176",
+      "LEO186",
+      "Shenzhen"
+    ],
+    "hop_count": 3,
+    "satellite_count": 2,
+    "common_start": "14 Apr 2026 05:50:32.115",
+    "common_stop": "14 Apr 2026 05:56:34.207",
+    "common_duration_s": 362.092,
+    "total_range_km": 6097.913946743657,
+    "total_propagation_delay_ms": 20.340451482417404,
+    "link_metrics": [
+      {
+        "from_id": "RS",
+        "to_id": "LEO176",
+        "link_type": "RS-SAT",
+        "avg_range_km": 3344.948401504547,
+        "propagation_delay_ms": 11.157546870323692,
+        "sample_count": 220,
+        "window_count": 1,
+        "visibility_duration_s": 13125.443
+      },
+      {
+        "from_id": "LEO176",
+        "to_id": "LEO186",
+        "link_type": "SAT-SAT",
+        "avg_range_km": 1741.3710206141095,
+        "propagation_delay_ms": 5.808588488954281,
+        "sample_count": 241,
+        "window_count": 1,
+        "visibility_duration_s": 14400.0
+      },
+      {
+        "from_id": "LEO186",
+        "to_id": "Shenzhen",
+        "link_type": "SAT-GS",
+        "avg_range_km": 1011.594524625,
+        "propagation_delay_ms": 3.3743161231394287,
+        "sample_count": 8,
+        "window_count": 1,
+        "visibility_duration_s": 362.092
+      }
+    ]
+  },
+  {
+    "rank": 7,
+    "path": [
+      "RS",
+      "LEO072",
+      "LEO082",
+      "Shenzhen"
+    ],
+    "hop_count": 3,
+    "satellite_count": 2,
+    "common_start": "14 Apr 2026 04:17:28.676",
+    "common_stop": "14 Apr 2026 04:20:57.192",
+    "common_duration_s": 208.516,
+    "total_range_km": 6127.10213591495,
+    "total_propagation_delay_ms": 20.437812801531354,
+    "link_metrics": [
+      {
+        "from_id": "RS",
+        "to_id": "LEO072",
+        "link_type": "RS-SAT",
+        "avg_range_km": 3394.316266453332,
+        "propagation_delay_ms": 11.322220342358753,
+        "sample_count": 75,
+        "window_count": 5,
+        "visibility_duration_s": 4027.544
+      },
+      {
+        "from_id": "LEO072",
+        "to_id": "LEO082",
+        "link_type": "SAT-SAT",
+        "avg_range_km": 1722.6877032116183,
+        "propagation_delay_ms": 5.746267650307662,
+        "sample_count": 241,
+        "window_count": 1,
+        "visibility_duration_s": 14400.0
+      },
+      {
+        "from_id": "LEO082",
+        "to_id": "Shenzhen",
+        "link_type": "SAT-GS",
+        "avg_range_km": 1010.0981662500001,
+        "propagation_delay_ms": 3.3693248088649383,
+        "sample_count": 8,
+        "window_count": 1,
+        "visibility_duration_s": 361.965
+      }
+    ]
+  },
+  {
+    "rank": 8,
+    "path": [
+      "RS",
+      "LEO081",
+      "LEO091",
+      "Shenzhen"
+    ],
+    "hop_count": 3,
+    "satellite_count": 2,
+    "common_start": "14 Apr 2026 06:02:57.952",
+    "common_stop": "14 Apr 2026 06:04:09.785",
+    "common_duration_s": 71.833,
+    "total_range_km": 6248.203758723828,
+    "total_propagation_delay_ms": 20.841764333924065,
+    "link_metrics": [
+      {
+        "from_id": "RS",
+        "to_id": "LEO081",
+        "link_type": "RS-SAT",
+        "avg_range_km": 3371.2064418133345,
+        "propagation_delay_ms": 11.245134264896466,
+        "sample_count": 75,
+        "window_count": 5,
+        "visibility_duration_s": 4109.902
+      },
+      {
+        "from_id": "LEO081",
+        "to_id": "LEO091",
+        "link_type": "SAT-SAT",
+        "avg_range_km": 1742.2808467676366,
+        "propagation_delay_ms": 5.81162334233117,
+        "sample_count": 241,
+        "window_count": 1,
+        "visibility_duration_s": 14400.0
+      },
+      {
+        "from_id": "LEO091",
+        "to_id": "Shenzhen",
+        "link_type": "SAT-GS",
+        "avg_range_km": 1134.7164701428571,
+        "propagation_delay_ms": 3.785006726696431,
+        "sample_count": 7,
+        "window_count": 1,
+        "visibility_duration_s": 315.738
+      }
+    ]
+  },
+  {
+    "rank": 9,
+    "path": [
+      "RS",
+      "LEO177",
+      "LEO082",
+      "Shenzhen"
+    ],
+    "hop_count": 3,
+    "satellite_count": 2,
+    "common_start": "14 Apr 2026 04:17:28.676",
+    "common_stop": "14 Apr 2026 04:20:15.847",
+    "common_duration_s": 167.171,
+    "total_range_km": 7162.3868323780525,
+    "total_propagation_delay_ms": 23.891150832013437,
+    "link_metrics": [
+      {
+        "from_id": "RS",
+        "to_id": "LEO177",
+        "link_type": "RS-SAT",
+        "avg_range_km": 3153.193221558823,
+        "propagation_delay_ms": 10.51792043934215,
+        "sample_count": 238,
+        "window_count": 1,
+        "visibility_duration_s": 14181.502
+      },
+      {
+        "from_id": "LEO177",
+        "to_id": "LEO082",
+        "link_type": "SAT-SAT",
+        "avg_range_km": 2999.0954445692296,
+        "propagation_delay_ms": 10.003905583806347,
+        "sample_count": 65,
+        "window_count": 5,
+        "visibility_duration_s": 3485.419
+      },
+      {
+        "from_id": "LEO082",
+        "to_id": "Shenzhen",
+        "link_type": "SAT-GS",
+        "avg_range_km": 1010.0981662500001,
+        "propagation_delay_ms": 3.3693248088649383,
+        "sample_count": 8,
+        "window_count": 1,
+        "visibility_duration_s": 361.965
+      }
+    ]
+  },
+  {
+    "rank": 10,
+    "path": [
+      "RS",
+      "LEO177",
+      "LEO083",
+      "Shenzhen"
+    ],
+    "hop_count": 3,
+    "satellite_count": 2,
+    "common_start": "14 Apr 2026 04:05:44.350",
+    "common_stop": "14 Apr 2026 04:11:34.125",
+    "common_duration_s": 349.775,
+    "total_range_km": 7176.068394905462,
+    "total_propagation_delay_ms": 23.936787612266958,
+    "link_metrics": [
+      {
+        "from_id": "RS",
+        "to_id": "LEO177",
+        "link_type": "RS-SAT",
+        "avg_range_km": 3153.193221558823,
+        "propagation_delay_ms": 10.51792043934215,
+        "sample_count": 238,
+        "window_count": 1,
+        "visibility_duration_s": 14181.502
+      },
+      {
+        "from_id": "LEO177",
+        "to_id": "LEO083",
+        "link_type": "SAT-SAT",
+        "avg_range_km": 3010.7256186323525,
+        "propagation_delay_ms": 10.042699668689973,
+        "sample_count": 68,
+        "window_count": 6,
+        "visibility_duration_s": 3519.8219999999997
+      },
+      {
+        "from_id": "LEO083",
+        "to_id": "Shenzhen",
+        "link_type": "SAT-GS",
+        "avg_range_km": 1012.1495547142857,
+        "propagation_delay_ms": 3.3761675042348327,
+        "sample_count": 7,
+        "window_count": 1,
+        "visibility_duration_s": 349.775
+      }
+    ]
+  }
+]
