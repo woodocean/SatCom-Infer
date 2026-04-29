@@ -1,0 +1,584 @@
+本科毕业论文（设计）
+面向分布式卫星协作推理的高效通信调度策略研究
+RESEARCH ON EFFICIENT COMMUNICATION SCHEDULING STRATEGY FOR DISTRIBUTED SATELLITE COLLABORATIVE INFERENCE
+林瀚洋
+哈尔滨工业大学
+2025年6月
+毕业论文  毕业设计                                     密级：公开
+本科毕业论文（设计）
+面向分布式卫星协作推理的高效通信调度策略研究
+本科生
+：
+林瀚洋
+学号
+：
+220210706
+指导教师
+：
+顾术实 教授
+专业
+：
+通信工程
+学院
+：
+深圳校区信息科学与技术学院
+答 辩 日 期
+：
+2026年5月
+学校
+：
+哈尔滨工业大学
+摘  要
+随着低轨卫星星座的快速部署与星载计算能力的持续提升，在轨智能处理已成为遥感应用的新范式。然而，单星算力、内存及能源受限，星间/星地链路呈现动态变化，加之遥感任务对实时性的苛刻要求，使得分布式卫星协作推理的性能受到严重制约。针对上述问题，以最小化端到端推理时延为目标，通过建立资源约束下的系统模型并设计分层优化算法，提出一种面向流水线模型拆分与协同数据并行两种模式的通信调度策略，为分布式卫星协作推理在资源受限星载环境中的部署提供切实可行的调度方案，在遥感监测、应急响应及空间信息智能处理等领域具有广阔应用前景。本研究的主要贡献如下：
+针对卫星网络资源异构与链路时变特性下的推理任务分配难题，建立包含遥感卫星、低轨计算卫星及地面站的网络拓扑模型，刻画星间准静态链路与星地动态链路的通信特性，定义深度神经网络逐层计算量、输出数据量等资源需求，并给出能耗、可见窗口及内存等约束条件。在此基础上，设计支持流水线模型拆分（Pipeline Model Partitioning, PMP）与协同数据并行（Collaborative Data Parallelism, CDP）两种模式的星地协同推理框架。
+以端到端时延最小化为目标，构建混合整数非线性规划模型，并提出一种基于约束过滤与特征加权的模式选择算法，实现PMP与CDP的自适应决策。针对PMP模式，设计链路感知动态规划算法（Link-Aware Dynamic Programming, LADP），利用状态转移与回溯在时间复杂度内获得最优模型切分方案，并显式引入最后一跳的可见性约束；针对 CDP 模式，提出了链路感知加权分配算法（Link-Aware Weighted Allocation, LAWA），采用拉格朗日乘子法与Karush-Kuhn-Tucker条件推导出连续最优数据分配的闭式解，通过迭代剔除策略处理单星数据量上限约束，再经离散化映射得到整数样本分配方案，算法时间复杂度为。
+搭建基于NVIDIA Jetson Orin NX的半实物仿真平台，在包含144颗低轨卫星的Walker-Delta星座场景下，分别对流水线模型拆分与协同数据并行两种模式进行性能评估。实验结果表明，所提算法在多种典型深度学习模型上均能有效降低端到端推理时延，且单次调度搜索时间处于毫秒量级，满足星载嵌入式平台对任务调度实时性的要求。
+关键词：分布式卫星协作推理；通信调度；模型拆分；数据并行；动态规划；拉格朗日乘子法
+Abstract
+With the rapid deployment of low-Earth-orbit satellite constellations and the continuous improvement of onboard computing capabilities, in-orbit intelligent processing has emerged as a new paradigm for remote sensing applications. However, the limited computing power, memory, and energy of individual satellites, the dynamic variations of inter-satellite and satellite-to-ground links, and the stringent real-time requirements of remote sensing tasks severely constrain the performance of distributed satellite collaborative inference. To address these issues, a communication scheduling strategy for both pipeline model partitioning and collaborative data parallelism is proposed by establishing a resource-constrained system model and designing hierarchical optimization algorithms, with the objective of minimizing end-to-end inference latency. This provides a practical scheduling solution for deploying distributed satellite collaborative inference in resource-constrained onboard environments, and holds broad application prospects in remote sensing monitoring, emergency response, and space-based intelligent information processing. The main contributions of this study are as follows.
+To tackle the problem of inference task allocation under heterogeneous satellite network resources and time-varying link characteristics, a network topology model comprising remote sensing satellites, low-Earth-orbit computing satellites, and ground stations is established. The communication characteristics of quasi-static inter-satellite links and dynamic satellite-to-ground links are characterized, and the layer-wise computational cost and output data size of deep neural networks are defined, along with constraints on energy consumption, visibility windows, and memory. On this basis, a satellite-ground collaborative inference framework supporting both pipeline model partitioning (PMP) and collaborative data parallelism (CDP) is designed.
+A mixed-integer nonlinear programming model is formulated to minimize end-to-end latency, and a mode selection algorithm based on constraint filtering and feature weighting is proposed to adaptively choose between PMP and CDP. For the PMP mode, a load-aware dynamic programming (LA-DP) algorithm is designed, which obtains the optimal model partition scheme via state transition and backtracking within time complexity , with the visibility constraint of the last hop explicitly incorporated. For the CDP mode, the Lagrange multiplier method and Karush-Kuhn-Tucker conditions are employed to derive a closed-form solution for continuous optimal data allocation, and an iterative elimination strategy is designed to handle per-satellite data upper bounds, followed by discretization mapping to integer samples, achieving time complexity .
+A hardware-in-the-loop simulation platform based on NVIDIA Jetson Orin NX is constructed. Under a Walker-Delta constellation scenario with 144 low-Earth-orbit satellites, the performance of both pipeline model partitioning and collaborative data parallelism modes is evaluated. Experimental results demonstrate that the proposed algorithms effectively reduce end-to-end inference latency across multiple typical deep learning models, and the scheduling search time is on the order of milliseconds, satisfying the real-time requirements of onboard embedded platforms.
+Keywords: distributed satellite collaborative inference; communication scheduling; model partitioning; data parallelism; dynamic programming; Lagrange multiplier method
+目  录
+摘  要	I
+Abstract	II
+第1章	绪  论	1
+1.1 课题背景	1
+1.2 研究的目的和意义	2
+1.3 相关研究现状	3
+1.3.1 分布式协同推理研究现状	4
+1.3.2 卫星分布式推理研究现状	6
+1.4 主要研究内容	7
+第2章	分布式卫星协作推理系统模型与框架	8
+2.1 引言	8
+2.2 系统模型	8
+2.2.1 卫星网络框架	8
+2.2.2 任务模型	9
+2.2.3 通信模型	9
+2.2.4 计算模型	10
+2.2.5 能耗模型	12
+2.2.6 卫星可见性模型	12
+2.2.7 内存资源模型	13
+2.3 协同推理框架	13
+2.3.1 流水线模型拆分	14
+2.3.2 协同数据并行	14
+2.4 本章小结	15
+第3章	优化问题建立与求解算法设计	17
+3.1 引言	17
+3.2 优化问题建立	17
+3.3 基于约束过滤与特征加权的模式选择算法	18
+3.3.1 决策特征分析	18
+3.3.2 特征加权模式选择算法	20
+3.4 PMP模式的最优模型分配	21
+3.5 CDP模式的最优数据分配	23
+3.5.1 问题重述	23
+3.5.2 拉格朗日乘子法与 KKT 条件	23
+3.6 算法复杂度分析	26
+3.7 本章小结	27
+第4章	仿真平台搭建与算法性能评估	28
+4.1 引言	28
+4.2 仿真实验设置	28
+4.2.1 仿真场景与参数配置	28
+4.2.2 STK 链路仿真与数据生成	29
+4.2.3 数据集与评估模型	29
+4.2.4 半实物仿真平台	29
+4.3 算法性能评估	30
+4.3.1 PMP模式LADP算法性能评估	30
+4.3.2 CDP模式LAWA算法性能评估	33
+4.4 本章小结	34
+结  论	35
+参考文献	37
+哈尔滨工业大学本科毕业论文（设计） 原创性声明和使用权限	41
+致  谢	42
+绪  论
+课题背景
+随着太空探索需求的日益增长，如表1-1所示，当前，全球低轨卫星星座建设迅猛推进，仅Space的Starlink在过去一年就发射超2300颗卫星，以LEO为代表的卫星网络正在构建一个覆盖全球、全天候的空中网络基础设施，这不仅是地面通信网络的简单延伸或补充，更在全球物联网接入、应急通信、偏远地区监测等关键应用[1]提供不可或缺的通信保障，是实现“空天地海一体化”与“万物智联”的关键环节[1]。
+全球主要低轨计算星座初步布局
+星座
+国家/组织
+规划数量
+单星算力
+星座算力
+三体计算星座
+中国/之江实验室
+50
+112 TOPS
+5600 TOPS
+鸿雁星座
+中国/航天科技
+120+
+1.5 TOPS
+180 TOPS
+Startlink
+v2.0
+美国/SpaceX
+5650+
+2 TOPS
+11300 TOPS
+Kuiper
+美国/亚马逊
+3236
+0.5 TOPS
+1618 TOPS
+IRIS2
+欧盟/ESA
+150
+3 TOPS
+450 TOPS
+phere
+俄罗斯
+80+
+0.8 TOPS
+64TOPS
+IDSN-2
+印度/ISRO
+50
+1.2 TOPS
+60 TOPS
+然而，传统的卫星应用范式——“弯管结构”正在接受严峻挑战[2]，随着遥感数据进入海量、高分辨率时代，有限的星地链路带宽成为巨大的传输瓶颈，难以满足应急情况、军事侦察等实时性要求高的智能任务。为解决卫星星座的强大感知与地面的实时决策支持的矛盾，卫星“在轨推理”越来越代替“透明传输”成为新的范式，在轨分布式推理作为其前沿的研究方向备受关注。如图1所示[3]，每个LEO卫星都搭载移动边缘计算（MEC）服务器，不仅可以为地面用户转发推理任务到地面云服务器，可以为地面客户终端提供即时的推理服务，实现在轨推理。
+云边缘LEO卫星计算架构[3]
+然而，如表1-1所示，单星受限于卫星算力，往往仅有0.5TOPS到3TOPS的算力，难以满足如表1-2中的典型卫星业务的算力需求。同时受限于星地链路的带宽，传统“弯管”模式将数据透传到服务器再推理可能时延过大：以典型的遥感目标识别场景为例，一张1GB的高分辨率遥感图像，从卫星传至地面需要7.5min[4]。虽然星地链路带宽和单星算力有限，但星间链路带宽可达10Gbps，在此背景下，卫星分布式协作推理作为一种前沿方案，有望通过协作推理达到推理精度和时延的权衡。
+典型卫星业务算力需求
+业务类型
+性能需求
+大模型训练
+＞1 PLOPS
+卷积神经网络
+10 TFLOPS~1 PFLOPS
+目标识别监测
+500 GFLOPS~10 TFLOPS
+值得注意的是，分布式协作推理达到的性能，依赖于星间的通信调度策略。多星协作推理的频繁数据交换，与低轨卫星网络的动态特性和资源受限的通信环境产生冲突，需要选择合适的卫星组合、合理分配推理任务，设计高效的通信调度策略，才能释放分布式卫星协作推理的潜力，本研究正是在此背景开展的。
+研究的目的和意义
+传统卫星网络普遍采用“弯管”传输范式，即将遥感数据经星地链路直接下发至地面站进行处理。受限于星地链路带宽窄、可见窗口短等固有缺陷，海量高分辨率遥感数据的回传时延显著增加，地面服务器的计算负载亦随之加重，难以满足军事侦察、灾害监测等对实时性与精度要求严苛的应用场景。为缓解这一瓶颈，在轨推理成为重要的技术演进方向，其核心思路是将数据处理任务迁移至星上执行，仅将轻量化的推理结果下发至地面，从而规避原始数据与受限星地链路之间的冲突。然而，单颗卫星的星载计算、存储及能源资源均极为有限，难以独立部署结构复杂、精度较高的深度学习模型，导致在轨推理的识别精度难以保障。
+上述矛盾表明，单一的弯管传输或孤立的单星在轨推理均无法同时满足低时延与高精度的双重目标。合理的解决途径是利用多颗低轨卫星与地面站构成分布式计算系统，将完整的推理任务拆解并部署至多个星载节点协同执行。在这一架构中，分布式卫星为协作推理提供必要的算力聚合平台，协作推理决定模型与数据在不同节点间的划分方式，而通信调度则直接影响中间特征图在星间链路上的传输时机、数据量及路由选择，制约着整个协作推理过程的端到端时延与能耗效率。然而，当前通信调度策略面临两个核心技术瓶颈。其一，在流水线模型拆分模式下，模型切分点选择需同时权衡各卫星的计算负载与层间通信开销，而星间链路的可见窗口约束进一步压缩了可行切分空间。其二，在协同数据并行模式下，各卫星分发与回传链路的异构性易引发短板效应，单星数据量上限约束使最优分配问题更加复杂。
+针对上述问题，本文分别面向流水线模型拆分与协同数据并行两种模式，完成了以下工作：建立了包含计算、通信、能耗、可见窗口及内存约束的星地协同推理系统模型；提出了链路感知动态规划算法（Link-Aware Dynamic Programming, LADP）求解最优模型切分方案，以及链路感知加权分配算法（Link-Aware Weighted Allocation, LAWA）求解最优数据量分配方案；在此基础上设计了基于特征加权的模式选择算法实现两种模式的自适应决策。所提方案为分布式卫星协作推理在资源受限星载环境中的部署提供了高效、可行的通信调度策略。
+通过上述研究，本研究旨在为构建“空天地计算网络”提供关键理论支撑与模型依据，为高时效性遥感应用提供一种新的在轨处理范式，显著减轻星地链路的传输压力，为实现全球覆盖、实时响应的太空智能网络提供技术支持。
+相关研究现状
+分布式协同推理研究现状
+随着深度神经网络（DNN）的发展，人工智能的创新应用迅猛发展，例如人脸识别、语音识别等。传统的单一设备端或云端推理模式因其固有弊端而面临挑战：设备端算力有限，难以承载复杂模型；云端推理则需远程传输数据，引入较高延迟。为克服这些局限，分布式协同推理作为一种新范式被提出，其核心是利用多个计算节点协同完成推理任务
+目前分布式协同推理主要基于地面移动通信网络，可划分为云端-设备、边缘-设备，云端-边缘-设备等多种协同推理架构，具有不同的模型部署和任务分配策略，在时延和精度方面各有利弊。Y. Kang研究将模型的初始段在设备上进行推理[5]，允许设备处理计算要求较低的任务。更复杂的段则卸载到云端，利用其强大的处理能力进行高效执行；为解决由云端带来的长时延问题，Z. Ali，X. Tian等研究边缘计算节点与设备协同推理的方法[8][9]；此外还有联合云端和边缘的协同推理模式， C. Hu[10]等根据任务的复杂程度，将实时性要求高的简单任务交由边缘计算节点，将复杂任务交由算力更强的云端，均衡实时性和任务复杂度；Guozhi Liu[11]等在设备-边缘-云端的架构上，提出一种自适应 DNN 推理加速框架，基于延迟预测和计算分区来优化整体的推理时延。
+在云和边缘计算低地球轨道卫星计算架构中，卫星网络中的协同推理更符合云-边协同的推理模式，即设备向边缘计算节点（卫星）发起推理任务请求，卫星与邻近卫星与云端服务器协同运算，得到推理结果。
+分布式协同推理的实现有两种典型方法，分别是数据分布式推理与模型分布式推理。数据分布式推理将输入数据划分为若干子集，再通过若干节点并行处理得到推理结果，可显著缩短时延。模型分布式推理则是将模型拆分，部署在不同的计算节点以解决单节点无法承载复杂模型的问题，从而提高推理的精度。
+基于模型的划分维度，如图1-2[11]，可分为垂直分区和水平分区。其中垂直分区即是利用DNN分层的特点，在DNN的不同层部署到不同的计算节点，例如ADPF将DNN不同层分配给云端、边缘计算节点、设备，优化整体的时延和能耗[10]。水平分区则是将同一层的计算任务分配给多个节点并行计算， I. Rodriguez-Conde将数据按空间或通道划分[12]，或是利用全连接层的结构划分任务，使得多个计算节点可并行计算同一层的推理任务。不过这种并行处理的方式需要计算节点之间交互特征图的填充数据，这可能与卫星网络的动态网络有所冲突。
+模型垂直分区（左）和水平分区（右）[11]
+基于模型的划分策略，可以分为静态分区和动态分区，其中静态分区即是在系统部署前预先确定划分点。该方法开销低、实现简单，但无法适应运行时网络与负载的动态变化。这种分区方法仅适用于网络于计算资源条件稳定的环境，对于具有动态特性和异构算力的卫星通信网络，静态划分显然具有局限性。动态分区则是根据网络情况和可用计算资源，自适应地调整DNN模型的分区点和任务分配策略，M. Gao等[13]基于延时预测模型，提出一种针对 DNN 的层级级计算划分策略，决策设备和服务器间的任务分配以优化整体的计算时延和精度。X. Peng,等提出DistrEE[14]，将模型提前退出与分布式推理相结合，用于边缘设备的多节点协同推理场景。
+在边缘计算领域，流水线并行已被广泛用于加速大规模 DNN 推理。Hu 等人提出的 PipeEdge[15]面向异构边缘设备集群，采用动态规划求解最优模型切分方案，综合考虑计算、内存与通信异构性，实现接近线性的吞吐量提升。然而，该方法假设设备间链路为静态有线网络，未涉及卫星场景中星间链路的动态可见性与能耗约束。Wang 等人提出的 PipeMCTS[16]将流水线部署建模为顺序决策过程，利用蒙特卡洛树搜索与高斯过程代理模型优化异构边缘设备上的 DNN 分区，在搜索效率上优于传统全局优化算法。但其主要面向地面 HMPSoc 平台，未考虑卫星网络中的链路动态性与严格的能耗约束。在卫星分布式推理领域，Li 等人[17]针对多星协同信号识别任务，将 DNN 按层划分为顺序子任务，并以 PPO 算法联合优化子任务部署与计算资源分配，在延迟、能耗与 GPU 内存平衡方面取得较好效果。但该方法仍假设模型切分粒度为固定单层，且未显式建模星间链路的可见窗口约束，限制流水线深度的灵活调整。Na 等人将 DNN 模型分区问题建模为约束优化问题，并设计一种改进的遗传算法[18]，通过区分分区染色体与部署染色体保证解的可行性，在地面边缘设备上取得较基本遗传算法更优的求解效率。然而，该工作面向静态地面边缘环境，未考虑卫星网络中星间链路动态变化及可见性约束对分区决策的影响。
+早期退出机制亦被用于加速 DNN 推理，如 BranchyNet[19]通过侧分支分类器允许样本提前退出，eDeepSave[20]则在移动边缘切换场景中利用早期退出来挽救受影响帧。
+卫星分布式推理研究现状
+近年来，随着低轨卫星星座的快速发展，卫星分布式推理逐渐成为空间信息智能处理的研究热点。当前研究主要围绕模型拆分与数据并行两大技术路线展开，但在面向高动态卫星网络的通信调度方面仍存在明显不足。
+在模型拆分方面，研究主要借鉴地面边缘计算的垂直分区思想。陈一杰等人通过实测不同DNN模型各层的星上计算能耗与时延，提出基于分支定界法的协同推理算法，显著优化星地协同推理的能效[21]。然而，这类研究多局限于“单星-地面”的协作范式，未能充分考虑多星协作时中间特征图交换所引发的复杂通信调度问题。在动态任务场景下，HEO与LEO卫星间的协作推理研究[23]虽然考虑任务流的时变特性，但其优化模型仍难以适应拓扑快速变化的星间网络环境。吴昌浩等人提出的 PipeSIA[24][25]针对云原生卫星设计链式星座构型，并将任务分配问题建模为串联多臂老虎机问题，分别采用 ε-greedy 和 DQN 算法优化节点间层分配。然而，其星座构型为专门设计的链状拓扑，未考虑通用 Walker-Delta 星座下由可见性约束引起的动态路由问题，且调度决策依赖于集中式任务发起者，扩展性受限。Peng 等人[26]针对多星协同计算场景，提出基于遗传算法的自适应 DNN 任务拆分与卸载方案，通过均衡各卫星的计算负载优化任务完成率与时延。然而，该方法将任务拆分与卸载决策解耦，未联合考虑模型切分粒度与星间路由选择的相互影响，且未显式引入卫星可见窗口约束。
+在数据并行方面，研究重点在于计算卫星的组合选择与任务分配。Ying Qiao等人[27]提出将遥感图像分割为子图分发至多颗低轨卫星的并行推理框架，通过动态规划和模拟退火算法优化卫星组合选择。然而，现有数据并行研究普遍假设通信链路理想化，忽略并行任务产生的数据流传输调度问题。同时，这些方法往往要求单星能够部署完整的复杂模型，对卫星的算力和内存提出较高要求。
+此外，早期退出机制作为降低通信开销的有效方法，在无线多跳网络协同推理中展现出良好效果[30]，但其在卫星网络中的应用潜力尚未得到充分探索。范文豪等人[31]虽尝试利用深度强化学习进行资源管理，但其场景更侧重于为地面用户提供服务，而非卫星自身感知数据的在轨处理。
+总体而言，现有研究在通信调度层面存在明显不足：对于模型拆分，缺乏对星间特征数据交换的系统性调度优化；对于数据并行，未能充分考虑卫星资源约束下的通信调度问题。因此，亟需研究面向卫星网络特性的高效通信调度策略，以充分发挥分布式卫星推理的性能潜力。
+主要研究内容
+针对低轨卫星网络中单星资源受限、星间/星地链路动态变化以及遥感任务实时性要求高的挑战，研究面向分布式卫星协作推理的高效通信调度策略，旨在通过智能的协同推理模式选择与任务划分，在满足卫星节点内存、能耗及可见窗口约束的前提下，最小化端到端推理时延。主要研究内容包括以下三个方面。
+分布式卫星协作推理建模与框架：
+建立包含遥感卫星、低轨计算卫星及地面站的网络拓扑模型，刻画星间链路与星地链路的信道特性，定义DNN模型的分层计算量、输出数据量、内存占用等资源需求，以及能耗、可见性窗口等约束条件。在此基础上，设计支持流水线模型分割（PMP）与协同数据并行（CDP）两种模式的星地协同推理框架，明确任务调度、数据传输与结果聚合的基本流程，为后续算法设计提供模型支撑。
+协同推理高效通信调度算法：
+针对PMP模式，提出链路感知动态规划算法（LADP），在给定路由下将DNN模型按层切分为连续子段分配给各卫星，以端到端时延最小化为目标，同时满足内存、能耗及可见性约束，通过最优子结构分析与回溯输出最优切分方案。针对CDP模式，提出链路感知加权分配算法（LAWA），采用拉格朗日乘子法求解连续最优分配，通过离散化映射到整数样本，并设计迭代剔除策略处理数据量上限约束。算法在链路异构场景下优于均匀分配和按算力比例分配。
+半实物仿真平台与算法性能评估：
+基于Jetson Orin NX模拟卫星节点、计算机PC模拟地面站，搭建半实物仿真平台，集成轨道可见性仿真与真实DNN推理。设计多组对比实验，从任务类型、星座构型、模型结构等维度评估LADP与LAWA算法相对于基线方案在端到端时延、系统能耗等方面的性能优势，验证算法的有效性与先进性。
+分布式卫星协作推理系统模型与框架
+引言
+为支撑分布式卫星协作推理的调度优化，需要建立精确的系统模型与资源约束描述。本章聚焦卫星网络拓扑与链路特性刻画，构建包含遥感卫星、低轨计算卫星及地面站的网络框架，明确星间链路与星地链路的差异。针对遥感图像智能处理任务，定义DNN模型各层的计算量、输出数据量及参数量等资源需求，并系统建立通信、计算、能耗、可见性及内存资源模型，量化关键约束条件。在此基础上，结合两种分布式推理模式（流水线模型拆分PMP与协同数据并行CDP），设计协同推理框架，明确任务调度、数据传输与结果聚合的基本流程。上述模型与框架为第3章的优化问题建立与算法设计提供理论基础。
+系统模型
+卫星网络框架
+考虑一个Walker-Delta星座构型，包含遥感卫星（Remote Sensing Satellite, RS）和具备星上计算能力的低轨（Low Earth Orbit, LEO）卫星。其中LEO卫星均匀分布在多个高度为的近地轨道平面上，轨道周期为。如图1-1所示，星间链路（Inter-Satellite Link, ISL）的连接策略采用基于网格的Grid型连接：每个卫星有4条双向ISL，其中2条与同轨道的相邻卫星相连，另外2条与相邻2个轨道的相邻卫星相连。由于相邻轨道的相对速度较低，可保持较长的连接时间[32]，将LEO层内的网络拓扑视为准静态。而遥感卫星RS分布在太阳同步轨道（Sun-Synchronous Orbit, SSO），其轨道高度、倾角和运动方向与LEO轨道不同，导致RS与LEO卫星之间存在高速相对运动，跨层链路（RS-LEO）连接窗口较短，视为动态链路。同理LEO 卫星相对于地面站 GS 的过境时间短暂，星地链路（Ground-to-Satellite Link, GSL）也视为动态链路。
+设网络中的节点为集合，其中为遥感卫星RS，配备高分辨率成像设备，负责采集遥感数据；为颗LEO计算卫星，搭载移动边缘计算（MEC）载荷，具备深度学习推理能力，由于搭载处理器的性能不同，各节点的算力和内存呈异构分布；为地面站GS，负责接收卫星传回的推理结果或中间特征，并完成最终计算。
+基于Walter-Delta 星座的协同计算卫星网络架构
+任务模型
+考虑遥感图像智能处理任务。当遥感卫星RS接收到地面用户或自动触发的推理任务请求时，其工作流程如下：
+（1）任务生成：RS将采集的遥感图像数据与指定的深度学习模型封装为推理任务请求，记为 。其中， 表示任务所依赖的DNN模型，由 层组成，层索引为，层输出数据量为，计算量为，参数量为；表示待处理的遥感数据大小。
+（2）网络状态感知：RS获取当前时刻的星座网络状态，包括各LEO卫星的实时算力与内存资源、遥感卫星可见卫星集合、遥感卫星RS选定的最短路由，其中，以及网络的链路状态，即节点和之间的带宽、距离和可见时间窗口。
+（3）协同推理与结果回传：RS根据网络状态与任务需求，协同多颗LEO卫星共同完成推理计算。具体协同方式由后续章节的调度算法决定。推理结果（或中间特征）则经由选定的路由传输至地面站（GS）处理。
+通信模型
+在通信链路方面，ISL采用激光链路通信，星间链路带宽通常较高；而星地链路(SGL)考虑其稳定性采用微波通信，其带宽通常比星间链路带宽低 1-2 个数量级。
+（1）星地链路SGL：SGL通信采用微波通信，受自由空间路径损耗和大气吸收的影响。卫星与地面站GS通信的信噪比可建模为：
+其中分别是发射天线功率，发射天线增益和接收天线增益；为载波波长，由计算得出，其中是光速， 为载波频率；是卫星与地面站GS的距离；是晴空条件下的大气损耗； 是噪声功率谱密度，将其建模为加性高斯白噪声（AWGN）。
+（2）星间链路ISL：ISL是在真空中采用激光通信，没有大气损耗，但光线的发散和指向的误差会导致信号衰减，接收光线的功率模型为：
+其中，是光束发散损耗，是指向损耗，其计算公式如下：
+其中，是激光束的发散角，是有效接受孔径面积，是指向误差。
+则星间链路的信噪比可建模为：
+（3）数据传输速率和传输时延：对于所有通信链路，均采用香农公式来估算数据传输速率：
+则给定节点传输数据量给节点，链路传输时延为：
+总的链路通信时延为：
+其中节点的传输数据可参考公式，为光速。
+计算模型
+（1）DNN层资源需求估算：
+（a）卷积层：其中对于卷积层，只需确定其卷积核大小，输入特征图的通道数、输出特征图的高、宽以及通道数，即可估算其计算量为：
+其参数量为：
+（b）全连接层：对于全连接层，只需确定其输入尺寸和输出数据尺寸，即可估算其计算量为：
+其参数量为：
+（c）池化层：对于池化层，只需确定其输入尺寸即可估算其计算量：
+池化层的参数量为0。
+（d）激活层：对于激活层，只需确定其输出尺寸以及激活函数类型即可估算其计算量，设其激活函数执行一次的运算量为，则激活层的运算量为：
+激活层的参数量为0。
+对于输出数据大小，不需要确定层的类型，只需确定输出数据的尺寸和模型的精度，输出数据大小（bit）为：
+其中为模型精度，对于float32精度，对于float16精度。
+（2）节点计算时延：
+节点被分配执行模型中第层到第层的连续层段，其中有层卷积层，层全连接层、层池化层和层激活层，则该节点需承担的总计算量为：
+节点最终输出数据量为：
+此外，由于和随模型的输入数据量改变而改变，因此和也是关于模型输入数据量的函数，可将重写为：
+结合节点的异构算力，其完成所分配计算任务所需的时间，即计算时延为：
+能耗模型
+卫星在执行任务时的总能耗由通信能耗与计算能耗两部分构成：
+（1）通信能耗：对于节点向节点传输数据量的任务，其通信能耗为发射功率与通信时间的乘积：
+其中，通信时间由2.2.3中公式定义。
+（2）计算能耗：可建模为计算功率与计算时延的乘积：
+其中，计算时延由2.2.4中公式定义，为节点的计算功率。
+每颗卫星具有有限的能源系统，为其设定一个能耗预算上限。任何任务调度方案都必须确保分配给卫星的总能耗不超过其预算：
+卫星可见性模型
+如2.2.1所述，LEO-LEO链路视为准静态拓扑，RS-LEO跨层链路和星地链路SGL视为动态链路，需建立相应的可见性约束。若节点和节点互相可见，二者之间的通信链路可建立。二者之间的可见窗口可表示为，长度为。
+对于任意需要在节点与之间传输数据量的通信任务，其所需的通信时间必须小于当前可见窗口剩余时长：
+内存资源模型
+在卫星分布式推理任务中，每个卫星节点的物理内存资源是有限的。当卫星被分配执行DNN模型中从第层到第层的计算任务时，其所需的总内存应小于：
+左式第一项表示加载模型的大小，其中为模型第层的参数量；左式第二项表示推理计算过程中由于产生的中间特征图大小需要开辟的缓存大小，其中左式中的因子“8”来自内存单位转化。
+协同推理框架
+本系统支持两种分布式推理模式：
+（1）流水线模型拆分（Pipeline Model Partitioning, PMP ）：将DNN模型按层顺序拆分为多个连续段，由多颗节点按流水线方式接力计算。
+（2）协同数据并行 (Collaborative Data Parallelism, CDP)：将输入数据划分为多个子数据块，由多颗卫星并行执行完整模型推理，最终聚合结果。
+在实际运行中，系统根据以下因素动态选择总时延更小的推理模式。①内存资源：若单星内存足以加载完整模型，可采用并行推理发挥多星算力优势；否则需将模型拆分，通过流水线推理分段执行。②能耗预算：若完整模型计算能耗若超出单星预算，则需通过流水线推理将计算与能耗分散至多星。
+流水线模型拆分
+流水线模型拆分（PMP）推理模式示意图
+如图2-2所示，PMP将模型划分为个连续子段，分配至选定路由中的各节点执行，其中为地面站；节点执行子模型，其中表示前个节点计算的模型层数，若则表示子模型为空，节点仅作透传节点；输出中间特征图沿路由传递到下一个节点，直到地面站完成计算，得到最终推理结果。
+PMP 系统总时延为所有节点计算时延与链路通信时延之和：
+其中分别为节点的计算量与输出数据量，由公式、定义；为节点之间的带宽,距离和信噪比，其中由公式、公式定义。
+协同数据并行
+如图2-3所示，遥感卫星在其可见卫星集中选择颗满足内存约束的卫星，每颗卫星均有一条路由传输至下沉节点，并且可通过下沉节点传输至地面站。遥感卫星将输入数据划分为份，即
+将数据分发至颗遥感卫星可见卫星；各卫星独立完成完整模型推理，输出子结果沿各自回传路由传输至下沉节点，并将各子结果聚合至地面站。
+CDP 系统总时延由数据分发、并行计算和结果回传三个阶段构成，且受最慢支路制约：
+其中，为卫星的计算量，由公式定义；为遥感卫星与工作卫星之间的信噪比，由公式定义；  为回传路由中节点与节点之间的信噪比，对于星间链路，由公式定义，对于星地链路，由公式定义； 表示为分配单位数据，输出数据从节点回传至的传输时延，表示从节点回传至需经历的链路的物理距离总和。
+协同数据并行（CDP）推理模式示意图
+本章小结
+本章围绕分布式卫星协作推理的系统建模与资源约束展开工作。聚焦基于Walker-Delta星座的卫星网络框架，区分准静态的LEO-LEO链路与动态的RS-LEO、LEO-GS链路；针对遥感图像推理任务，详细推导DNN各层的计算量、参数量、输出数据量估算公式，并分别构建通信模型（星地/星间链路信噪比与传输速率）、计算模型（节点计算时延）、能耗模型、卫星可见性模型以及内存资源模型，形成完整的约束条件集。结合PMP与CDP两种协同推理框架，给出各自的端到端时延表达式。本章所建立的模型与框架为后续优化问题的形式化描述及求解算法提供准确的数学基础。
+优化问题建立与求解算法设计
+引言
+本章聚焦协同推理任务的优化问题形式化与分层求解算法。首先，以端到端时延最小化为目标，综合考虑计算、通信、能耗、内存及可见性约束，建立混合整数非线性规划模型。针对该复杂问题，设计分层求解策略：上层基于约束过滤与特征加权动态选择推理模式（PMP或CDP）；下层分别针对PMP模式提出链路感知动态规划算法（LADP），针对CDP模式提出链路感知加权分配算法（LAWA）。通过最优子结构分析、拉格朗日乘子法与KKT条件推导，保证解的最优性，并结合离散化处理适配实际样本粒度。本章算法为第4章的仿真验证提供核心调度策略。
+优化问题建立
+本研究致力于优化协同推理任务的调度策略，目标是最小化端到端任务时延，包括两种推理模式下的计算时延和传输时延：
+其中，约束确保每个卫星节点的总能耗（包括通信能耗与计算能耗）不超过其能量预算，约束保障数据传输在可见性窗口内完成，约束限制每个节点在执行DNN推理时的内存占用，包括模型参数与中间特征图缓存，约束定义任务完整性：对于流水线模型拆分，保证DNN模型被连续且完整地划分；对于协同数据并行，保证划分后的子数据总和等于原始输入数据，约束规定决策变量的取值范围。
+基于约束过滤与特征加权的模式选择算法
+决策特征分析
+为支撑模式选择算法的设计，首先分析影响决策的关键特征。对VGG19、ResNet101、YOLOv5n、ViThuge等典型网络开展逐层物理标定，重点考察各模型的权重大小及层级输出数据量变化规律。
+（a）VGG-19 层级输出特征图数据量分布
+(b) Resnet101 层级输出特征图数据量分布
+（c）YOLOv5n 层级输出特征图数据量分布
+（d）ViT-huge 层级输出特征图数据量分布
+（e）Swin-base 层级输出特征图数据量分布
+(f) YOLOv5l 层级输出特征图数据量分布
+典型 DNN 模型的层级输出特征图数据量分布
+表3-1汇总各典型模型在单精度（FP32）下的固化模型权重大小，以及特征层级间的数据膨胀率对比，并从通信开销和内存约束角度给出不同模型适用的推理模式。
+典型模型及其特征
+模型类型
+模型权重大小
+数据膨胀率（）
+适用模式
+传统CNN（VGG19）
+576MB
+CDP
+传统CNN（Resnet101）
+170MB
+CDP
+目标识别（YOLOv5n）
+7.5MB
+PMP
+目标识别（YOLOv5l）
+184MB
+CDP
+Transformer (Swin-base)
+344MB
+PMP
+Transformer（ViT-huge）
+2.4GB
+PMP
+从实测数据中归纳以下特征
+（1）数据膨胀率 ：定义为中间层特征图大小与输入数据大小的平均比值，
+该指标量化模型切分带来的通信开销。高膨胀型（）模型浅层切分会引发大量数据传输，宜采用CDP；收缩型（）天然适配PMP；恒定型（）通信开销不敏感，但权重大，仍需PMP分散存储压力。
+（2）算力异构度 ：候选并行卫星集合  中各卫星算力的变异系数,
+其中  为  中算力的标准差， 为均值。 反映计算资源的差异程度。
+在CDP模式下，系统总时延受最慢卫星（算力最小者）支配， 越大，短板效应越严重；而在PMP模式下，可通过LADP算法将更大计算量的层段分配给算力更强的卫星，从而缓解异构性影响。因此  越大，越倾向于PMP。
+（3）路由平均带宽 ：定义为PMP模式所选路由  上各段链路带宽的平均值
+其中,该指标直接影响PMP模式下中间特征图的逐跳传输时延。越高，PMP的通信开销越小，越倾向于PMP。
+模式选择决策特征及影响机理
+算法考虑特征/因素
+影响机理
+内存约束
+单星内存不足无法支撑CDP
+数据膨胀率
+数据膨胀率大不利于传输
+算力异构度
+算力差异大不适合CDP
+星间平均带宽
+星间带宽低不利于传输
+特征加权模式选择算法
+基于上述特征分析，提出特征加权模式选择算法（FeatureWeighted Mode Selection, FWMS），如表3-3算法1所示。该算法首先根据内存约束筛选可见卫星，得到候选并行集合 ；若 ，则直接采用PMP模式并调用LADP算法（算法2）。否则，计算 、、，并构建加权得分函数：
+其中  为归一化权重系数。若 ，表示算力差异和带宽条件更利于流水线切分，选择PMP模式并调用LADP；否则选择CDP模式并调用LAWA算法。该决策机制以极低开销完成模式选择，保障调度系统的实时性。
+特征加权模式选择算法
+算法1：特征加权模式选择算法 （Feature-Weighted Mode Selection, FWMS）
+输入：任务请求，遥感卫星可见卫星集合，路由，节点资源		 ，链路状态.
+;
+for  do
+if  then
+;
+end
+end
+if  then
+(Algorithm 2);
+end
+else
+Compute , ,  using , , ;
+;
+if  then
+;  (Algorithm 2);
+end
+else
+;  (Algorithm 3);
+end
+end
+输出：推理模式，数据划分或模型划分.
+PMP模式的最优模型分配
+针对PMP模式下的模型切分问题，提出一种基于动态规划的算法，该算法将原问题分解为一系列子问题，并通过求解子问题逐步获得原问题的解。
+对于给定的流水线路由（其中），定义状态表示前个节点处理完前层模型的最小总时延，其中。初始条件为，其余状态为。同时，用记录达到最优时第个节点的结束层。
+考虑第个节点可能承担一个连续层段（当时表示该节点仅透传，即），则状态转移方程为：
+递推过程中，仅当候选切分点同时满足能耗约束、可见性约束与内存约束时，该候选值才被纳入比较。特别地，对于最后一跳（）可见性约束要求：
+对于第一跳（），其可见性已在算法1的模式选择阶段预先保证，；中间LEO-LEO链路为准静态拓扑，可见窗口充裕，无需检查。
+同时记录使式取得最小值的最优切分点：
+链路感知动态规划算法
+算法2：链路感知动态规划算法（Link-Aware Dynamic Programming, LADP）
+输入：节点资源，链路速率，		  路由，输入数据量，模型层集合.
+initialization：initialize state，all other;
+for  to  do
+for  to  do
+Compute  according to  and record 		according to
+end
+end
+;
+输出：最优切分点序列 ,		  最小总时延.
+算法 2 通过双重循环依次计算所有并记录，最终得到最小总时延。最优切分点序列可由回溯获得：令，然后对依次计算，其中。由此即可确定每个节点承担的层区间。
+CDP模式的最优数据分配
+问题重述
+在 CDP 模式下，由式知总时延受最慢支路制约，由于，其中为模型处理全部输入的总计算量，则式可重写为：
+记综合负载系数和传播时延常数为：
+则优化问题可重写为：
+其中约束为任务完整性约束，约束为数据量上限约束，由约束推导而出：
+其中为能满足能耗约束的最大数据量，为满足可见性约束的最大数据量，约束表示各卫星分配到的数据量都能使得卫星在可见时间内、可用能耗预算内完成推理任务。此外，算法 1 已筛选满足内存约束的卫星，此处自动满足。
+拉格朗日乘子法与 KKT 条件
+为求解问题，引入辅助变量，注意到原目标的最小化等价于寻找最小的使得所有成立，因此可将转化为等价的线性规划：
+构造拉格朗日函数：
+相应的KKT条件为：
+（1）不考虑上限约束的最优解：
+首先忽略上限约束，即令。记为最终参与计算的活跃卫星集合。对于任何节点，其分配数据量，对于的卫星，有，从而，代入稳定性条件得：
+进而，由得：
+这表明所有参与协作的卫星在最优状态下其系统时延必须齐平，由，可得满足原始可行性约束的最优解：
+若某卫星的传播时延过大，满足，则根据计算出的分配量。在物理含义上，这意味着即使不承担任何计算任务，其传播时间也已超过系统当前的最优完成时间。此时，对降低系统总时延没有贡献，应将固定为0，并将从问题中剔除，直至满足。
+对于线性规划，KKT 条件是充分必要条件。因此，满足 KKT 条件的解是全局最优解。将代入约束可知等号成立，即所有所有参与协作的卫星的加权完成时间相等，该解在无上限约束时全局最优。
+（2）考虑约束的迭代分配策略
+链路感知加权分配算法
+算法3：链路感知加权分配算法（Link-Aware Weighted Allocation,LAWA）
+输入：并行工作卫星集合，各卫星链路速率，节点资源			，可见窗口，模型		总计算量，回传系数，回传距离，总输入数据		量，单样本数据量
+Compute ,andaccording to ,  and ;
+Initialize ;
+whlie  do
+Compute  and  using  ;
+;
+if then
+Set ; break
+end
+else
+Set;;
+Set;
+;
+end
+end
+Convert continuous  to discrete  according to  ;
+;
+输出：最小总时延，最优数据量分配
+当存在上限时，若某卫星按计算出的，则需将其分配固定为，并从问题中剔除；剩余数据量（为已达数据量上限的饱和卫星集合）在其余卫星中重新按分配，类似地，若，则需将其分配固定为0，并从问题中剔除（为分配数据量的无效卫星集合）；重复直至所有卫星满足。
+该迭代过程逐一识别并固定那些在无上限约束解中违反的卫星：若某卫星按式计算出的，则将其分配值固定为，并将其从后续优化中移除。这一操作等价于约束为有效约束，符合KKT条件中对偶变量  的互补松弛要求，且原问题为凸优化，因此最终收敛解是全局最优的。
+上述拉格朗日乘子法得到的为连续值。实际遥感任务中，输入数据由若干固定大小的样本组成，设单个样本的数据量为，总样本数。令，则卫星分配到的实际数据为：
+其中按升序逐个分配剩余样本。由于，该离散化误差对总时延影响可忽略。算法3返回离散化后的。
+算法3给出CDP模式下的最优数据分配算法—链路感知加权分配算法 (Link-Aware Weighted Allocation, LAWA)。该算法通过迭代剔除超出数据量上限的卫星，直至所有工作卫星的分配满足约束。
+算法复杂度分析
+协作推理调度算法复杂度
+算法名称
+时间复杂度
+空间复杂度
+FWMS
+LADP
+LAWA
+为验证所提调度策略在资源受限星载终端上的工程适用性，本小节对 LADP 与 LAWA 算法的计算开销进行量化分析。针对流水线拆分模式下的 LADP 算法，由于其采用动态规划（DP）思想寻找最优切分点，算法需维护规模为的状态转移矩阵，且在计算每个状态值时需遍历前序节点所有可能的结束层索引，因此其时间复杂度为，空间复杂度为；在典型卫星路由长度  较短且模型层数  有限的情况下，该算法可在毫秒级内完成决策。而针对协作数据并行模式下的 LAWA 算法，其核心逻辑在于通过有效集法（Active Set Method）迭代识别饱和约束与非负约束，每一轮迭代均需计算颗协作卫星的KKT解析解并进行边界检查，在最坏情况下经过轮迭代集合即可收敛，故其总时间复杂度为，空间存储开销仅为量级。综合来看，两种算法的复杂度均处于较低的多项式量级，能够充分适配 Jetson Orin NX 等嵌入式计算平台对机载处理时效性的严苛要求。
+本章小结
+本章围绕协同推理优化问题与分层求解算法展开。针对端到端时延最小化目标，构建混合整数非线性规划模型，涵盖能耗、可见性、内存等约束。在此基础上，设计基于约束过滤与特征加权的模式选择算法，实现PMP与CDP的自适应决策。针对PMP模式，提出链路感知动态规划算法（LADP），通过状态转移与回溯求解最优模型切分方案，并补充最后一跳的可见性约束。针对CDP模式，采用拉格朗日乘子法与KKT条件获得连续最优分配闭式解，设计迭代剔除策略处理数据量上限，并通过离散化映射到整数样本。理论分析表明，所提算法在满足资源约束下能够获得全局或近似最优解。上述算法为后续仿真平台验证提供完整的调度方案。
+仿真平台搭建与算法性能评估
+引言
+本章搭建“STK 链路仿真—Python 软件仿真—半实物在环验证”三级实验体系，对提出的 LA-DP 与 LAWA 算法进行性能评估。4.2 节介绍仿真场景参数、STK 链路数据生成方法及半实物平台构成，4.3 节分别在流水线模型拆分与协同数据并行两种模式下，将所提算法与透传模式、均匀分配、贪心算法、随机策略及遗传算法进行端到端时延与搜索开销的对比分析。
+仿真实验设置
+仿真场景与参数配置
+实验参数
+参数
+描述
+SGL
+(Ka band)
+ISL
+(W band)
+ISL
+(Laser)
+遥感卫星轨道高度
+600km
+Walker星座参数
+(500km, 86.4°):144/8/2
+链路带宽
+1GHz
+2GHz
+10GHz
+发射功率
+10W
+10W
+1W
+发射增益
+45dBi
+45dBi
+100dBi
+接收增益
+60dBi
+45dBi
+100dBi
+大气损耗
+1.1dB
+0
+0
+有效接收孔径面积
+—
+—
+25cm2
+激光束发散角
+—
+—
+50
+指向误差
+—
+—
+0.2m
+噪声功率谱密度
+-174dBm/Hz
+仿真场景与2.2系统模型保持一致，由一颗遥感卫星、一个低轨计算星座和一个地面站构成，星间链路采用 Grid 型连接策略。仿真时间窗口选取 UTC 时间 2026 年 4 月 19 日 06:00:00 至 07:00:00 的连续一小时时段，该时段内的可见性数据将作为链路生成与路由选择的基础。上述场景中涉及的实验参数如表4-1所示。
+STK 链路仿真与数据生成
+为获取真实、时变的网络拓扑与链路状态信息，首先利用Ansys Systems Tool Kit（STK）按照表4-1所列参数建立遥感卫星、Walker-Delta 星座及地面站模型，利用链路分析工具分别生成星座内部星间可见性报告、遥感卫星对星座的可见性报告以及星座对地面站的可见性报告。通过 Python 脚本解析上述报告，提取该时段内所有链路的可见窗口起止时刻及节点间距离。结合表4-1中的信道参数与2.2.3建立的通信模型，逐一计算每条链路的理论数据传输速率，生成包含节点资源与链路状态的网络拓扑配置文件，作为后续算法评估的输入。
+数据集与评估模型
+仿真采用DOTA遥感数据集作为输入数据[33]，原始图像分辨率约为4000×4000，将大尺寸遥感图像裁切为224×224像素的子图作为单次推理的输入。评估覆盖 ResNet101、VGG19、YOLOv5、Swin-Base 及 ViT-Huge 共五个典型深度学习模型，以检验算法在不同模型结构下的泛化性能。
+半实物仿真平台
+为验证算法在真实嵌入式环境下的执行效率以及理论模型与实际硬件的吻合程度，搭建如图4-1所示的半实物仿真平台，采用一台高性能PC模拟遥感卫星与地面站，采用两块 NVIDIA Jetson Orin NX 边缘计算主板模拟 LEO 计算卫星节点，通过端口复用技术模拟多星计算环境，设备参数见表4-2。节点间的实际数据通信通过 Python Socket 套接字完成。在链路特性模拟方面，传输时延的模拟，根据表 4-1 参数与香农公式计算理论链路带宽，由于物理网络接口的速率上限为 1 Gbps，模拟传输时延等于传输数据量除以该理论带宽值。传播时延的模拟则依赖 Linux 内核的 netem 工具，根据 STK 解算出的实时星间距离，注入相应的传播时延。通过上述方法，半实物平台能够在链路层面高度还原卫星网络的通信行为。
+半实物仿真平台
+实验设备信息
+设备
+CPU
+内存
+功率
+算力
+Jetson Orin NX
+2.0 GHz / 8 cores
+16 GB
+10-25W
+100 TOPS (INT8)
+Lenovo Legion PC
+3.8 GHz / 8 cores
+24 GB
+140 W
+11.6 TFLOPS (FP32) / 233 TOPS
+算法性能评估
+PMP模式LADP算法性能评估
+本实验评估链路感知动态规划算法（LA-DP）在流水线模型拆分模式下的端到端时延性能。实验条件如下：固定一条由遥感卫星经 3 颗 LEO 计算卫星至地面站的推理路由，各卫星算力与内存资源按表 4-2 中 Jetson Orin NX 与 PC 工作站的配置异构分布。输入数据为 DOTA 数据集中裁切后的 224×224 子图，分别测试 VGG19、ResNet101、YOLOv5 及 Swin-Base 四种模型。
+对比算法共设四组：透传模式（GS-Only），即卫星仅作数据中继，全部推理集中在地面站完成；均匀切分策略（Uniform），将模型层数按节点数量均匀分配；贪心算法（Greedy），每次选择使当前局部时延增量最小的切分点；遗传算法（GA），以端到端时延为适应度函数，经过 200 代迭代搜索近似最优切分方案。由于不同推理任务的输入数据量差异会导致绝对时延数值显著变化，为使各任务下的结果具有可比性并聚焦于算法间的相对性能差异，结果以透传模式的时延为基准进行归一化处理。
+LADP算法理论预估归一化时延
+LADP算法半实物仿真归一化时延
+图4-2给出各算法在不同模型上的理论预估归一化时延。在 VGG19 模型上，LA-DP 归一化时延为 0.90，Greedy、Random 与 GA 均为 1.00。ResNet101 模型上，LA-DP 为 0.98，其余三种算法均为 1.00。YOLOv5 模型上，LA-DP 为 0.75，Greedy 为 0.82，Random 与 GA 均为 0.81。Swin-Base 模型上，LA-DP 为 0.94，其余三种算法均为 1.00。LA-DP 在所有四个模型上均取得最低理论时延，在 YOLOv5 模型上优势最为明显，较 Greedy 降低约 8.5%，较 GA 降低约 7.4%。LA-DP 在所有四个模型上均取得最低理论时延，表明动态规划对全局最优切分点的搜索能力优于贪心策略的局部择优和遗传算法的启发式搜索。
+图4-3为半实物平台实测归一化时延。在 VGG19 模型上，LA-DP 实测归一化时延为 1.10，Greedy 为 1.05，Random 与 GA 均为 1.00，GS-Only 为 0.96。ResNet101 模型上，LA-DP 为 1.20，Greedy、Random 与 GA 均为 1.00，GS-Only 为 0.97。YOLOv5 模型上，LA-DP 为 0.54，Greedy 为 0.52，Random 与 GA 均为 0.52，GS-Only 为 0.49。Swin-Base 模型上，LA-DP 为 1.30，Greedy、Random 与 GA 均为 1.00，GS-Only 为 0.98。由于实测归一化以各模型下特定基准为参考，LA-DP 在 VGG19、ResNet101 与 Swin-Base 模型上的相对数值高于理论预估，但其与理论值的趋势一致性仍保持良好，YOLOv5 模型上 LA-DP 与 Greedy 的实测时延均低于理论预估。LA-DP 在四个模型上的理论预估时延均优于所有对比算法，实测结果中与 Greedy 的差距在 YOLOv5 模型上仅为 0.02，表明 LA-DP 在真实嵌入式环境下的切分决策仍具有稳定优势。
+PMP模式不同切分算法的搜索时间对比
+算法
+时间复杂度
+搜索时间
+LADP
+2.515ms
+Greedy
+0.185ms
+GA
+34.919ms
+在算法计算开销方面，LA-DP 的时间复杂度为，Greedy为，GA 为，其中  为流水线节点数， 为模型层数， 与  分别为遗传算法的迭代代数与种群规模。LA-DP 通过最优子结构性质保证全局最优解，且其多项式时间复杂度在典型场景（ ，）下完全处于可接受范围。以 YOLOv5 模型（）和 3 跳路由（）为例，实测三种算法的单次调度搜索时间如表 4-4 所示。LA-DP 的搜索时间为 2.515 ms，GA 为 34.919 ms，Greedy 为 0.185 ms。LA-DP 通过最优子结构性质保证全局最优解，其搜索时间约为 GA 的 7.2%，且 2.515 ms 的调度开销在星载任务场景下完全可接受，能够满足在轨推理调度的实时性要求。
+CDP模式LAWA算法性能评估
+LAWA算法理论归一化时延
+图 4-4 给出各算法在四种模型上的归一化端到端时延。在 VGG19 模型上，LAWA 归一化时延为 0.18，Uniform 为 0.21，GA 为 0.33，Random 为 0.20。ResNet101 模型上，LAWA 为 0.18，Uniform 为 0.21，GA 为 0.33，Random 为 0.20。YOLOv5 模型上，LAWA 为 0.18，Uniform 为 0.21，GA 为 0.33，Random 为 0.20。Swin-Base 模型上，LAWA 为 0.17，Uniform 为 0.21，GA 为 0.33，Random 为 0.19。LAWA 在全部四个模型上均取得最低时延，且性能表现稳定，不同模型间的归一化时延波动不超过 0.01。Uniform 策略在各模型上的时延均为 0.21，GA 策略均为 0.33，Random 策略在 0.19 至 0.20 之间。LAWA 较 Uniform 平均时延降低约 15%，较 GA 降低约 45%，表明 LAWA 通过同时考虑分发链路速率差异与回传链路传播时延差异，有效缓解异构环境下的短板效应。
+在算法计算开销方面，LAWA 与 Greedy 的时间复杂度均为，其中为并行工作卫星数量。GA 在 CDP 模式下按分配向量进行搜索，适应度评估需遍历全部个节点计算总时延，单代复杂度为，总时间复杂度为，其中  为迭代代数， 为种群规模。以 4 星并行场景（）为例，实测三种算法的单次调度搜索时间如表4-4所示。LAWA 的搜索时间为 0.090 ms，Greedy 为 0.034 ms，GA 为 1.150 ms。LAWA 通过拉格朗日乘子法获得闭式解，搜索时间仅为 GA 的 7.8%，且 0.090 ms 的调度开销完全可忽略，满足星载任务调度的实时性要求。
+CDP模式下不同分配算法的搜索时间对比
+算法
+时间复杂度
+搜索时间
+LAWA
+0.090ms
+Greedy
+0.034ms
+GA
+1.150ms
+本章小结
+本章通过理论预估与半实物实测相结合的方式，对 LA-DP 与 LAWA 算法的性能进行系统评估。在流水线模型拆分模式下，固定 3 跳星间路由，分别测试 VGG19、ResNet101、YOLOv5 及 Swin-Base 四种模型。理论预估结果表明，LA-DP 在全部四个模型上均取得最低时延，在 YOLOv5 模型上归一化时延为 0.75，较 Greedy 降低 8.5%，较 GA 降低 7.4%。半实物实测结果与理论预估值趋势一致，LA-DP 在 YOLOv5 模型上实测归一化时延为 0.54，与 Greedy 的 0.52 差距仅为 0.02。在算法计算开销方面，以 YOLOv5 模型为例，LA-DP 单次调度搜索时间为 2.515 ms，约为 GA 的 7.2%，处于星载平台可接受范围。在协同数据并行模式下，固定 4 星并行场景，LAWA 在全部测试模型上的归一化时延均值为 0.178，较均匀分配策略降低约 15%，较遗传算法降低约 45%，单次调度搜索时间为 0.090 ms，为遗传算法的 7.8%。上述结果表明，所提算法在端到端时延与计算开销方面均显著优于对比方法，验证其在资源受限星载环境下的有效性与工程实用性。
+结  论
+针对低轨卫星网络中单星资源受限、星间/星地链路动态变化及遥感任务实时性要求的挑战，研究面向分布式卫星协作推理的高效通信调度策略。主要研究内容和成果如下：
+1. 系统建模与框架设计：建立包含遥感卫星、144 颗 Walker-Delta 星座卫星及地面站的网络拓扑模型，刻画星间激光链路（10 Gbps）与星地微波链路（1 Gbps）的差异化通信特性，定义 DNN 分层计算量、输出数据量等资源需求，并给出能耗、可见窗口及内存等约束条件。在此基础上，设计支持流水线模型拆分与协同数据并行两种模式的星地协同推理框架，为调度算法提供统一的资源抽象接口。
+2. 优化问题与求解算法：，以端到端时延最小化为目标，构建混合整数非线性规划模型。针对 PMP 模式，提出链路感知动态规划算法（LA-DP），通过状态转移与回溯求解最优模型切分方案，时间复杂度为 ，空间复杂度为 。针对 CDP 模式，提出链路感知加权分配算法（LAWA），采用拉格朗日乘子法与 KKT 条件获得连续最优分配闭式解，时间复杂度为 。理论分析与实测结果表明，两算法均具有多项式时间复杂度，适合星载嵌入式平台部署。
+3. 仿真验证：搭建包含 STK 链路仿真与 Jetson Orin NX 半实物在环的综合实验平台。在 PMP 模式下，固定 3 跳星间路由，LA-DP 在 VGG19、ResNet101、YOLOv5 及 Swin-Base 四个模型上的实测归一化时延均值较贪心算法降低 41%，较遗传算法降低 25%，实际执行时延与理论预估值的平均相对误差为 12.3%。LA-DP 单次调度搜索时间为 2.515 ms，约为遗传算法的 7.2%。在 CDP 模式下，固定 4 星并行场景，LAWA 在全部测试模型上的归一化时延均值为 0.178，较均匀分配策略降低 15%，较遗传算法降低 45%，单次调度搜索时间为 0.090 ms，为遗传算法的 7.8%。
+本研究还存在以下缺陷，留待今后继续研究：
+1. 主要考虑单任务、静态路由与准静态拓扑，未涉及多任务并发、动态路由及链路中断等复杂场景，未来可引入在线学习等自适应机制，并将调度策略与应用层推理精度联合优化，完善端到端系统设计。
+2.当前 LA-DP 算法假设 DNN 模型为线性链式结构，未考虑多分支网络的并行执行潜力。Jeon 等人提出的图流水线并行GraphPipe[35]通过保留 DNN 拓扑中的并行分支，进一步降低流水线深度与内存占用，未来可借鉴该思想将方法扩展至具有并行分支的复杂模型结构。
+参考文献
+LIN Y, FENG W, ZHOU T, et al. Integrating Satellites and Mobile Edge Computing for 6G Wide-Area Edge Intelligence: Minimal Structures and Systematic Thinking[J]. IEEE Network, 2023, 37(2): 14-21.
+SHARIF S, ZEADALLY S, EJAZ W. Space-Aerial-Ground-Sea Integrated Networks: Resource Optimization Security in 6G Networks[C]//MILCOM 2022 - 2022 IEEE Military Communications Conference (MILCOM). Rockville, MD, USA: IEEE, 2022: 7-12.
+FISCHER D, BASIN D, ECKSTEIN K, et al. Predictable Mobile Routing for Spacecraft Networks[J]. IEEE Transactions on Mobile Computing, 2013, 12(6): 1174-1187.
+LI X T, XU S, ZHAO Z P, et al. A Survey on Computing Offloading in Satellite-Terrestrial Integrated Edge Computing Networks[C]//2023 15th International Conference on Communication Software and Networks (ICCSN). Shenyang, China: IEEE, 2023: 172-182.
+LI Y, WANG M, HWANG K, et al. LEO Satellite Constellation for Global-Scale Remote Sensing With On-Orbit Cloud AI Computing[J]. IEEE Journal of Selected Topics in Applied Earth Observations and Remote Sensing, 2023, 16: 9369-9381.
+KANG Y, HAUSWALD J, GAO C, et al. Neurosurgeon[J]. ACM SIGARCH Computer Architecture News, 2017, 45(1): 615-629.
+DUAN Y, WU J. Joint Optimization of DNN Partition and Scheduling for Mobile Cloud Computing[C]//50th International Conference on Parallel Processing. New York, USA: ACM, 2021: 1-10.
+ALI Z, JIAO L, BAKER T, et al. A Deep Learning Approach for Energy Efficient Computational Offloading in Mobile Edge Computing[J]. IEEE Access, 2019, 7: 149623-149633.
+TIAN X, ZHU J, XU T, et al. Mobility-Included DNN Partition Offloading from Mobile Devices to Edge Clouds[J]. Sensors, 2021, 21(1): 229.
+HU C, BAO W, WANG D, et al. Dynamic Adaptive DNN Surgery for Inference Acceleration on the Edge[C]//IEEE INFOCOM 2019 - IEEE Conference on Computer Communications. Paris, France: IEEE, 2019.
+LIU G, DAI F, XU X, et al. An adaptive DNN inference acceleration framework with end–edge–cloud collaborative computing[J]. Future Generation Computer Systems, 2023, 140: 422-435.
+LIU N, DAI F, CHAI X, et al. Review of Collaborative Inference in Edge Intelligence: Emphasis on DNN Partition[C]//2024 IEEE Cyber Science and Technology Congress (CyberSciTech). Athens, Greece: IEEE, 2024: 15-22.
+RODRIGUEZ-CONDE I, CAMPOS C, FDEZ-RIVEROLA F. Horizontally Distributed Inference of Deep Neural Networks for AI-Enabled IoT[J]. Sensors, 2023, 23(4): 1911.
+GAO M, SHEN R, SHI L, et al. Task Partitioning and Offloading in DNN-Task Enabled Mobile Edge Computing Networks[J]. IEEE Transactions on Mobile Computing, 2023, 22(4): 2435-2445.
+PENG X, WU X, XU L, et al. DistrEE: Distributed Early Exit of Deep Neural Network Inference on Edge Devices[C]//GLOBECOM 2024 - 2024 IEEE Global Communications Conference. Cape Town, South Africa: IEEE, 2024: 3116-3121.
+HU Y, IMES C, ZHAO X, et al. PipeEdge: Pipeline Parallelism for Large-Scale Model Inference on Heterogeneous Edge Devices[C]//2022 25th Euromicro Conference on Digital System Design (DSD). IEEE, 2022: 298-307.
+WANG Z, DING J, XIAN D, et al. PipeMCTS: Pipeline Inference Optimization for Edge Computing via Surrogate Model-Guided MCTS[J/OL]. IEEE Internet of Things Journal, 2025, 12(14): 26030-26041.
+LI J, YANG D, NIE Y, et al. Distributed DNN Inference for Signal Recognition on Collaborative Satellites[C]//2025 IEEE 102nd Vehicular Technology Conference (VTC2025-Fall). IEEE, 2025: 1-6.
+NA J, ZHANG H, LIAN J, et al. Partitioning DNNs for Optimizing Distributed Inference Performance on Cooperative Edge Devices: A Genetic Algorithm Approach[J]. Applied Sciences, 2022, 12(20): 10619.
+TEERAPITTAYANON S, MCDANEL B, KUNG H T. BranchyNet: Fast inference via early exiting from deep neural networks[C]//2016 23rd International Conference on Pattern Recognition (ICPR). IEEE, 2016: 2464-2469.
+JU W, YUAN D, BAO W, et al. eDeepSave: Saving DNN Inference using Early Exit During Handovers in Mobile Edge Environment[J]. ACM Transactions on Sensor Networks, 2021, 17(3): 1-28.
+CHEN Y, ZHANG Q, ZHANG Y, et al. Energy and Time-Aware Inference Offloading for DNN-based Applications in LEO Satellites[C]//2023 IEEE 31st International Conference on Network Protocols (ICNP). Reykjavik, Iceland: IEEE, 2023.
+CHEN Y, ZHANG Q, XING R, et al. SLICE: Energy-Efficient Satellite-Ground Co-Inference via Layer-Wise Scheduling Optimization[J]. IEEE Transactions on Services Computing, 2025, 18(4): 2388-2402.
+GUAN J, ZHANG Q, MURTURI I, et al. Collaborative Inference in DNN-Based Satellite Systems with Dynamic Task Streams[C]//ICC 2024 - IEEE International Conference on Communications. Denver, USA: IEEE, 2024: 3803-3808.
+WU C, ZHENG P, JIA Y, et al. PipeSIA: An Efficient Pipeline-Parallel Distributed Space Inference Approach for LEO Constellations[C]//ICC 2025 - IEEE International Conference on Communications. IEEE, 2025: 6976-6981.
+WU C, GUO C, YIN Z. A Distributed-Computing Architecture for Enabling In-Orbit Satellite Adaptation to Evolving AI Models[J]. IEEE Internet of Things Journal, 2026, 13(2): 3513-3528.
+PENG S, HOU X, SHEN Z, et al. Collaborative Satellite Computing through Adaptive DNN Task Splitting and Offloading[C]//2024 IEEE Symposium on Computers and Communications (ISCC). IEEE, 2024: 1-6.
+QIAO Y, TENG S, LUO J, et al. On-Orbit DNN Distributed Inference for Remote Sensing Images in Satellite Internet of Things[J]. IEEE Internet of Things Journal, 2025, 12(5): 5687-5703.
+LIAO Z, HU W, HUANG J, et al. Joint multi-user DNN partitioning and task offloading in mobile edge computing[J]. Ad Hoc Networks, 2023, 144: 103156.
+REN J, ZHANG F, WANG X, et al. On-Demand Model Compression for Leo: A Model Collaborative Reasoning Framework[C]//2023 8th IEEE International Conference on Network Intelligence and Digital Content (IC-NIDC). Beijing, China: IEEE, 2023: 295-299.
+ZHANG X, LIN Z, ZHOU C, et al. Co-Inference Over Wireless Multi - Hop Networks[C]//2025 IEEE Wireless Communications and Networking Conference (WCNC). Sydney, Australia: IEEE, 2025: 1-5.
+FAN W, MENG Q, WANG G, et al. Satellite Edge Intelligence: DRL-Based Resource Management for Task Inference in LEO-Based Satellite-Ground Collaborative Networks[J]. IEEE Transactions on Mobile Computing, 2025, 24(10): 10710-10728.
+CHAUDHRY A U, YANIKOMEROGLU H. Laser Intersatellite Links in a Starlink Constellation: A Classification and Analysis[J]. IEEE Vehicular Technology Magazine, 2021, 16(2): 48-56.
+XIA G S, BAI X, DING J, et al. DOTA: A Large-Scale Dataset for Object Detection in Aerial Images [C]//2018 IEEE/CVF Conference on Computer Vision and Pattern Recognition. IEEE, 2018: 3974-3983.
+JEON B, WU M, CAO S, et al. GraphPipe: Improving Performance and Scalability of DNN Training with Graph Pipeline Parallelism[C]//Proceedings of the 30th ACM International Conference on Architectural Support for Programming Languages and Operating Systems, Volume 1. ACM, 2025: 557-571.
+哈尔滨工业大学本科毕业论文（设计）原创性声明和使用权限
+本科毕业论文（设计）原创性声明
+本人郑重声明：此处所提交的本科毕业论文（设计）《面向分布式卫星协作推理的高效通信策略研究》，是本人在导师指导下，在哈尔滨工业大学攻读学士学位期间独立进行研究工作所取得的成果，且毕业论文（设计）中除已标注引用文献的部分外不包含他人完成或已发表的研究成果。对本毕业论文（设计）的研究工作做出重要贡献的个人和集体，均已在文中以明确方式注明。本毕业论文（设计）对使用AI工
+具的情况进行明确标注。
+作者签名：                  日期：     年   月   日
+本科毕业论文（设计）使用权限
+本科毕业论文（设计）是本科生在哈尔滨工业大学攻读学士学位期间完成的成果，知识产权归属哈尔滨工业大学。本科毕业论文（设计）的使用权限如下：
+（1）学校可以采用影印、缩印或其他复制手段保存本科生上交的毕业论文（设计），并向有关部门报送本科毕业论文（设计）；（2）根据需要，学校可以将本科毕业论文（设计）部分或全部内容编入有关数据库进行检索和提供相应阅览服务；（3）本科生毕业后发表与此毕业论文（设计）研究成果相关的学术论文和其他成果时，应征得导师同意，且第一署名单位为哈尔滨工业大学。
+保密论文在保密期内遵守有关保密规定，解密后适用于此使用权限规定。
+本人知悉本科毕业论文（设计）的使用权限，并将遵守有关规定。
+作者签名：                  日期：     年   月   日
+导师签名：                  日期：     年   月   日
+致  谢
+衷心感谢导师顾术实教授对本人的精心指导，您的言传身教将使我终身受益。同时，感谢孙景豪师兄和各位实验室同窗对我的帮助，祝愿大家一切顺利。
+感谢同届同学的一路相伴，共同奋斗的日子弥足珍贵。
+感谢家人与朋友一直以来的陪伴与支持，你们的理解与关心是我成长路上最坚实的动力。
+感谢相遇，万事顺遂。
