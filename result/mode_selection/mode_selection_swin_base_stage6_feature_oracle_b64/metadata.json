@@ -1,0 +1,53 @@
+{
+  "run_id": "mode_selection_swin_base_stage6_feature_oracle_b64",
+  "exp_type": "mode_selection",
+  "stage": "stage6_slot_scene_pmp_gs_sat_cdp_fwms_feature_oracle",
+  "source_stk_run_dir": "result\\stk_dynamic\\stk_dynamic_swin_base_001",
+  "source_run_id": "stk_dynamic_swin_base_001",
+  "started_at": "2026-04-30T02:15:13",
+  "completed_at": "2026-04-30T02:15:40",
+  "implemented_modes": [
+    "PMP",
+    "GS-Only",
+    "Sat-Only",
+    "CDP",
+    "FWMS-Feature",
+    "Oracle-Min-Latency"
+  ],
+  "implemented_algorithms": {
+    "PMP": "LA-DP",
+    "GS-Only": "Min-Latency-Route",
+    "Sat-Only": "Min-Latency-Single-Sat",
+    "CDP": "LAWA-Discrete",
+    "FWMS-Feature": "Feature-Weighted",
+    "Oracle-Min-Latency": "Prediction-Min-Latency"
+  },
+  "pending_modes": [],
+  "route_policy": {
+    "PMP": "selected_path",
+    "GS-Only": "min_predicted_gs_only_latency",
+    "Sat-Only": "best_single_satellite_over_candidate_paths",
+    "CDP": "best_lawa_worker_set_no_aggregator",
+    "FWMS-Feature": "feature_weighted_pmp_cdp_boundary",
+    "Oracle-Min-Latency": "min_predicted_latency_over_all_feasible_modes"
+  },
+  "batch_size_override": 64,
+  "model_name_override": null,
+  "input_h_override": null,
+  "input_w_override": null,
+  "effective_task": {
+    "model_name": "swin_base",
+    "batch_size": 64,
+    "input_h": 224,
+    "input_w": 224
+  },
+  "cdp_max_workers": 4,
+  "slot_scene_count": 42,
+  "mode_result_rows": 252,
+  "feasible_rows": 252,
+  "scenes_dir": "result\\mode_selection\\mode_selection_swin_base_stage6_feature_oracle_b64\\scenes",
+  "configs_dir": "result\\mode_selection\\mode_selection_swin_base_stage6_feature_oracle_b64\\configs",
+  "slot_mode_results_csv": "result\\mode_selection\\mode_selection_swin_base_stage6_feature_oracle_b64\\data\\slot_mode_results.csv",
+  "summary_by_mode_csv": "result\\mode_selection\\mode_selection_swin_base_stage6_feature_oracle_b64\\data\\summary_by_mode.csv",
+  "fwms_selection_distribution_csv": "result\\mode_selection\\mode_selection_swin_base_stage6_feature_oracle_b64\\data\\fwms_selection_distribution.csv"
+}

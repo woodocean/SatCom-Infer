@@ -1,0 +1,86 @@
+{
+  "schema_version": 1,
+  "source_run_id": "stk_dynamic_vgg19_001",
+  "source_run_dir": "result\\stk_dynamic\\stk_dynamic_vgg19_001",
+  "slot_id": "slot_016_052000_052500",
+  "slot_start": "14 Apr 2026 05:20:00.000",
+  "slot_stop": "14 Apr 2026 05:25:00.000",
+  "task": {
+    "model_name": "vgg19",
+    "batch_size": 32,
+    "input_h": 224,
+    "input_w": 224
+  },
+  "config_path": "E:\\Workspace\\Python_pycharm_workspace\\Projects\\Collabrative_Inference\\Neurosurgeon-main\\result\\stk_dynamic\\stk_dynamic_vgg19_001\\configs\\slot_016_052000_052500_network_config.json",
+  "candidate_path": "result\\stk_dynamic\\stk_dynamic_vgg19_001\\candidates\\slot_016_052000_052500_candidate_paths.json",
+  "selected_candidate_id": "selected_path_rank_001",
+  "selected_stk_path": [
+    "RS",
+    "LEO177",
+    "LEO086",
+    "LEO095",
+    "Shenzhen"
+  ],
+  "pipeline_path": [
+    "RS",
+    "SAT-01",
+    "SAT-02",
+    "SAT-03",
+    "GS"
+  ],
+  "candidate_count": 50,
+  "slot_row": {
+    "run_id": "stk_dynamic_vgg19_001",
+    "slot_id": "slot_016_052000_052500",
+    "slot_start": "14 Apr 2026 05:20:00.000",
+    "slot_stop": "14 Apr 2026 05:25:00.000",
+    "status": "completed",
+    "selected_path": "RS->LEO177->LEO086->LEO095->Shenzhen",
+    "pipeline_path": "RS->SAT-01->SAT-02->SAT-03->GS",
+    "hop_count": "4",
+    "satellite_count": "3",
+    "common_start": "14 Apr 2026 05:20:00.000",
+    "common_stop": "14 Apr 2026 05:20:56.724",
+    "common_duration_s": "56.724",
+    "total_range_km": "10819.895946",
+    "total_propagation_delay_ms": "36.091288",
+    "isl_avg_bw_mbps": "12884.7028",
+    "gsl_avg_bw_mbps": "204.3814",
+    "config_path": "result\\stk_dynamic\\stk_dynamic_vgg19_001\\configs\\slot_016_052000_052500_network_config.json",
+    "note": ""
+  },
+  "link_summaries": [
+    {
+      "name": "RS_to_SAT-01",
+      "bandwidth_mbps": 9469.896,
+      "propagation_delay_ms": 5.948875,
+      "stk_from": "RS",
+      "stk_to": "LEO177",
+      "stk_link_type": "RS-SAT"
+    },
+    {
+      "name": "SAT-01_to_SAT-02",
+      "bandwidth_mbps": 19776.0853,
+      "propagation_delay_ms": 8.811895,
+      "stk_from": "LEO177",
+      "stk_to": "LEO086",
+      "stk_link_type": "SAT-SAT"
+    },
+    {
+      "name": "SAT-02_to_SAT-03",
+      "bandwidth_mbps": 9408.1271,
+      "propagation_delay_ms": 16.834923,
+      "stk_from": "LEO086",
+      "stk_to": "LEO095",
+      "stk_link_type": "SAT-SAT"
+    },
+    {
+      "name": "SAT-03_to_GS",
+      "bandwidth_mbps": 204.3814,
+      "propagation_delay_ms": 4.495595,
+      "stk_from": "LEO095",
+      "stk_to": "Shenzhen",
+      "stk_link_type": "SAT-GS"
+    }
+  ]
+}

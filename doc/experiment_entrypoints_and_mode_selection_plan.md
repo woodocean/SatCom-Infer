@@ -7,7 +7,7 @@
 3. 当前各实验入口分别负责什么，彼此是什么关系。
 4. 后续接入实物验证时，是否需要新增实验入口。
 
-> 最新完整口径请优先看 `doc/current_project_state_and_usage.md`。本文档保留路线图思路，并同步到当前 Stage 5 状态：`PMP / GS-Only / Sat-Only / CDP / FWMS` 已全部进入模式选择主链。
+> 最新完整口径请优先看 `doc/mode_selection_boundary_and_stability_summary.md`。本文档保留路线图思路，并同步到当前 Stage 6 状态：`PMP / GS-Only / Sat-Only / CDP / FWMS-Feature / Oracle-Min-Latency` 已全部进入模式选择主链。
 
 ## 1. 当前实验入口总览
 
@@ -318,27 +318,27 @@
 
 当前已经有独立的 `mode_selection_experiment.py` 模式选择主链。接下来的正确方向不是继续堆在旧脚本上，而是保持 `PMP/STK` 主链和模式选择主链并行维护，再补一个面向模式选择的代表性实物验证入口。
 
-## 10. Stage 5 已落地：slot_scene + PMP + GS-Only + Sat-Only + CDP + FWMS
+## 10. Stage 6 已落地：slot_scene + PMP + GS-Only + Sat-Only + CDP + FWMS-Feature + Oracle-Min-Latency
 
 当前已经新增模式选择入口：
 
 ```powershell
-python mode_selection_experiment.py --stk-run-dir result\stk_dynamic\stk_dynamic_yolo_001 --run-id mode_selection_yolo_stage5_fwms_b64 --batch-size-override 64
+python mode_selection_experiment.py --stk-run-dir result\stk_dynamic\stk_dynamic_yolo_001 --run-id mode_selection_yolo_stage6_feature_oracle_b64 --batch-size-override 64
 ```
 
 如果只是快速验证前两个时间片：
 
 ```powershell
-python mode_selection_experiment.py --stk-run-dir result\stk_dynamic\stk_dynamic_yolo_001 --run-id mode_selection_yolo_stage5_fwms_smoke --limit-slots 2 --batch-size-override 64
+python mode_selection_experiment.py --stk-run-dir result\stk_dynamic\stk_dynamic_yolo_001 --run-id mode_selection_yolo_stage6_feature_smoke --limit-slots 2 --batch-size-override 64
 ```
 
-跨模型模式选择结果汇总与绘图：
+跨模型模式选择结果汇总已经归档到：
 
-```powershell
-python plot_mode_selection_summary.py
+```text
+result/mode_selection/cross_model_stage6_feature_oracle/
 ```
 
-当前 Stage 5 做的事情：
+当前 Stage 6 做的事情：
 
 - 从已有 STK 动态实验目录读取 `metadata.json`、`stk_dynamic_slots.csv`、`candidates/*.json` 和 `configs/*.json`。
 - 只加载 `status=completed` 的时间片。
@@ -348,7 +348,7 @@ python plot_mode_selection_summary.py
 - 如果 `GS-Only` 选中的路径和 `PMP selected_path` 相同，则复用原配置；如果不同，则生成独立的 `GS-Only network_config`。
 - 为 `Sat-Only` 枚举候选路径中的单颗计算卫星，评估“入路传原始输入 + 单星全模型推理 + 出路回传最终结果”，并选预测总时延最低的单星方案。
 - 为无聚合器版 `CDP` 枚举 worker 集合，使用 `LAWA-Discrete` 做 batch 离散分配，评估 `RS -> 多 worker 分发 -> worker 各自全模型推理 -> 各自直接回 GS`。
-- 在四种基础模式之上运行 `FWMS`，规则是先过滤不可行模式，再选择预测时延最低的可行模式。
+- 在四种基础模式之上同时运行两个选择器：`FWMS-Feature` 是论文式“可行性门控 + 特征加权”的模式边界判别；`Oracle-Min-Latency` 是所有可行基础模式中预测时延最低的上界基线。
 - 输出统一的模式结果表 `slot_mode_results.csv`。
 - 输出 `summary_by_mode.csv` 和 `fwms_selection_distribution.csv`。
 
@@ -365,11 +365,11 @@ result/mode_selection/<run_id>/
 - `configs/*_gs_only_network_config.json`：当 `GS-Only` 路径不同于 PMP 路径时生成的独立配置。
 - `configs/*_sat_only_network_config.json`：`Sat-Only` 最优单星方案对应的独立配置。
 - `configs/*_cdp_network_config.json`：无聚合器 CDP 的 worker、分发路由、回传路由和离散 batch 分配记录。
-- `data/slot_mode_results.csv`：模式级结果长表，目前包含 `PMP / LA-DP`、`GS-Only / Min-Latency-Route`、`Sat-Only / Min-Latency-Single-Sat`、`CDP / LAWA-Discrete` 和 `FWMS / Prediction-Min-Latency`。
+- `data/slot_mode_results.csv`：模式级结果长表，目前包含 `PMP / LA-DP`、`GS-Only / Min-Latency-Route`、`Sat-Only / Min-Latency-Single-Sat`、`CDP / LAWA-Discrete`、`FWMS-Feature / Feature-Weighted` 和 `Oracle-Min-Latency / Prediction-Min-Latency`。
 - `data/summary_by_mode.csv`：按模式统计可行率、平均时延和平均卫星能耗。
-- `data/fwms_selection_distribution.csv`：统计 FWMS 在所有时间片中选择各模式的比例。
+- `data/fwms_selection_distribution.csv`：统计 `FWMS-Feature` 和 `Oracle-Min-Latency` 在所有时间片中选择各模式的比例。
 
-当前 Stage 5 的边界：
+当前 Stage 6 的边界：
 
 - `PMP` 使用 `selected_path`，即论文中的“路由已给定”假设。
 - 当前还不枚举所有 PMP 候选路径。
@@ -377,5 +377,28 @@ result/mode_selection/<run_id>/
 - `Sat-Only` 只选择单颗卫星完成全模型推理，不做流水线切分，也不做星上聚合。
 - `CDP` 不引入星上聚合器；每个 worker 都独立完成全模型推理，并沿自己的回传路由直接回 GS。
 - `CDP` 使用离散样本分配，因此建议论文主结果优先使用 `--batch-size-override 64` 或更大的 batch 设置。
-- `FWMS` 当前是 prediction-based 第一版，不是复杂学习型选择器。
+- `FWMS-Feature` 当前是可解释的特征加权边界判别器，不应表述为最低时延 Oracle。
+- `Oracle-Min-Latency` 是预测最小时延上界基线，用来说明“如果所有模式都完整评估，最低时延会落在哪个模式”。
 - 当前理论 CDP 已是无聚合器版，但实物侧 CDP 自动化还未完全对齐该口径。
+
+## 11. 当前模式选择补强实验已经完成
+
+这四件事已经完成：
+
+1. `FWMS-Feature` 和 `Oracle-Min-Latency` 已在代码和结果表中区分清楚。
+2. 跨模型模式边界结论表已输出到 `result/mode_selection/cross_model_stage6_feature_oracle/mode_boundary_conclusion_table.md`。
+3. 可行率/完成率对比表已输出到 `result/mode_selection/cross_model_stage6_feature_oracle/mode_feasibility_completion_table.md`。
+4. 实验叙事已更新为“稳定性与适用边界”，说明文档见 `doc/mode_selection_boundary_and_stability_summary.md`。
+
+额外补强也已完成：
+
+- CDP batch/worker 敏感性实验：`result/mode_selection/cdp_sensitivity_yolo_stage6/`。
+- FWMS 权重敏感性实验：`result/mode_selection/fwms_weight_sensitivity_stage6/`。
+
+当前最稳的论文叙事是：
+
+```text
+CDP 可行时通常给出低时延上界；但在大模型、内存压力或过大 batch 下会失效。
+PMP 的价值不是总能低于 CDP，而是提供模型切分和星上协作保底。
+FWMS 的价值是用可行性门控和任务特征判断模式边界，避免固定模式在动态拓扑和异构资源下失效。
+```

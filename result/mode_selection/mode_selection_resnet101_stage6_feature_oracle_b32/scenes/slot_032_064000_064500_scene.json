@@ -1,0 +1,96 @@
+{
+  "schema_version": 1,
+  "source_run_id": "stk_dynamic_resnet101_001",
+  "source_run_dir": "result\\stk_dynamic\\stk_dynamic_resnet101_001",
+  "slot_id": "slot_032_064000_064500",
+  "slot_start": "14 Apr 2026 06:40:00.000",
+  "slot_stop": "14 Apr 2026 06:45:00.000",
+  "task": {
+    "model_name": "resnet101",
+    "batch_size": 32,
+    "input_h": 224,
+    "input_w": 224
+  },
+  "config_path": "E:\\Workspace\\Python_pycharm_workspace\\Projects\\Collabrative_Inference\\Neurosurgeon-main\\result\\stk_dynamic\\stk_dynamic_resnet101_001\\configs\\slot_032_064000_064500_network_config.json",
+  "candidate_path": "result\\stk_dynamic\\stk_dynamic_resnet101_001\\candidates\\slot_032_064000_064500_candidate_paths.json",
+  "selected_candidate_id": "selected_path_rank_001",
+  "selected_stk_path": [
+    "RS",
+    "LEO156",
+    "LEO146",
+    "LEO126",
+    "LEO106",
+    "Shenzhen"
+  ],
+  "pipeline_path": [
+    "RS",
+    "SAT-01",
+    "SAT-02",
+    "SAT-03",
+    "SAT-04",
+    "GS"
+  ],
+  "candidate_count": 48,
+  "slot_row": {
+    "run_id": "stk_dynamic_resnet101_001",
+    "slot_id": "slot_032_064000_064500",
+    "slot_start": "14 Apr 2026 06:40:00.000",
+    "slot_stop": "14 Apr 2026 06:45:00.000",
+    "status": "completed",
+    "selected_path": "RS->LEO156->LEO146->LEO126->LEO106->Shenzhen",
+    "pipeline_path": "RS->SAT-01->SAT-02->SAT-03->SAT-04->GS",
+    "hop_count": "5",
+    "satellite_count": "4",
+    "common_start": "14 Apr 2026 06:40:00.000",
+    "common_stop": "14 Apr 2026 06:42:27.952",
+    "common_duration_s": "147.952",
+    "total_range_km": "17239.505837",
+    "total_propagation_delay_ms": "57.504802",
+    "isl_avg_bw_mbps": "7773.7678",
+    "gsl_avg_bw_mbps": "238.5358",
+    "config_path": "result\\stk_dynamic\\stk_dynamic_resnet101_001\\configs\\slot_032_064000_064500_network_config.json",
+    "note": ""
+  },
+  "link_summaries": [
+    {
+      "name": "RS_to_SAT-01",
+      "bandwidth_mbps": 8245.1562,
+      "propagation_delay_ms": 13.300824,
+      "stk_from": "RS",
+      "stk_to": "LEO156",
+      "stk_link_type": "RS-SAT"
+    },
+    {
+      "name": "SAT-01_to_SAT-02",
+      "bandwidth_mbps": 8832.2142,
+      "propagation_delay_ms": 8.145572,
+      "stk_from": "LEO156",
+      "stk_to": "LEO146",
+      "stk_link_type": "SAT-SAT"
+    },
+    {
+      "name": "SAT-02_to_SAT-03",
+      "bandwidth_mbps": 2007.5305,
+      "propagation_delay_ms": 16.24363,
+      "stk_from": "LEO146",
+      "stk_to": "LEO126",
+      "stk_link_type": "SAT-SAT"
+    },
+    {
+      "name": "SAT-03_to_SAT-04",
+      "bandwidth_mbps": 12010.1702,
+      "propagation_delay_ms": 16.166182,
+      "stk_from": "LEO126",
+      "stk_to": "LEO106",
+      "stk_link_type": "SAT-SAT"
+    },
+    {
+      "name": "SAT-04_to_GS",
+      "bandwidth_mbps": 238.5358,
+      "propagation_delay_ms": 3.648595,
+      "stk_from": "LEO106",
+      "stk_to": "Shenzhen",
+      "stk_link_type": "SAT-GS"
+    }
+  ]
+}

@@ -1,0 +1,66 @@
+{
+  "schema_version": 1,
+  "source_run_id": "stk_dynamic_yolo_001",
+  "source_run_dir": "result\\stk_dynamic\\stk_dynamic_yolo_001",
+  "slot_id": "slot_002_041000_041500",
+  "slot_start": "14 Apr 2026 04:10:00.000",
+  "slot_stop": "14 Apr 2026 04:15:00.000",
+  "task": {
+    "model_name": "yolov5",
+    "batch_size": 16,
+    "input_h": 640,
+    "input_w": 640
+  },
+  "config_path": "E:\\Workspace\\Python_pycharm_workspace\\Projects\\Collabrative_Inference\\Neurosurgeon-main\\result\\stk_dynamic\\stk_dynamic_yolo_001\\configs\\slot_002_041000_041500_network_config.json",
+  "candidate_path": "result\\stk_dynamic\\stk_dynamic_yolo_001\\candidates\\slot_002_041000_041500_candidate_paths.json",
+  "selected_candidate_id": "selected_path_rank_001",
+  "selected_stk_path": [
+    "RS",
+    "LEO083",
+    "Shenzhen"
+  ],
+  "pipeline_path": [
+    "RS",
+    "SAT-01",
+    "GS"
+  ],
+  "candidate_count": 50,
+  "slot_row": {
+    "run_id": "stk_dynamic_yolo_001",
+    "slot_id": "slot_002_041000_041500",
+    "slot_start": "14 Apr 2026 04:10:00.000",
+    "slot_stop": "14 Apr 2026 04:15:00.000",
+    "status": "completed",
+    "selected_path": "RS->LEO083->Shenzhen",
+    "pipeline_path": "RS->SAT-01->GS",
+    "hop_count": "2",
+    "satellite_count": "1",
+    "common_start": "14 Apr 2026 04:10:00.000",
+    "common_stop": "14 Apr 2026 04:11:34.125",
+    "common_duration_s": "94.125",
+    "total_range_km": "5980.731388",
+    "total_propagation_delay_ms": "19.949573",
+    "isl_avg_bw_mbps": "11926.9059",
+    "gsl_avg_bw_mbps": "258.2878",
+    "config_path": "result\\stk_dynamic\\stk_dynamic_yolo_001\\configs\\slot_002_041000_041500_network_config.json",
+    "note": ""
+  },
+  "link_summaries": [
+    {
+      "name": "RS_to_SAT-01",
+      "bandwidth_mbps": 11926.9059,
+      "propagation_delay_ms": 15.782773,
+      "stk_from": "RS",
+      "stk_to": "LEO083",
+      "stk_link_type": "RS-SAT"
+    },
+    {
+      "name": "SAT-01_to_GS",
+      "bandwidth_mbps": 258.2878,
+      "propagation_delay_ms": 4.1668,
+      "stk_from": "LEO083",
+      "stk_to": "Shenzhen",
+      "stk_link_type": "SAT-GS"
+    }
+  ]
+}

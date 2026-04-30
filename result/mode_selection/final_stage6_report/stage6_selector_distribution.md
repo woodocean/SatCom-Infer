@@ -1,0 +1,15 @@
+| 模型 | 选择器 | 被选模式 | 次数 | 比例 |
+| --- | --- | --- | --- | --- |
+| YOLOv5 | FWMS-Feature | PMP | 42 | 100.0% |
+| YOLOv5 | Oracle-Min-Latency | CDP | 42 | 100.0% |
+| ResNet101 | FWMS-Feature | PMP | 39 | 92.9% |
+| ResNet101 | FWMS-Feature | CDP | 3 | 7.1% |
+| ResNet101 | Oracle-Min-Latency | CDP | 42 | 100.0% |
+| VGG19 | FWMS-Feature | PMP | 42 | 100.0% |
+| VGG19 | Oracle-Min-Latency | PMP | 13 | 31.0% |
+| VGG19 | Oracle-Min-Latency | GS-Only | 29 | 69.0% |
+| Swin-Base | FWMS-Feature | PMP | 39 | 92.9% |
+| Swin-Base | FWMS-Feature | CDP | 3 | 7.1% |
+| Swin-Base | Oracle-Min-Latency | CDP | 42 | 100.0% |
+| ViT-Huge | FWMS-Feature | PMP | 42 | 100.0% |
+| ViT-Huge | Oracle-Min-Latency | GS-Only | 42 | 100.0% |

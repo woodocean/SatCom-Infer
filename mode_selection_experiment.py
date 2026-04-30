@@ -6,7 +6,8 @@ The current stage implements:
     3. GS-Only evaluation on its own minimum-latency route.
     4. Sat-Only evaluation on the best single satellite.
     5. CDP evaluation with no aggregator and discrete LAWA allocation.
-    6. FWMS selection over feasible mode predictions.
+    6. Feature-weighted FWMS selection between PMP and CDP.
+    7. Oracle-Min-Latency selection as a prediction-based upper-bound baseline.
 """
 
 from __future__ import annotations
@@ -120,9 +121,9 @@ def _write_summary_by_mode(path: Path, evaluations: List[ModeEvaluation]) -> Non
 
 def _write_fwms_selection_distribution(path: Path, evaluations: List[ModeEvaluation]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    counts: dict[str, int] = {}
+    counts: dict[tuple[str, str], int] = {}
     for item in evaluations:
-        if item.mode_family != "FWMS":
+        if item.mode_family not in {"FWMS", "FWMS-Feature", "Oracle-Min-Latency"}:
             continue
         selected_mode = "infeasible"
         if item.plan_json:
@@ -130,19 +131,23 @@ def _write_fwms_selection_distribution(path: Path, evaluations: List[ModeEvaluat
                 selected_mode = json.loads(item.plan_json).get("selected_mode") or "infeasible"
             except json.JSONDecodeError:
                 selected_mode = "parse_error"
-        counts[selected_mode] = counts.get(selected_mode, 0) + 1
+        key = (item.mode_family, selected_mode)
+        counts[key] = counts.get(key, 0) + 1
 
-    total = sum(counts.values())
+    totals: dict[str, int] = {}
+    for selector_family, selected_mode in counts:
+        totals[selector_family] = totals.get(selector_family, 0) + counts[(selector_family, selected_mode)]
     with path.open("w", newline="", encoding="utf-8") as f:
-        fieldnames = ["selected_mode", "count", "ratio"]
+        fieldnames = ["selector_family", "selected_mode", "count", "ratio"]
         writer = csv.DictWriter(f, fieldnames=fieldnames)
         writer.writeheader()
-        for selected_mode, count in sorted(counts.items()):
+        for (selector_family, selected_mode), count in sorted(counts.items()):
             writer.writerow(
                 {
+                    "selector_family": selector_family,
                     "selected_mode": selected_mode,
                     "count": count,
-                    "ratio": count / total if total else "",
+                    "ratio": count / totals[selector_family] if totals.get(selector_family) else "",
                 }
             )
 
@@ -173,26 +178,114 @@ def _mode_candidate_summary(evaluations: List[ModeEvaluation]) -> List[dict]:
     return candidates
 
 
-def _select_fwms(scene: SlotScene, mode_evaluations: List[ModeEvaluation]) -> ModeEvaluation:
-    """Select one feasible mode using prediction-based minimum latency."""
+_PROFILE_CACHE: dict | None = None
 
-    candidate_summary = _mode_candidate_summary(mode_evaluations)
-    feasible = [
-        item
-        for item in mode_evaluations
-        if item.feasible and _finite_number(item.latency_ms)
-    ]
 
-    if not feasible:
+def _load_pc_profile(scene: SlotScene) -> List[dict]:
+    global _PROFILE_CACHE
+    if _PROFILE_CACHE is None:
+        with Path("config/dnn_profiles_database_pc.json").open("r", encoding="utf-8") as f:
+            _PROFILE_CACHE = json.load(f)
+    config_key = f"b{scene.task.batch_size}_{scene.task.input_h}x{scene.task.input_w}"
+    raw_profile = _PROFILE_CACHE[scene.task.model_name][config_key]
+    return [raw_profile[str(idx)] for idx in range(len(raw_profile)) if str(idx) in raw_profile]
+
+
+def _input_size_mb(scene: SlotScene) -> float:
+    return (scene.task.batch_size * 3 * scene.task.input_h * scene.task.input_w * 4) / (1024 ** 2)
+
+
+def _data_expansion_ratio(scene: SlotScene) -> float:
+    input_mb = _input_size_mb(scene)
+    if input_mb <= 0.0:
+        return 0.0
+    layers = _load_pc_profile(scene)
+    comm_values = [float(layer.get("comm_total_mb", 0.0)) for layer in layers]
+    comm_values = [value for value in comm_values if value > 0.0]
+    if not comm_values:
+        return 0.0
+    return sum(value / input_mb for value in comm_values) / len(comm_values)
+
+
+def _average_pmp_route_bandwidth(scene: SlotScene) -> float:
+    pipeline = scene.network_config.get("simulation_paths", {}).get("pipeline", [])
+    links = scene.network_config.get("links", {})
+    bandwidths = []
+    for src, dst in zip(pipeline[:-1], pipeline[1:]):
+        link = links.get(f"{src}_to_{dst}") or links.get(f"{dst}_to_{src}") or {}
+        bw = float(link.get("bandwidth_mbps", 0.0))
+        if bw > 0.0:
+            bandwidths.append(bw)
+    return sum(bandwidths) / len(bandwidths) if bandwidths else 0.0
+
+
+def _compute_heterogeneity_from_cdp(cdp_evaluation: ModeEvaluation | None) -> float:
+    if not cdp_evaluation or not cdp_evaluation.feasible or not cdp_evaluation.config_path:
+        return 0.0
+    config_path = Path(cdp_evaluation.config_path)
+    if not config_path.exists():
+        return 0.0
+    try:
+        with config_path.open("r", encoding="utf-8") as f:
+            payload = json.load(f)
+    except (OSError, json.JSONDecodeError):
+        return 0.0
+
+    speeds = []
+    for worker in payload.get("workers", []):
+        compute_ms = float(worker.get("compute_full_model_ms", 0.0))
+        if compute_ms > 0.0:
+            speeds.append(1.0 / compute_ms)
+    if len(speeds) < 2:
+        return 0.0
+    mean_speed = sum(speeds) / len(speeds)
+    if mean_speed <= 0.0:
+        return 0.0
+    variance = sum((speed - mean_speed) ** 2 for speed in speeds) / len(speeds)
+    return (variance ** 0.5) / mean_speed
+
+
+def _normalized_feature_values(scene: SlotScene, cdp_evaluation: ModeEvaluation | None) -> dict:
+    eta = _data_expansion_ratio(scene)
+    rho = _compute_heterogeneity_from_cdp(cdp_evaluation)
+    b_bar = _average_pmp_route_bandwidth(scene)
+    return {
+        "eta_data_expansion_ratio": eta,
+        "rho_compute_heterogeneity": rho,
+        "b_bar_route_avg_bandwidth_mbps": b_bar,
+        "eta_norm": eta / (1.0 + eta) if eta >= 0.0 else 0.0,
+        "rho_norm": min(max(rho, 0.0), 1.0),
+        "b_bar_norm": b_bar / (b_bar + 1000.0) if b_bar > 0.0 else 0.0,
+    }
+
+
+def _mode_by_family(mode_evaluations: List[ModeEvaluation], mode_family: str) -> ModeEvaluation | None:
+    for evaluation in mode_evaluations:
+        if evaluation.mode_family == mode_family:
+            return evaluation
+    return None
+
+
+def _build_selector_row(
+    scene: SlotScene,
+    selector_family: str,
+    selector_algo: str,
+    route_policy: str,
+    selected: ModeEvaluation | None,
+    plan_payload: dict,
+    candidate_id: str,
+    reason: str = "",
+) -> ModeEvaluation:
+    if selected is None:
         return ModeEvaluation(
             source_run_id=scene.source_run_id,
             slot_id=scene.slot_id,
-            mode_family="FWMS",
-            mode_algo="Prediction-Min-Latency",
-            candidate_id="fwms_no_feasible_mode",
-            route_policy="min_predicted_latency_over_feasible_modes",
+            mode_family=selector_family,
+            mode_algo=selector_algo,
+            candidate_id=candidate_id,
+            route_policy=route_policy,
             feasible=False,
-            reason="no_feasible_mode",
+            reason=reason or "no_feasible_mode",
             latency_ms="",
             satellite_energy_j="",
             energy_compute_j="",
@@ -203,17 +296,60 @@ def _select_fwms(scene: SlotScene, mode_evaluations: List[ModeEvaluation]) -> Mo
             hop_count="",
             route="",
             pipeline_path="",
-            plan_json=json.dumps(
-                {
-                    "selection_rule": "filter infeasible modes, then choose minimum predicted latency",
-                    "selected_mode": "",
-                    "candidate_modes": candidate_summary,
-                },
-                ensure_ascii=False,
-                sort_keys=True,
-            ),
+            plan_json=json.dumps(plan_payload, ensure_ascii=False, sort_keys=True),
             config_path="",
             candidate_path=str(scene.candidate_path) if scene.candidate_path else "",
+        )
+
+    return ModeEvaluation(
+        source_run_id=scene.source_run_id,
+        slot_id=scene.slot_id,
+        mode_family=selector_family,
+        mode_algo=selector_algo,
+        candidate_id=f"{candidate_id}_{selected.mode_family}_{selected.candidate_id}",
+        route_policy=route_policy,
+        feasible=True,
+        reason=reason,
+        latency_ms=selected.latency_ms,
+        satellite_energy_j=selected.satellite_energy_j,
+        energy_compute_j=selected.energy_compute_j,
+        energy_comm_j=selected.energy_comm_j,
+        satellite_compute_time_ms=selected.satellite_compute_time_ms,
+        satellite_tx_time_ms=selected.satellite_tx_time_ms,
+        active_sat_count=selected.active_sat_count,
+        hop_count=selected.hop_count,
+        route=selected.route,
+        pipeline_path=selected.pipeline_path,
+        plan_json=json.dumps(plan_payload, ensure_ascii=False, sort_keys=True),
+        config_path=selected.config_path,
+        candidate_path=selected.candidate_path,
+    )
+
+
+def _select_oracle_min_latency(scene: SlotScene, mode_evaluations: List[ModeEvaluation]) -> ModeEvaluation:
+    """Select one feasible mode using prediction-based minimum latency."""
+
+    candidate_summary = _mode_candidate_summary(mode_evaluations)
+    feasible = [
+        item
+        for item in mode_evaluations
+        if item.feasible and _finite_number(item.latency_ms)
+    ]
+
+    if not feasible:
+        return _build_selector_row(
+            scene=scene,
+            selector_family="Oracle-Min-Latency",
+            selector_algo="Prediction-Min-Latency",
+            route_policy="min_predicted_latency_over_all_feasible_modes",
+            selected=None,
+            candidate_id="oracle_no_feasible_mode",
+            reason="no_feasible_mode",
+            plan_payload={
+                "selection_rule": "filter infeasible modes, then choose minimum predicted latency",
+                "selected_mode": "",
+                "candidate_modes": candidate_summary,
+            },
         )
 
     selected = min(
@@ -232,28 +368,82 @@ def _select_fwms(scene: SlotScene, mode_evaluations: List[ModeEvaluation]) -> Mo
         "selected_route_policy": selected.route_policy,
         "candidate_modes": candidate_summary,
     }
-    return ModeEvaluation(
-        source_run_id=scene.source_run_id,
-        slot_id=scene.slot_id,
-        mode_family="FWMS",
-        mode_algo="Prediction-Min-Latency",
-        candidate_id=f"fwms_selected_{selected.mode_family}_{selected.candidate_id}",
-        route_policy="min_predicted_latency_over_feasible_modes",
-        feasible=True,
-        reason="",
-        latency_ms=selected.latency_ms,
-        satellite_energy_j=selected.satellite_energy_j,
-        energy_compute_j=selected.energy_compute_j,
-        energy_comm_j=selected.energy_comm_j,
-        satellite_compute_time_ms=selected.satellite_compute_time_ms,
-        satellite_tx_time_ms=selected.satellite_tx_time_ms,
-        active_sat_count=selected.active_sat_count,
-        hop_count=selected.hop_count,
-        route=selected.route,
-        pipeline_path=selected.pipeline_path,
-        plan_json=json.dumps(plan_payload, ensure_ascii=False, sort_keys=True),
-        config_path=selected.config_path,
-        candidate_path=selected.candidate_path,
+    return _build_selector_row(
+        scene=scene,
+        selector_family="Oracle-Min-Latency",
+        selector_algo="Prediction-Min-Latency",
+        route_policy="min_predicted_latency_over_all_feasible_modes",
+        selected=selected,
+        candidate_id="oracle_selected",
+        plan_payload=plan_payload,
+    )
+
+
+def _select_fwms_feature(
+    scene: SlotScene,
+    mode_evaluations: List[ModeEvaluation],
+    weight_rho: float = 1.0,
+    weight_eta: float = 1.0,
+    weight_bandwidth: float = 1.0,
+) -> ModeEvaluation:
+    """Select PMP or CDP using the thesis feature-weighted FWMS rule."""
+
+    candidate_summary = _mode_candidate_summary(mode_evaluations)
+    pmp = _mode_by_family(mode_evaluations, "PMP")
+    cdp = _mode_by_family(mode_evaluations, "CDP")
+    feature_values = _normalized_feature_values(scene, cdp)
+    score = (
+        weight_rho * feature_values["rho_norm"]
+        - weight_eta * feature_values["eta_norm"]
+        + weight_bandwidth * feature_values["b_bar_norm"]
+    )
+    weights = {
+        "weight_rho": weight_rho,
+        "weight_eta": weight_eta,
+        "weight_bandwidth": weight_bandwidth,
+    }
+
+    selected = None
+    reason = ""
+    if not cdp or not cdp.feasible:
+        selected = pmp if pmp and pmp.feasible else None
+        reason = "cdp_infeasible_fallback_to_pmp"
+    elif not pmp or not pmp.feasible:
+        selected = cdp
+        reason = "pmp_infeasible_fallback_to_cdp"
+    elif score >= 0.0:
+        selected = pmp
+        reason = "feature_score_prefers_pmp"
+    else:
+        selected = cdp
+        reason = "feature_score_prefers_cdp"
+
+    if selected is None:
+        oracle = _select_oracle_min_latency(scene, mode_evaluations)
+        selected = _mode_by_family(mode_evaluations, json.loads(oracle.plan_json).get("selected_mode", ""))
+        reason = "fwms_feature_no_pmp_or_cdp_fallback_to_oracle"
+
+    plan_payload = {
+        "selection_rule": "memory-feasibility gate, then U = w_rho*rho_norm - w_eta*eta_norm + w_bandwidth*b_bar_norm",
+        "selected_mode": selected.mode_family if selected else "",
+        "selected_algo": selected.mode_algo if selected else "",
+        "selected_candidate_id": selected.candidate_id if selected else "",
+        "selected_route_policy": selected.route_policy if selected else "",
+        "decision_reason": reason,
+        "feature_values": feature_values,
+        "feature_weights": weights,
+        "feature_score_u": score,
+        "candidate_modes": candidate_summary,
+    }
+    return _build_selector_row(
+        scene=scene,
+        selector_family="FWMS-Feature",
+        selector_algo="Feature-Weighted",
+        route_policy="feature_weighted_pmp_cdp_boundary",
+        selected=selected,
+        candidate_id="fwms_feature_selected" if selected else "fwms_feature_no_feasible_mode",
+        reason="" if selected else reason,
+        plan_payload=plan_payload,
     )
 
 
@@ -297,9 +487,19 @@ def _run_mode_stage(
                 max_workers=cdp_max_workers,
             )
         )
-        fwms = _select_fwms(scene, scene_evaluations)
-        print(f"[MODE] FWMS | {scene.slot_id} | selected={json.loads(fwms.plan_json).get('selected_mode', '')}")
-        scene_evaluations.append(fwms)
+        fwms_feature = _select_fwms_feature(scene, scene_evaluations)
+        print(
+            "[MODE] FWMS-Feature | "
+            f"{scene.slot_id} | selected={json.loads(fwms_feature.plan_json).get('selected_mode', '')}"
+        )
+        scene_evaluations.append(fwms_feature)
+
+        oracle = _select_oracle_min_latency(scene, scene_evaluations[:-1])
+        print(
+            "[MODE] Oracle-Min-Latency | "
+            f"{scene.slot_id} | selected={json.loads(oracle.plan_json).get('selected_mode', '')}"
+        )
+        scene_evaluations.append(oracle)
         evaluations.extend(scene_evaluations)
     return evaluations
 
@@ -343,7 +543,7 @@ def _task_override_suffix(
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Run mode-selection experiment framework through FWMS.")
+    parser = argparse.ArgumentParser(description="Run mode-selection experiment framework through feature FWMS.")
     parser.add_argument(
         "--stk-run-dir",
         type=str,
@@ -394,7 +594,7 @@ def main() -> None:
         args.input_h_override,
         args.input_w_override,
     )
-    run_id = args.run_id or f"mode_selection_{source_run_id}_stage5_pmp_gs_sat_cdp_fwms_{suffix}"
+    run_id = args.run_id or f"mode_selection_{source_run_id}_stage6_feature_fwms_oracle_{suffix}"
     output_dir = Path(args.output_dir or Path("result") / "mode_selection" / run_id)
     scenes_dir = output_dir / "scenes"
     config_dir = output_dir / "configs"
@@ -439,18 +639,19 @@ def main() -> None:
     metadata = {
         "run_id": run_id,
         "exp_type": "mode_selection",
-        "stage": "stage5_slot_scene_pmp_gs_sat_cdp_fwms",
+        "stage": "stage6_slot_scene_pmp_gs_sat_cdp_fwms_feature_oracle",
         "source_stk_run_dir": str(stk_run_dir),
         "source_run_id": scenes[0].source_run_id,
         "started_at": started_at,
         "completed_at": datetime.now().isoformat(timespec="seconds"),
-        "implemented_modes": ["PMP", "GS-Only", "Sat-Only", "CDP", "FWMS"],
+        "implemented_modes": ["PMP", "GS-Only", "Sat-Only", "CDP", "FWMS-Feature", "Oracle-Min-Latency"],
         "implemented_algorithms": {
             "PMP": "LA-DP",
             "GS-Only": "Min-Latency-Route",
             "Sat-Only": "Min-Latency-Single-Sat",
             "CDP": "LAWA-Discrete",
-            "FWMS": "Prediction-Min-Latency",
+            "FWMS-Feature": "Feature-Weighted",
+            "Oracle-Min-Latency": "Prediction-Min-Latency",
         },
         "pending_modes": [],
         "route_policy": {
@@ -458,7 +659,8 @@ def main() -> None:
             "GS-Only": "min_predicted_gs_only_latency",
             "Sat-Only": "best_single_satellite_over_candidate_paths",
             "CDP": "best_lawa_worker_set_no_aggregator",
-            "FWMS": "min_predicted_latency_over_feasible_modes",
+            "FWMS-Feature": "feature_weighted_pmp_cdp_boundary",
+            "Oracle-Min-Latency": "min_predicted_latency_over_all_feasible_modes",
         },
         "batch_size_override": args.batch_size_override,
         "model_name_override": args.model_name_override,
