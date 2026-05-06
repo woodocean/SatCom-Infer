@@ -17,6 +17,10 @@
       "neighbors": [
         "SAT-01"
       ]
+      },
+      "neighbors": [
+        "SAT-01"
+      ]
     },
     "SAT-01": {
       "ip": "192.168.10.181",
@@ -31,7 +35,9 @@
       "stk_id": "LEO083",
       "neighbors": [
         "RS",
+        "RS",
         "GS"
+      ]
       ]
     },
     "GS": {
@@ -43,6 +49,10 @@
         "compute_speed_gflops_per_ms": 300.0,
         "memory_mb": 64000,
         "compute_speed_tflops": 300.0
+      },
+      "neighbors": [
+        "SAT-01"
+      ]
       },
       "neighbors": [
         "SAT-01"
@@ -92,6 +102,35 @@
       "GS"
     ],
     "parallel_candidates": [
+      "SAT-01"
+    ],
+    "parallel_aggregator": "SAT-01",
+    "stk_path": {
+      "rank": 1,
+      "original_path": [
+        "RS",
+        "LEO083",
+        "Shenzhen"
+      ],
+      "common_start_utcg": "14 Apr 2026 04:05:44.350",
+      "common_stop_utcg": "14 Apr 2026 04:10:00.000",
+      "common_duration_s": 255.65,
+      "total_range_km": 3139.24122,
+      "total_propagation_delay_ms": 10.471382
+    },
+    "stk_dynamic_slot": {
+      "slot_id": "slot_001_040500_041000",
+      "slot_start_utcg": "14 Apr 2026 04:05:00.000",
+      "slot_stop_utcg": "14 Apr 2026 04:10:00.000",
+      "bandwidth_seed": 1051,
+      "path_selection": "max_common_duration_s",
+      "isl_range_mbps": [
+        1000.0,
+        20000.0
+      ],
+      "gsl_range_mbps": [
+        50.0,
+        300.0
       "SAT-01"
     ],
     "parallel_aggregator": "SAT-01",
