@@ -140,3 +140,24 @@ python physical_experiment_orchestrator.py run-pmp ^
 在论文里可以先把当前版本表述为：
 
 > 半实物平台首先验证 PMP/LADP 的真实分布式执行链路，并在相同设备和网络条件下复现实测计算、通信开销。CDP/FWMS 的半实物扩展采用同一编排框架，可进一步接入无聚合器数据并行链路。
+
+## 7. 推荐 smoke test
+
+建议先用 STK 单跳时间片做 smoke test，避免一次在 Jetson 上启动 5 个模型进程：
+
+```bash
+python physical_experiment_orchestrator.py cleanup --jetson-config config\physical_jetsons.local.json
+
+python physical_experiment_orchestrator.py run-pmp ^
+  --source-config result\stk_dynamic\stk_dynamic_yolo_001\configs\slot_001_040500_041000_network_config.json ^
+  --runtime-config config\network_config.json ^
+  --jetson-config config\physical_jetsons.local.json ^
+  --run-id physical_pmp_stk_slot001_yolo_b32 ^
+  --num-tasks 1 ^
+  --model-name yolov5 ^
+  --batch-size 32 ^
+  --input-h 640 ^
+  --input-w 640
+```
+
+这个命令只需要启动 `SAT-01` 和本机 `GS`，更适合先验证 PC-Jetson 真实链路。当前脚本会给远程节点传入 `--model-name yolov5`，并给 `experiments_runner.py` 传入 `--algo-fixed-task`，避免 smoke test 被随机任务池切到 `vit_huge` 等大模型。

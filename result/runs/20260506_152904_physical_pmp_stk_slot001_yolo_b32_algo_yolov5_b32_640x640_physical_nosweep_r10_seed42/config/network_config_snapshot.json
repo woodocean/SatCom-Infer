@@ -24,9 +24,9 @@
       "role": "leo_computing",
       "device": "Jetson_1",
       "hardware": {
-        "compute_speed_gflops_per_ms": 4.261,
+        "compute_speed_gflops_per_ms": 4.106,
         "memory_mb": 4096,
-        "compute_speed_tflops": 4.261
+        "compute_speed_tflops": 4.106
       },
       "stk_id": "LEO083",
       "neighbors": [
@@ -51,8 +51,8 @@
   },
   "links": {
     "RS_to_SAT-01": {
-      "bandwidth_mbps": 3062,
-      "propagation_delay_ms": 4.86,
+      "bandwidth_mbps": 1893.0289,
+      "propagation_delay_ms": 7.411467,
       "stk_from": "RS",
       "stk_to": "LEO083",
       "stk_link_type": "RS-SAT",
@@ -68,8 +68,8 @@
       "bandwidth_model": "effective_random_uniform"
     },
     "SAT-01_to_GS": {
-      "bandwidth_mbps": 192,
-      "propagation_delay_ms": 1.11,
+      "bandwidth_mbps": 78.9819,
+      "propagation_delay_ms": 3.059915,
       "stk_from": "LEO083",
       "stk_to": "Shenzhen",
       "stk_link_type": "SAT-GS",

@@ -174,6 +174,32 @@ class Orchestrator:
             ssh.put_text(remote_config, cfg_text)
             print(f"[ORCH] synced config -> {device_name}:{remote_config}")
 
+    def sync_support_files_to_jetsons(self, config: dict) -> None:
+        """Sync small launcher files required by remote Docker nodes."""
+        files = [Path("main.py")]
+        devices = _load_devices(self.args.jetson_config)
+        touched = sorted(
+            {
+                str(info.get("device", ""))
+                for info in config.get("nodes", {}).values()
+                if "jetson" in str(info.get("device", "")).lower()
+            }
+        )
+        for device_name in touched:
+            if device_name not in devices:
+                continue
+            device = devices[device_name]
+            ssh = None
+            if not self.args.dry_run:
+                ssh = self._ssh_for_device(device_name, device)
+            for local_path in files:
+                remote_path = f"{device['repo'].rstrip('/')}/{local_path.as_posix()}"
+                if self.args.dry_run:
+                    print(f"[DRY] sync {local_path} -> {device_name}:{remote_path}")
+                    continue
+                ssh.put_text(remote_path, local_path.read_text(encoding="utf-8"))
+                print(f"[ORCH] synced {local_path} -> {device_name}:{remote_path}")
+
     def launch_remote_satellites(self, config: dict, sat_nodes: Iterable[str]) -> None:
         devices = _load_devices(self.args.jetson_config)
         for node_id in sat_nodes:
@@ -195,7 +221,7 @@ class Orchestrator:
                 f"--runtime nvidia --network host "
                 f"-v {device['repo']}:/workspace -w /workspace "
                 f"{self.args.docker_image} "
-                f"bash -lc 'python main.py --id {node_id}'); "
+                f"bash -lc 'python main.py --id {node_id} --model-name {self.args.model_name}'); "
                 f"echo $cid; "
                 f"nohup docker logs -f $cid > {log_path} 2>&1 < /dev/null &"
             )
@@ -220,7 +246,7 @@ class Orchestrator:
                 continue
             f = log_file.open("w", encoding="utf-8")
             process = subprocess.Popen(
-                [sys.executable, "main.py", "--id", node_id],
+                [sys.executable, "main.py", "--id", node_id, "--model-name", self.args.model_name],
                 stdout=f,
                 stderr=subprocess.STDOUT,
                 cwd=Path.cwd(),
@@ -250,6 +276,7 @@ class Orchestrator:
             str(self.args.input_h),
             "--fixed-input-w",
             str(self.args.input_w),
+            "--algo-fixed-task",
         ]
         if self.args.dry_run:
             print("[DRY] runner:", " ".join(command))
@@ -285,6 +312,7 @@ def command_launch(args: argparse.Namespace) -> None:
         sat_nodes = _parse_csv(args.sat_nodes) or _sat_nodes_from_config(config)
         pc_nodes = _parse_csv(args.pc_nodes)
         orch.sync_config_to_jetsons(config)
+        orch.sync_support_files_to_jetsons(config)
         orch.launch_remote_satellites(config, sat_nodes)
         orch.launch_local_nodes(config, pc_nodes)
         if not args.dry_run and not args.no_wait:
@@ -304,6 +332,7 @@ def command_run_pmp(args: argparse.Namespace) -> None:
         # GS is external; RS is in-process inside experiments_runner.py.
         pc_nodes = _parse_csv(args.pc_nodes) or ["GS"]
         orch.sync_config_to_jetsons(config)
+        orch.sync_support_files_to_jetsons(config)
         orch.launch_remote_satellites(config, sat_nodes)
         orch.launch_local_nodes(config, pc_nodes)
         if not args.dry_run:
@@ -314,12 +343,40 @@ def command_run_pmp(args: argparse.Namespace) -> None:
             orch.close()
 
 
+def command_cleanup(args: argparse.Namespace) -> None:
+    devices = _load_devices(args.jetson_config)
+    for device_name, device in devices.items():
+        print(f"[ORCH] cleanup {device_name} ({device['host']})")
+        if args.dry_run:
+            print("[DRY] docker ps -a --format '{{.Names}}' | grep '^satinfer-' | xargs -r docker rm -f")
+            continue
+        ssh = SshSession(
+            host=device["host"],
+            user=device.get("user", "nvidia"),
+            password=device.get("password", "nvidia"),
+        )
+        try:
+            output = ssh.run(
+                "docker ps -a --format '{{.Names}}' | grep '^satinfer-' | xargs -r docker rm -f",
+                timeout_s=30,
+            )
+            if output.strip():
+                print(output.strip())
+        finally:
+            ssh.close()
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Launch PC + Jetson semi-physical experiments.")
     sub = parser.add_subparsers(dest="command", required=True)
 
     template = sub.add_parser("write-template", help="Write default Jetson SSH config.")
     template.add_argument("--output", default="config/physical_jetsons.example.json")
+
+    cleanup = sub.add_parser("cleanup", help="Remove remote satinfer-* Docker containers from Jetsons.")
+    cleanup.add_argument("--jetson-config", default="config/physical_jetsons.local.json")
+    cleanup.add_argument("--dry-run", action="store_true")
+    cleanup.set_defaults(func=command_cleanup)
 
     def add_common(p: argparse.ArgumentParser) -> None:
         p.add_argument("--source-config", default="config/network_config.json")
@@ -330,6 +387,7 @@ def build_parser() -> argparse.ArgumentParser:
         p.add_argument("--logs-dir", default="result/semi_physical/node_logs")
         p.add_argument("--sat-nodes", default="", help="Comma-separated SAT node ids. Default: all Jetson nodes in config.")
         p.add_argument("--pc-nodes", default="", help="Comma-separated local PC node ids.")
+        p.add_argument("--model-name", default="yolov5", help="Initial model loaded by physical nodes.")
         p.add_argument("--dry-run", action="store_true")
         p.add_argument("--no-cleanup", action="store_true")
         p.add_argument("--keep-remote", action="store_true")
@@ -343,7 +401,6 @@ def build_parser() -> argparse.ArgumentParser:
     add_common(run_pmp)
     run_pmp.add_argument("--exp-mode", default="physical", choices=["physical", "hybrid"])
     run_pmp.add_argument("--num-tasks", type=int, default=3)
-    run_pmp.add_argument("--model-name", default="yolov5")
     run_pmp.add_argument("--batch-size", type=int, default=32)
     run_pmp.add_argument("--input-h", type=int, default=640)
     run_pmp.add_argument("--input-w", type=int, default=640)

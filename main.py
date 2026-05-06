@@ -15,6 +15,7 @@ def load_config(path):
 def main():
     parser = argparse.ArgumentParser(description="Distributed Satellite Node")
     parser.add_argument('--id', type=str, required=True, help="节点ID，如 Sat_1, RS, GS")
+    parser.add_argument('--model-name', type=str, default='swin_base', help="Initial model loaded by compute nodes")
     args = parser.parse_args()
 
     # 1. 直接固定加载网络拓扑配置
@@ -40,7 +41,8 @@ def main():
         node_id=args.id, 
         ip=my_net_info['ip'],               
         port=my_net_info['port'],           
-        role=my_net_info.get('role', 'Sat')
+        role=my_net_info.get('role', 'Sat'),
+        model_name=args.model_name,
     )
 
     # 3. 加载计算引擎 (RS 节点本身不需要真跑模型)
