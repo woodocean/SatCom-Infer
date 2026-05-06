@@ -15,6 +15,7 @@ def load_config(path):
 def main():
     parser = argparse.ArgumentParser(description="Distributed Satellite Node")
     parser.add_argument('--id', type=str, required=True, help="节点ID，如 Sat_1, RS, GS")
+    parser.add_argument('--model-name', type=str, default='swin_base', help="Initial model loaded by compute nodes")
     args = parser.parse_args()
 
     # 1. 直接固定加载网络拓扑配置
@@ -40,7 +41,8 @@ def main():
         node_id=args.id, 
         ip=my_net_info['ip'],               
         port=my_net_info['port'],           
-        role=my_net_info.get('role', 'Sat')
+        role=my_net_info.get('role', 'Sat'),
+        model_name=args.model_name,
     )
 
     # 3. 加载计算引擎 (RS 节点本身不需要真跑模型)
@@ -61,6 +63,14 @@ def main():
             else:
                 print(f"  [警告] 邻居 {neighbor_id} 未在配置中定义！")
     
+    # Final nodes return TASK_ACK directly to RS, so keep RS registered as a peer
+    # even when the route's neighbor list does not include it.
+    if args.id != "RS" and "RS" in net_config["nodes"]:
+        known_neighbor_ids = {item[0] for item in neighbors_parsed}
+        if "RS" not in known_neighbor_ids:
+            rs_info = net_config["nodes"]["RS"]
+            neighbors_parsed.append(("RS", rs_info["ip"], rs_info["port"]))
+
     node.join_network(neighbors_parsed)  # 批量注册邻居
 
     # 5. 启动网络监听

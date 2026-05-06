@@ -249,6 +249,7 @@ def _build_run_metadata(args, run_id, sweep_values, started_at, started_at_compa
         "fixed_batch_size": args.fixed_batch_size,
         "fixed_input_h": args.fixed_input_h,
         "fixed_input_w": args.fixed_input_w,
+        "algo_fixed_task": args.algo_fixed_task,
         "repeat_per_point": args.repeat_per_point,
     }
 
@@ -288,6 +289,7 @@ def _collect_explicit_cli_args(raw_args):
         "--fixed-batch-size": "fixed_batch_size",
         "--fixed-input-h": "fixed_input_h",
         "--fixed-input-w": "fixed_input_w",
+        "--algo-fixed-task": "algo_fixed_task",
         "--repeat-per-point": "repeat_per_point",
         "--preset-file": "preset_file",
         "--seed": "seed",
@@ -661,7 +663,19 @@ def _dispatch_one_task_to_rs(
         )
 
 
-def _run_algorithm_effectiveness_experiment(rs_node, net_config_path, num_tasks, exp_mode, run_id, exp_type):
+def _run_algorithm_effectiveness_experiment(
+    rs_node,
+    net_config_path,
+    num_tasks,
+    exp_mode,
+    run_id,
+    exp_type,
+    fixed_task=False,
+    fixed_model="yolov5",
+    fixed_batch_size=32,
+    fixed_input_h=640,
+    fixed_input_w=640,
+):
     model_pool = DEFAULT_MODEL_POOL
     batch_pool = DEFAULT_BATCH_POOL
     res_pool = DEFAULT_RES_POOL
@@ -678,7 +692,12 @@ def _run_algorithm_effectiveness_experiment(rs_node, net_config_path, num_tasks,
         time.sleep(0.5)
 
         scheduler = _build_scheduler(net_config_path)
-        chosen_model, chosen_bs, chosen_res = _pick_task_profile(i, model_pool, batch_pool, res_pool)
+        if fixed_task:
+            chosen_model = fixed_model
+            chosen_bs = int(fixed_batch_size)
+            chosen_res = (int(fixed_input_h), int(fixed_input_w))
+        else:
+            chosen_model, chosen_bs, chosen_res = _pick_task_profile(i, model_pool, batch_pool, res_pool)
         print(
             f"\n[Task] {task_id} | model={chosen_model} | "
             f"batch={chosen_bs} | input={chosen_res[0]}x{chosen_res[1]}"
@@ -934,10 +953,23 @@ def run_experiment(
     fixed_batch_size=32,
     fixed_input_h=640,
     fixed_input_w=640,
+    algo_fixed_task=False,
     repeat_per_point=10,
 ):
     if exp_type == "algo_effectiveness":
-        return _run_algorithm_effectiveness_experiment(rs_node, net_config_path, num_tasks, exp_mode, run_id, exp_type)
+        return _run_algorithm_effectiveness_experiment(
+            rs_node,
+            net_config_path,
+            num_tasks,
+            exp_mode,
+            run_id,
+            exp_type,
+            fixed_task=algo_fixed_task,
+            fixed_model=fixed_model,
+            fixed_batch_size=fixed_batch_size,
+            fixed_input_h=fixed_input_h,
+            fixed_input_w=fixed_input_w,
+        )
 
     if exp_type == "energy_comparison":
         if exp_mode != "theory":
@@ -1055,6 +1087,11 @@ def main():
     parser.add_argument("--fixed-input-h", type=int, default=640, help="Fixed input height for bandwidth sensitivity")
     parser.add_argument("--fixed-input-w", type=int, default=640, help="Fixed input width for bandwidth sensitivity")
     parser.add_argument(
+        "--algo-fixed-task",
+        action="store_true",
+        help="Use fixed model/batch/input settings for algo_effectiveness instead of the random task pool.",
+    )
+    parser.add_argument(
         "--repeat-per-point",
         type=int,
         default=10,
@@ -1114,6 +1151,7 @@ def main():
             fixed_batch_size=args.fixed_batch_size,
             fixed_input_h=args.fixed_input_h,
             fixed_input_w=args.fixed_input_w,
+            algo_fixed_task=args.algo_fixed_task,
             repeat_per_point=args.repeat_per_point,
         )
         if archive_dir is not None:
