@@ -1,0 +1,16 @@
+{
+  "jetsons": {
+    "Jetson_1": {
+      "host": "192.168.10.181",
+      "user": "nvidia",
+      "password": "nvidia",
+      "repo": "/home/nvidia/satinfer/SatCom-Infer"
+    },
+    "Jetson_2": {
+      "host": "192.168.10.178",
+      "user": "nvidia",
+      "password": "nvidia",
+      "repo": "/home/nvidia/satinfer/SatCom-Infer"
+    }
+  }
+}

@@ -1,0 +1,35 @@
+{
+  "devices": {
+    "PC": {
+      "kind": "local",
+      "physical_tflops": 11.6,
+      "hardware_baseline_mbps": 880.0
+    },
+    "Jetson_1": {
+      "kind": "ssh",
+      "host": "192.168.10.181",
+      "user": "nvidia",
+      "password": "nvidia",
+      "repo": "/home/nvidia/Neurosurgeon-main",
+      "python": "python3",
+      "physical_tflops": 5.0,
+      "hardware_baseline_mbps": 220.0,
+      "remote_tmp": "/tmp/semi_physical_payload.bin"
+    },
+    "Jetson_2": {
+      "kind": "ssh",
+      "host": "192.168.10.178",
+      "user": "nvidia",
+      "password": "nvidia",
+      "repo": "/home/nvidia/Neurosurgeon-main",
+      "python": "python3",
+      "physical_tflops": 5.0,
+      "hardware_baseline_mbps": 220.0,
+      "remote_tmp": "/tmp/semi_physical_payload.bin"
+    }
+  },
+  "notes": [
+    "Edit repo to the project path on each Jetson before running remote measurements.",
+    "The default IP/user/password values are inferred from config/network_config.json."
+  ]
+}
