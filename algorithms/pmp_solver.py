@@ -436,22 +436,15 @@ class PMPSolver:
     # =================== 6. Genetic Algorithm ===================
     def solve_ga(self, pop_size: int = 50, generations: int = 300, mutation_rate: float = 0.3) -> Tuple[float, Dict]:
         def decode(individual: np.ndarray) -> List[int]:
-            cuts: np.ndarray = np.sort(individual)
-            cuts = np.clip(cuts, 1, self.L - 1)
-            cuts = np.unique(cuts)
-            while len(cuts) < self.K - 1:
-                gaps = []
-                for i in range(len(cuts) + 1):
-                    left = cuts[i - 1] if i > 0 else 0
-                    right = cuts[i] if i < len(cuts) else self.L
-                    if right - left > 1:
-                        gaps.append((left + 1, right - 1))
-                if not gaps:
-                    break
-                left, right = random.choice(gaps)
-                cuts = np.append(cuts, random.randint(left, right))
-                cuts = np.sort(cuts)
-            cuts = cuts[:self.K - 1]
+            # Allow repeated cut points so the GA can express empty segments /
+            # relay-only nodes. This is important when short models run on long
+            # chains, where the best solution may keep several satellites idle.
+            cuts: np.ndarray = np.sort(individual.astype(int))
+            cuts = np.clip(cuts, 0, self.L)
+            if len(cuts) < self.K - 1:
+                padding = np.full(self.K - 1 - len(cuts), self.L, dtype=int)
+                cuts = np.concatenate([cuts, padding])
+            cuts = cuts[: self.K - 1]
             return [0] + cuts.tolist() + [self.L]
 
         def fitness(individual: np.ndarray) -> float:
@@ -481,12 +474,12 @@ class PMPSolver:
         if cut_count == 0:
             return self.solve_bent_pipe()
 
-        population = [np.random.randint(1, self.L, size=cut_count) for _ in range(pop_size)]
+        population = [np.random.randint(0, self.L + 1, size=cut_count) for _ in range(pop_size)]
 
         # Seed the population with stable baselines so short paths do not fail
         # just because random initialization missed the feasible region.
         seed_individuals = [
-            np.linspace(1, self.L - 1, cut_count, dtype=int),
+            np.linspace(0, self.L, cut_count, dtype=int),
         ]
         for idx, seed in enumerate(seed_individuals[:pop_size]):
             population[idx] = seed
@@ -527,7 +520,7 @@ class PMPSolver:
             for i, indiv in enumerate(next_gen):
                 if random.random() < mutation_rate:
                     mut_idx: int = random.randint(0, len(indiv) - 1)
-                    next_gen[i][mut_idx] = random.randint(1, self.L - 1)
+                    next_gen[i][mut_idx] = random.randint(0, self.L)
 
             population = next_gen
 

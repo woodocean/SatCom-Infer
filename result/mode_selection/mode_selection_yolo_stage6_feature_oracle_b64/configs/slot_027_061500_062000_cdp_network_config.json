@@ -29,7 +29,7 @@
       ],
       "b_dist_mbps": 19414.434,
       "b_return_mbps": 204.6329490264387,
-      "compute_full_model_ms": 505.7683877252799
+      "compute_full_model_ms": 260.9556421211359
     },
     {
       "worker_stk_id": "LEO046",
@@ -54,38 +54,36 @@
       ],
       "b_dist_mbps": 10067.1927,
       "b_return_mbps": 207.05990846032577,
-      "compute_full_model_ms": 505.7683877252799
+      "compute_full_model_ms": 260.9556421211359
     },
     {
-      "worker_stk_id": "LEO056",
-      "worker_node_id": "SAT-01",
-      "candidate_rank": 38,
+      "worker_stk_id": "LEO107",
+      "worker_node_id": "SAT-02",
+      "candidate_rank": 8,
       "candidate_path": [
         "RS",
-        "LEO056",
-        "LEO036",
-        "LEO016",
+        "LEO037",
+        "LEO107",
         "LEO184",
         "Shenzhen"
       ],
       "dispatch_route": [
         "RS",
-        "LEO056"
+        "LEO037",
+        "LEO107"
       ],
       "return_route": [
-        "LEO056",
-        "LEO036",
-        "LEO016",
+        "LEO107",
         "LEO184",
         "Shenzhen"
       ],
-      "b_dist_mbps": 8592.1914,
-      "b_return_mbps": 205.8704685937644,
-      "compute_full_model_ms": 505.7683877252799
+      "b_dist_mbps": 6595.661184801268,
+      "b_return_mbps": 208.91255195451026,
+      "compute_full_model_ms": 260.9556421211359
     },
     {
-      "worker_stk_id": "LEO184",
-      "worker_node_id": "SAT-03",
+      "worker_stk_id": "LEO026",
+      "worker_node_id": "SAT-02",
       "candidate_rank": 20,
       "candidate_path": [
         "RS",
@@ -97,16 +95,16 @@
       "dispatch_route": [
         "RS",
         "LEO046",
-        "LEO026",
-        "LEO184"
+        "LEO026"
       ],
       "return_route": [
+        "LEO026",
         "LEO184",
         "Shenzhen"
       ],
-      "b_dist_mbps": 3923.5687098300837,
-      "b_return_mbps": 213.9503,
-      "compute_full_model_ms": 451.74787905155523
+      "b_dist_mbps": 5715.225612971779,
+      "b_return_mbps": 210.35442360560657,
+      "compute_full_model_ms": 260.9556421211359
     }
   ]
 }

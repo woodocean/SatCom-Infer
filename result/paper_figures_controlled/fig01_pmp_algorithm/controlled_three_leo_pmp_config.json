@@ -1,0 +1,182 @@
+{
+  "global_settings": {
+    "base_gpu_speed_gflops_per_ms": 100.0,
+    "hardware_baseline_mbps": 800.0
+  },
+  "nodes": {
+    "RS": {
+      "ip": "192.168.10.165",
+      "port": 8000,
+      "role": "remote_sensing",
+      "device": "PC",
+      "hardware": {
+        "compute_speed_gflops_per_ms": 0.0,
+        "memory_mb": 0,
+        "compute_speed_tflops": 0.0
+      },
+      "neighbors": [
+        "SAT-01"
+      ]
+    },
+    "SAT-01": {
+      "ip": "192.168.10.181",
+      "port": 8001,
+      "role": "leo_computing",
+      "device": "Jetson_1",
+      "hardware": {
+        "compute_speed_gflops_per_ms": 5.0,
+        "memory_mb": 4096,
+        "compute_speed_tflops": 5.0
+      },
+      "stk_id": "LEO167",
+      "neighbors": [
+        "RS",
+        "SAT-02"
+      ]
+    },
+    "SAT-02": {
+      "ip": "192.168.10.178",
+      "port": 8002,
+      "role": "leo_computing",
+      "device": "Jetson_2",
+      "hardware": {
+        "compute_speed_gflops_per_ms": 5.0,
+        "memory_mb": 4096,
+        "compute_speed_tflops": 5.0
+      },
+      "stk_id": "LEO177",
+      "neighbors": [
+        "SAT-01",
+        "SAT-03"
+      ]
+    },
+    "SAT-03": {
+      "ip": "192.168.10.181",
+      "port": 8003,
+      "role": "leo_computing",
+      "device": "Jetson_1",
+      "is_aggregator": true,
+      "hardware": {
+        "compute_speed_gflops_per_ms": 5.0,
+        "memory_mb": 4096,
+        "compute_speed_tflops": 5.0
+      },
+      "stk_id": "LEO187",
+      "neighbors": [
+        "SAT-02",
+        "GS"
+      ]
+    },
+    "GS": {
+      "ip": "192.168.10.165",
+      "port": 8006,
+      "role": "ground_station",
+      "device": "PC",
+      "hardware": {
+        "compute_speed_gflops_per_ms": 500.0,
+        "memory_mb": 64000,
+        "compute_speed_tflops": 500.0
+      },
+      "neighbors": [
+        "SAT-03"
+      ]
+    }
+  },
+  "links": {
+    "RS_to_SAT-01": {
+      "bandwidth_mbps": 1800.0,
+      "propagation_delay_ms": 7.175112,
+      "stk_from": "RS",
+      "stk_to": "LEO167",
+      "stk_link_type": "RS-SAT",
+      "avg_range_km": 2151.044414,
+      "sample_count": 241,
+      "window_count": 1,
+      "visibility_duration_s": 14400.0,
+      "controlled_bandwidth_class": "ISL"
+    },
+    "SAT-01_to_SAT-02": {
+      "bandwidth_mbps": 1800.0,
+      "propagation_delay_ms": 5.849593,
+      "stk_from": "LEO167",
+      "stk_to": "LEO177",
+      "stk_link_type": "SAT-SAT",
+      "avg_range_km": 1753.663907,
+      "sample_count": 241,
+      "window_count": 1,
+      "visibility_duration_s": 14400.0,
+      "controlled_bandwidth_class": "ISL"
+    },
+    "SAT-02_to_SAT-03": {
+      "bandwidth_mbps": 1800.0,
+      "propagation_delay_ms": 5.850321,
+      "stk_from": "LEO177",
+      "stk_to": "LEO187",
+      "stk_link_type": "SAT-SAT",
+      "avg_range_km": 1753.882045,
+      "sample_count": 241,
+      "window_count": 1,
+      "visibility_duration_s": 14400.0,
+      "controlled_bandwidth_class": "ISL"
+    },
+    "SAT-03_to_GS": {
+      "bandwidth_mbps": 100.0,
+      "propagation_delay_ms": 3.33727,
+      "stk_from": "LEO187",
+      "stk_to": "Shenzhen",
+      "stk_link_type": "SAT-GS",
+      "avg_range_km": 1000.488417,
+      "sample_count": 7,
+      "window_count": 1,
+      "visibility_duration_s": 351.898,
+      "controlled_bandwidth_class": "GSL"
+    }
+  },
+  "simulation_paths": {
+    "pipeline": [
+      "RS",
+      "SAT-01",
+      "SAT-02",
+      "SAT-03",
+      "GS"
+    ],
+    "parallel_candidates": [
+      "SAT-01",
+      "SAT-02",
+      "SAT-03"
+    ],
+    "parallel_aggregator": "SAT-03",
+    "stk_path": {
+      "rank": 1,
+      "original_path": [
+        "RS",
+        "LEO167",
+        "LEO177",
+        "LEO187",
+        "Shenzhen"
+      ],
+      "common_start_utcg": "14 Apr 2026 05:38:47.579",
+      "common_stop_utcg": "14 Apr 2026 05:44:39.477",
+      "common_duration_s": 351.898,
+      "total_range_km": 6659.078783,
+      "total_propagation_delay_ms": 22.212296
+    }
+  },
+  "controlled_experiment": {
+    "description": "Fixed 3-hop LEO PMP algorithm comparison for Fig. 01",
+    "pipeline": [
+      "RS",
+      "SAT-01",
+      "SAT-02",
+      "SAT-03",
+      "GS"
+    ],
+    "leo_compute_tflops": 5.0,
+    "gs_compute_tflops": 500.0,
+    "leo_memory_mb": 4096,
+    "isl_bandwidth_mbps": 1800.0,
+    "gsl_bandwidth_mbps": 100.0,
+    "propagation_delay_source": "config\\generated\\stk_sat_inferv2_hop4\\network_config_path001.json",
+    "repeats": 100
+  }
+}

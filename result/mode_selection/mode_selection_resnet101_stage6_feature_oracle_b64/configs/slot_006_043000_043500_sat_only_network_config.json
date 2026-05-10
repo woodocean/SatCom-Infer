@@ -24,9 +24,9 @@
       "role": "leo_computing",
       "device": "Jetson_1",
       "hardware": {
-        "compute_speed_gflops_per_ms": 4.106,
+        "compute_speed_gflops_per_ms": 7.958,
         "memory_mb": 4096,
-        "compute_speed_tflops": 4.106
+        "compute_speed_tflops": 7.958
       },
       "stk_id": "LEO018",
       "neighbors": [
@@ -35,16 +35,16 @@
       ]
     },
     "SAT-02": {
-      "ip": "192.168.10.178",
-      "port": 8002,
+      "ip": "192.168.10.181",
+      "port": 8001,
       "role": "leo_computing",
-      "device": "Jetson_2",
+      "device": "Jetson_1",
       "hardware": {
-        "compute_speed_gflops_per_ms": 9.201,
-        "memory_mb": 2048,
-        "compute_speed_tflops": 9.201
+        "compute_speed_gflops_per_ms": 7.958,
+        "memory_mb": 4096,
+        "compute_speed_tflops": 7.958
       },
-      "stk_id": "LEO108",
+      "stk_id": "LEO166",
       "neighbors": [
         "SAT-01",
         "SAT-03"
@@ -52,50 +52,17 @@
     },
     "SAT-03": {
       "ip": "192.168.10.181",
-      "port": 8003,
-      "role": "leo_computing",
-      "device": "Jetson_1",
-      "is_aggregator": true,
-      "hardware": {
-        "compute_speed_gflops_per_ms": 4.597,
-        "memory_mb": 4096,
-        "compute_speed_tflops": 4.597
-      },
-      "stk_id": "LEO017",
-      "neighbors": [
-        "SAT-02",
-        "SAT-04"
-      ]
-    },
-    "SAT-04": {
-      "ip": "192.168.10.178",
-      "port": 8004,
-      "role": "leo_computing",
-      "device": "Jetson_2",
-      "hardware": {
-        "compute_speed_gflops_per_ms": 1.867,
-        "memory_mb": 2048,
-        "compute_speed_tflops": 1.867
-      },
-      "stk_id": "LEO175",
-      "neighbors": [
-        "SAT-03",
-        "SAT-05"
-      ]
-    },
-    "SAT-05": {
-      "ip": "192.168.10.181",
-      "port": 8005,
+      "port": 8001,
       "role": "leo_computing",
       "device": "Jetson_1",
       "hardware": {
-        "compute_speed_gflops_per_ms": 4.799,
+        "compute_speed_gflops_per_ms": 7.958,
         "memory_mb": 4096,
-        "compute_speed_tflops": 4.799
+        "compute_speed_tflops": 7.958
       },
       "stk_id": "LEO081",
       "neighbors": [
-        "SAT-04",
+        "SAT-02",
         "GS"
       ]
     },
@@ -110,7 +77,7 @@
         "compute_speed_tflops": 300.0
       },
       "neighbors": [
-        "SAT-05"
+        "SAT-03"
       ]
     }
   },
@@ -133,12 +100,12 @@
       "bandwidth_model": "effective_random_uniform"
     },
     "SAT-01_to_SAT-02": {
-      "bandwidth_mbps": 12370.5902,
-      "propagation_delay_ms": 9.970884,
+      "bandwidth_mbps": 15941.7811,
+      "propagation_delay_ms": 9.756041,
       "stk_from": "LEO018",
-      "stk_to": "LEO108",
+      "stk_to": "LEO166",
       "stk_link_type": "SAT-SAT",
-      "avg_range_km": 2989.195718,
+      "avg_range_km": 2924.787405,
       "sample_count": 5,
       "window_count": 1,
       "visibility_duration_s": 300.0,
@@ -150,49 +117,15 @@
       "bandwidth_model": "effective_random_uniform"
     },
     "SAT-02_to_SAT-03": {
-      "bandwidth_mbps": 18588.2029,
-      "propagation_delay_ms": 8.803459,
-      "stk_from": "LEO108",
-      "stk_to": "LEO017",
-      "stk_link_type": "SAT-SAT",
-      "avg_range_km": 2639.210641,
-      "sample_count": 5,
-      "window_count": 1,
-      "visibility_duration_s": 300.0,
-      "effective_bandwidth_class": "ISL",
-      "bandwidth_sampling_range_mbps": [
-        1000.0,
-        20000.0
-      ],
-      "bandwidth_model": "effective_random_uniform"
-    },
-    "SAT-03_to_SAT-04": {
-      "bandwidth_mbps": 14393.3959,
-      "propagation_delay_ms": 14.457804,
-      "stk_from": "LEO017",
-      "stk_to": "LEO175",
-      "stk_link_type": "SAT-SAT",
-      "avg_range_km": 4334.340572,
-      "sample_count": 6,
-      "window_count": 1,
-      "visibility_duration_s": 300.0,
-      "effective_bandwidth_class": "ISL",
-      "bandwidth_sampling_range_mbps": [
-        1000.0,
-        20000.0
-      ],
-      "bandwidth_model": "effective_random_uniform"
-    },
-    "SAT-04_to_SAT-05": {
-      "bandwidth_mbps": 14822.2165,
-      "propagation_delay_ms": 4.014648,
-      "stk_from": "LEO175",
+      "bandwidth_mbps": 5205.9369,
+      "propagation_delay_ms": 14.132265,
+      "stk_from": "LEO166",
       "stk_to": "LEO081",
       "stk_link_type": "SAT-SAT",
-      "avg_range_km": 1203.561057,
-      "sample_count": 5,
+      "avg_range_km": 4236.746414,
+      "sample_count": 4,
       "window_count": 1,
-      "visibility_duration_s": 300.0,
+      "visibility_duration_s": 162.932,
       "effective_bandwidth_class": "ISL",
       "bandwidth_sampling_range_mbps": [
         1000.0,
@@ -200,7 +133,7 @@
       ],
       "bandwidth_model": "effective_random_uniform"
     },
-    "SAT-05_to_GS": {
+    "SAT-03_to_GS": {
       "bandwidth_mbps": 272.1874,
       "propagation_delay_ms": 2.756201,
       "stk_from": "LEO081",
@@ -224,40 +157,34 @@
       "SAT-01",
       "SAT-02",
       "SAT-03",
-      "SAT-04",
-      "SAT-05",
       "GS"
     ],
     "parallel_candidates": [
       "SAT-01",
       "SAT-02",
-      "SAT-03",
-      "SAT-04",
-      "SAT-05"
+      "SAT-03"
     ],
-    "parallel_aggregator": "SAT-05",
+    "parallel_aggregator": "SAT-03",
     "stk_path": {
-      "rank": 46,
+      "rank": 9,
       "original_path": [
         "RS",
         "LEO018",
-        "LEO108",
-        "LEO017",
-        "LEO175",
+        "LEO166",
         "LEO081",
         "Shenzhen"
       ],
       "common_start_utcg": "14 Apr 2026 04:30:00.000",
-      "common_stop_utcg": "14 Apr 2026 04:35:00.000",
-      "common_duration_s": 300.0,
-      "total_range_km": 15651.081893,
-      "total_propagation_delay_ms": 52.20639
+      "common_stop_utcg": "14 Apr 2026 04:32:42.932",
+      "common_duration_s": 162.932,
+      "total_range_km": 11646.307724,
+      "total_propagation_delay_ms": 38.847901
     },
     "mode_selection": {
       "slot_id": "slot_006_043000_043500",
       "mode_family": "Sat-Only",
       "route_policy": "best_single_satellite_over_candidate_paths",
-      "compute_node": "SAT-05",
+      "compute_node": "SAT-01",
       "source_stk_run_id": "stk_dynamic_resnet101_001"
     }
   }

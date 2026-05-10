@@ -28,7 +28,7 @@
         "memory_mb": 4096,
         "compute_speed_tflops": 4.106
       },
-      "stk_id": "LEO177",
+      "stk_id": "LEO095",
       "neighbors": [
         "RS",
         "SAT-02"
@@ -44,26 +44,9 @@
         "memory_mb": 2048,
         "compute_speed_tflops": 9.201
       },
-      "stk_id": "LEO187",
-      "neighbors": [
-        "SAT-01",
-        "SAT-03"
-      ]
-    },
-    "SAT-03": {
-      "ip": "192.168.10.181",
-      "port": 8003,
-      "role": "leo_computing",
-      "device": "Jetson_1",
-      "is_aggregator": true,
-      "hardware": {
-        "compute_speed_gflops_per_ms": 4.597,
-        "memory_mb": 4096,
-        "compute_speed_tflops": 4.597
-      },
       "stk_id": "LEO104",
       "neighbors": [
-        "SAT-02",
+        "SAT-01",
         "GS"
       ]
     },
@@ -78,52 +61,18 @@
         "compute_speed_tflops": 300.0
       },
       "neighbors": [
-        "SAT-03"
+        "SAT-02"
       ]
     }
   },
   "links": {
     "RS_to_SAT-01": {
-      "bandwidth_mbps": 10858.0912,
-      "propagation_delay_ms": 15.639592,
+      "bandwidth_mbps": 11346.3802,
+      "propagation_delay_ms": 15.387208,
       "stk_from": "RS",
-      "stk_to": "LEO177",
+      "stk_to": "LEO095",
       "stk_link_type": "RS-SAT",
-      "avg_range_km": 4688.631699,
-      "sample_count": 6,
-      "window_count": 1,
-      "visibility_duration_s": 300.0,
-      "effective_bandwidth_class": "ISL",
-      "bandwidth_sampling_range_mbps": [
-        1000.0,
-        20000.0
-      ],
-      "bandwidth_model": "effective_random_uniform"
-    },
-    "SAT-01_to_SAT-02": {
-      "bandwidth_mbps": 19890.0993,
-      "propagation_delay_ms": 8.052334,
-      "stk_from": "LEO177",
-      "stk_to": "LEO187",
-      "stk_link_type": "SAT-SAT",
-      "avg_range_km": 2414.028882,
-      "sample_count": 6,
-      "window_count": 1,
-      "visibility_duration_s": 300.0,
-      "effective_bandwidth_class": "ISL",
-      "bandwidth_sampling_range_mbps": [
-        1000.0,
-        20000.0
-      ],
-      "bandwidth_model": "effective_random_uniform"
-    },
-    "SAT-02_to_SAT-03": {
-      "bandwidth_mbps": 15867.1861,
-      "propagation_delay_ms": 10.890262,
-      "stk_from": "LEO187",
-      "stk_to": "LEO104",
-      "stk_link_type": "SAT-SAT",
-      "avg_range_km": 3264.818523,
+      "avg_range_km": 4612.96901,
       "sample_count": 5,
       "window_count": 1,
       "visibility_duration_s": 300.0,
@@ -134,7 +83,24 @@
       ],
       "bandwidth_model": "effective_random_uniform"
     },
-    "SAT-03_to_GS": {
+    "SAT-01_to_SAT-02": {
+      "bandwidth_mbps": 4546.63,
+      "propagation_delay_ms": 16.842145,
+      "stk_from": "LEO095",
+      "stk_to": "LEO104",
+      "stk_link_type": "SAT-SAT",
+      "avg_range_km": 5049.148067,
+      "sample_count": 6,
+      "window_count": 1,
+      "visibility_duration_s": 300.0,
+      "effective_bandwidth_class": "ISL",
+      "bandwidth_sampling_range_mbps": [
+        1000.0,
+        20000.0
+      ],
+      "bandwidth_model": "effective_random_uniform"
+    },
+    "SAT-02_to_GS": {
       "bandwidth_mbps": 139.1403,
       "propagation_delay_ms": 4.216674,
       "stk_from": "LEO104",
@@ -157,29 +123,41 @@
       "RS",
       "SAT-01",
       "SAT-02",
-      "SAT-03",
       "GS"
     ],
     "parallel_candidates": [
       "SAT-01",
-      "SAT-02",
-      "SAT-03"
+      "SAT-02"
     ],
-    "parallel_aggregator": "SAT-03",
+    "parallel_aggregator": "SAT-02",
     "stk_path": {
-      "rank": 3,
+      "rank": 1,
       "original_path": [
         "RS",
-        "LEO177",
-        "LEO187",
+        "LEO095",
         "LEO104",
         "Shenzhen"
       ],
       "common_start_utcg": "14 Apr 2026 07:05:00.000",
       "common_stop_utcg": "14 Apr 2026 07:06:26.570",
       "common_duration_s": 86.57,
-      "total_range_km": 11631.606177,
-      "total_propagation_delay_ms": 38.798862
+      "total_range_km": 10926.244151,
+      "total_propagation_delay_ms": 36.446027
+    },
+    "stk_dynamic_slot": {
+      "slot_id": "slot_037_070500_071000",
+      "slot_start_utcg": "14 Apr 2026 07:05:00.000",
+      "slot_stop_utcg": "14 Apr 2026 07:10:00.000",
+      "bandwidth_seed": 37375,
+      "path_selection": "max_common_duration_s",
+      "isl_range_mbps": [
+        1000.0,
+        20000.0
+      ],
+      "gsl_range_mbps": [
+        50.0,
+        300.0
+      ]
     },
     "mode_selection": {
       "slot_id": "slot_037_070500_071000",

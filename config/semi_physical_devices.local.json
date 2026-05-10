@@ -1,0 +1,31 @@
+{
+  "devices": {
+    "PC": {
+      "kind": "local",
+      "physical_tflops": 11.6,
+      "hardware_baseline_mbps": 880.0
+    },
+    "Jetson_1": {
+      "kind": "ssh",
+      "host": "192.168.10.181",
+      "user": "nvidia",
+      "password": "nvidia",
+      "repo": "/home/nvidia/satinfer/SatCom-Infer",
+      "python": "docker run --rm --runtime nvidia --network host -v $(pwd):/workspace -w /workspace satinfer:v4.0 python",
+      "physical_tflops": 5.0,
+      "hardware_baseline_mbps": 220.0,
+      "remote_tmp": "/tmp/semi_physical_payload.bin"
+    },
+    "Jetson_2": {
+      "kind": "ssh",
+      "host": "192.168.10.178",
+      "user": "nvidia",
+      "password": "nvidia",
+      "repo": "/home/nvidia/satinfer/SatCom-Infer",
+      "python": "docker run --rm --runtime nvidia --network host -v $(pwd):/workspace -w /workspace satinfer:v4.0 python",
+      "physical_tflops": 5.0,
+      "hardware_baseline_mbps": 220.0,
+      "remote_tmp": "/tmp/semi_physical_payload.bin"
+    }
+  }
+}

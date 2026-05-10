@@ -1,0 +1,68 @@
+实验参数
+参数
+描述
+SGL
+(Ka band)
+ISL
+(W band)
+ISL
+(Laser)
+遥感卫星轨道高度
+600km
+Walker星座参数
+(500km, 86.4°):144/8/2
+链路带宽
+50-200MHz
+0.5-2GHz
+1-10GHz
+载频
+30GHz
+95GHz
+200THz
+发射功率
+10W
+10W
+1W
+发射增益
+45dBi
+45dBi
+100dBi
+接收增益
+60dBi
+45dBi
+100dBi
+大气损耗
+1.1dB
+0
+0
+有效接收孔径面积
+—
+—
+25cm2
+激光束发散角
+—
+—
+50
+指向误差
+—
+—
+0.2m
+噪声功率谱密度
+-174dBm/Hz
+卫星推理功率
+15W
+卫星内存
+2GB/4GB/8GB
+实验方案
+实验1：LADP 有效性实验
+图：柱状图
+横坐标：模型
+纵坐标：归一化时延（GS-Only为1）变量：模型/算法固定：带宽、数据量、拓扑、卫星算力模型：YOLOv5、VGG19、Swin-Base、ViT-Huge
+（YOLOv5 代表大输入目标检测任务，VGG19 代表典型链式 CNN，Swin-Base 代表层级视觉 Transformer，ViT-Huge 代表特征压缩不明显的大模型）
+算法：LADP(OURS)、GA、Greedy、Random、Uniform、GS-Only目的：证明 LADP 在 PMP 模式中优于随机、均匀、贪心、GA；同时用 ViT-Huge 说明 PMP 有适用边界
+状态：已完成
+实验2：PMP 节点数量敏感性实验图：折线图横坐标：中继 LEO 卫星数量纵坐标：归一化时延，GS-Only 为 1变量：中继 LEO 卫星数量、算法固定：模型、数据量、带宽、拓扑、卫星算力同构模型： YOLOv5 / VGG19 （现象明显 LADP与其他能区分开一些）算法：LADP(OURS)、GA、Greedy、Random、Uniform、GS-Only目的：在同构算力条件下排除“任务集中到最强卫星”的影响，观察节点数量变化对 LADP 的影响预期结论：节点数增加会扩大切分搜索空间，但性能不一定线性提升；LADP 能避免无效节点带来的额外通信开销状态：待补充
+实验 3：LAWA 有效性实验图：柱状图（两个子图）纵坐标：归一化时延，Sat-Only为 1变量：worker 算力配置、算法固定：模型、数据量、带宽、拓扑、并行卫星worker数量模型：YOLOv5算法：LAWA(OURS)、Uniform、Greedy、Random、Sat-Only场景（两个子图）：同构 worker 场景；异构 worker 场景（算力/带宽/内存差距大）目的：验证 LAWA 在 CDP 模式中的数据分配优化效果预期结论：同构场景下均匀分配接近 LAWA；异构场景下 LAWA 能根据算力和链路状态分配数据，明显优于均匀和随机状态：基本完成，待调整
+实验 4：FWMS 模式选择有效性实验图：柱状图纵坐标：平均端到端时延变量：模型、推理模式固定：数据量、带宽、拓扑、卫星算力与内存配置模型：YOLOv5、VGG19、Swin-Base、ViT-Huge模式：PMP、CDP、GS-Only、Sat-Only、FWMS目的：验证 FWMS 能根据不同模型结构和资源约束自适应选择推理模式预期结论：CDP 可行且低时延时，FWMS 倾向选择 CDP；当 CDP 不可行或收益不足时，FWMS 切换到 PMP 或 GS-Only状态：已完成
+实验 5：FWMS 输入数据量敏感性实验图：折线图横坐标：输入数据量纵坐标：平均端到端时延变量：输入数据量、推理模式固定：模型、带宽、拓扑、卫星算力与内存配置模型：YOLOv5模式：PMP、CDP、GS-Only、FWMS目的：分析输入数据量变化时，FWMS 是否能够根据并行收益和资源约束自适应切换推理模式预期结论：输入数据量较小时，CDP 并行收益有限；输入数据量增大后，CDP 的并行优势增强，FWMS 倾向选择 CDP；当输入数据量继续增大导致 CDP 受内存或 worker 资源约束不可行时，FWMS 切换到 PMP 或 GS-Only状态：待补充
+实验 6：半实物代表性验证图：双子图柱状图子图 1：理论仿真归一化时延子图 2：半实物仿真归一化时延横坐标：模型纵坐标：归一化时延，GS-Only 为 1变量：模型、推理模式固定：输入数据量、拓扑、等效链路速率模型：YOLOv5、VGG19、Swin-Base、ViT-Huge模式：PMP、CDP、GS-Only、FWMS目的：验证半实物平台下不同模式的相对趋势是否与理论仿真一致预期结论：YOLOv5、Swin-Base 等 CDP 可行场景下，半实物结果仍体现 CDP/FWMS 的低时延优势；VGG19、ViT-Huge 等边界任务中，CDP 不可行或不占优，FWMS 能切换到 PMP/GS-Only，说明理论模式选择结论在半实物平台上具有一致性状态：待补充

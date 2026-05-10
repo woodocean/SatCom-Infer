@@ -7,62 +7,6 @@
   "no_aggregator": true,
   "workers": [
     {
-      "worker_stk_id": "LEO096",
-      "worker_node_id": "SAT-03",
-      "candidate_rank": 6,
-      "candidate_path": [
-        "RS",
-        "LEO117",
-        "LEO011",
-        "LEO096",
-        "LEO105",
-        "Shenzhen"
-      ],
-      "dispatch_route": [
-        "RS",
-        "LEO117",
-        "LEO011",
-        "LEO096"
-      ],
-      "return_route": [
-        "LEO096",
-        "LEO105",
-        "Shenzhen"
-      ],
-      "b_dist_mbps": 3469.7757378549754,
-      "b_return_mbps": 289.00121147899677,
-      "compute_full_model_ms": 574.8477267783337
-    },
-    {
-      "worker_stk_id": "LEO105",
-      "worker_node_id": "SAT-05",
-      "candidate_rank": 30,
-      "candidate_path": [
-        "RS",
-        "LEO117",
-        "LEO031",
-        "LEO116",
-        "LEO125",
-        "LEO105",
-        "Shenzhen"
-      ],
-      "dispatch_route": [
-        "RS",
-        "LEO117",
-        "LEO031",
-        "LEO116",
-        "LEO125",
-        "LEO105"
-      ],
-      "return_route": [
-        "LEO105",
-        "Shenzhen"
-      ],
-      "b_dist_mbps": 2238.0375719981444,
-      "b_return_mbps": 296.6774,
-      "compute_full_model_ms": 550.6511773286101
-    },
-    {
       "worker_stk_id": "LEO117",
       "worker_node_id": "SAT-01",
       "candidate_rank": 6,
@@ -87,7 +31,61 @@
       ],
       "b_dist_mbps": 11068.3688,
       "b_return_mbps": 273.36979447909795,
-      "compute_full_model_ms": 643.5886507549927
+      "compute_full_model_ms": 332.0652173913044
+    },
+    {
+      "worker_stk_id": "LEO058",
+      "worker_node_id": "SAT-01",
+      "candidate_rank": 8,
+      "candidate_path": [
+        "RS",
+        "LEO058",
+        "LEO011",
+        "LEO096",
+        "LEO105",
+        "Shenzhen"
+      ],
+      "dispatch_route": [
+        "RS",
+        "LEO058"
+      ],
+      "return_route": [
+        "LEO058",
+        "LEO011",
+        "LEO096",
+        "LEO105",
+        "Shenzhen"
+      ],
+      "b_dist_mbps": 12922.8874,
+      "b_return_mbps": 269.7165208186679,
+      "compute_full_model_ms": 332.0652173913044
+    },
+    {
+      "worker_stk_id": "LEO011",
+      "worker_node_id": "SAT-02",
+      "candidate_rank": 6,
+      "candidate_path": [
+        "RS",
+        "LEO117",
+        "LEO011",
+        "LEO096",
+        "LEO105",
+        "Shenzhen"
+      ],
+      "dispatch_route": [
+        "RS",
+        "LEO117",
+        "LEO011"
+      ],
+      "return_route": [
+        "LEO011",
+        "LEO096",
+        "LEO105",
+        "Shenzhen"
+      ],
+      "b_dist_mbps": 6485.580413972274,
+      "b_return_mbps": 278.2254140991069,
+      "compute_full_model_ms": 332.0652173913044
     },
     {
       "worker_stk_id": "LEO137",
@@ -114,7 +112,7 @@
       ],
       "b_dist_mbps": 17774.7048,
       "b_return_mbps": 266.4950546700134,
-      "compute_full_model_ms": 643.5886507549927
+      "compute_full_model_ms": 332.0652173913044
     }
   ]
 }

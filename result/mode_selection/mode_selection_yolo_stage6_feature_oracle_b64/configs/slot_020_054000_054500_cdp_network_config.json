@@ -25,7 +25,7 @@
       ],
       "b_dist_mbps": 10748.1984,
       "b_return_mbps": 275.0309,
-      "compute_full_model_ms": 505.7683877252799
+      "compute_full_model_ms": 260.9556421211359
     },
     {
       "worker_stk_id": "LEO094",
@@ -48,7 +48,7 @@
       ],
       "b_dist_mbps": 14920.423100000002,
       "b_return_mbps": 269.0071551458151,
-      "compute_full_model_ms": 505.7683877252799
+      "compute_full_model_ms": 260.9556421211359
     },
     {
       "worker_stk_id": "LEO167",
@@ -71,7 +71,7 @@
       ],
       "b_dist_mbps": 14175.2796,
       "b_return_mbps": 269.31154473316434,
-      "compute_full_model_ms": 505.7683877252799
+      "compute_full_model_ms": 260.9556421211359
     },
     {
       "worker_stk_id": "LEO177",
@@ -94,7 +94,7 @@
       ],
       "b_dist_mbps": 12956.6536,
       "b_return_mbps": 266.59389652964217,
-      "compute_full_model_ms": 505.7683877252799
+      "compute_full_model_ms": 260.9556421211359
     }
   ]
 }

@@ -249,6 +249,8 @@ def select_fwms_feature(
     weight_rho: float = 1.0,
     weight_eta: float = 1.0,
     weight_bandwidth: float = 1.0,
+    min_cdp_latency_gain: float = 0.15,
+    max_cdp_energy_overhead: float = 0.80,
 ) -> ModeEvaluation:
     """Select PMP or CDP using the feature-weighted FWMS boundary rule."""
 
@@ -265,6 +267,8 @@ def select_fwms_feature(
         "weight_rho": weight_rho,
         "weight_eta": weight_eta,
         "weight_bandwidth": weight_bandwidth,
+        "min_cdp_latency_gain": min_cdp_latency_gain,
+        "max_cdp_energy_overhead": max_cdp_energy_overhead,
     }
 
     selected = None
@@ -275,12 +279,41 @@ def select_fwms_feature(
     elif not pmp or not pmp.feasible:
         selected = cdp
         reason = "pmp_infeasible_fallback_to_cdp"
-    elif score >= 0.0:
-        selected = pmp
-        reason = "feature_score_prefers_pmp"
     else:
-        selected = cdp
-        reason = "feature_score_prefers_cdp"
+        pmp_latency = float(pmp.latency_ms) if finite_number(pmp.latency_ms) else float("inf")
+        cdp_latency = float(cdp.latency_ms) if finite_number(cdp.latency_ms) else float("inf")
+        pmp_energy = float(pmp.satellite_energy_j) if finite_number(pmp.satellite_energy_j) else float("inf")
+        cdp_energy = float(cdp.satellite_energy_j) if finite_number(cdp.satellite_energy_j) else float("inf")
+
+        latency_gain = (pmp_latency - cdp_latency) / pmp_latency if pmp_latency > 0 else 0.0
+        energy_overhead = (
+            max(0.0, cdp_energy - pmp_energy) / pmp_energy
+            if pmp_energy > 0 and cdp_energy != float("inf")
+            else 0.0
+        )
+        batch_parallelism = scene.task.batch_size / (scene.task.batch_size + 32.0)
+        feature_values.update(
+            {
+                "latency_gain_cdp_vs_pmp": latency_gain,
+                "energy_overhead_cdp_vs_pmp": energy_overhead,
+                "batch_parallelism_norm": batch_parallelism,
+            }
+        )
+
+        cdp_has_clear_latency_gain = latency_gain >= min_cdp_latency_gain
+        cdp_energy_is_acceptable = energy_overhead <= max_cdp_energy_overhead
+        cdp_feature_supported = (
+            batch_parallelism >= 0.5
+            or feature_values["rho_norm"] >= 0.15
+            or score < 0.0
+        )
+
+        if cdp_has_clear_latency_gain and cdp_energy_is_acceptable and cdp_feature_supported:
+            selected = cdp
+            reason = "cdp_feasible_with_clear_latency_gain_and_acceptable_energy"
+        else:
+            selected = pmp
+            reason = "pmp_selected_by_boundary_or_energy_guard"
 
     if selected is None:
         oracle = select_oracle_min_latency(scene, mode_evaluations)
@@ -288,7 +321,10 @@ def select_fwms_feature(
         reason = "fwms_feature_no_pmp_or_cdp_fallback_to_oracle"
 
     plan_payload = {
-        "selection_rule": "memory-feasibility gate, then U = w_rho*rho_norm - w_eta*eta_norm + w_bandwidth*b_bar_norm",
+        "selection_rule": (
+            "memory-feasibility gate, then prefer CDP only when it has clear latency gain "
+            "and acceptable satellite-energy overhead; otherwise keep PMP as the stable fallback"
+        ),
         "selected_mode": selected.mode_family if selected else "",
         "selected_algo": selected.mode_algo if selected else "",
         "selected_candidate_id": selected.candidate_id if selected else "",

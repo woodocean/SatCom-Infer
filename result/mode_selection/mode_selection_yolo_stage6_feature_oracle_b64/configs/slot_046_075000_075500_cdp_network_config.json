@@ -27,7 +27,30 @@
       ],
       "b_dist_mbps": 15949.430600000002,
       "b_return_mbps": 295.24298437793124,
-      "compute_full_model_ms": 505.7683877252799
+      "compute_full_model_ms": 260.9556421211359
+    },
+    {
+      "worker_stk_id": "LEO026",
+      "worker_node_id": "SAT-02",
+      "candidate_rank": 1,
+      "candidate_path": [
+        "RS",
+        "LEO137",
+        "LEO026",
+        "Shenzhen"
+      ],
+      "dispatch_route": [
+        "RS",
+        "LEO137",
+        "LEO026"
+      ],
+      "return_route": [
+        "LEO026",
+        "Shenzhen"
+      ],
+      "b_dist_mbps": 8852.450299852111,
+      "b_return_mbps": 299.6905,
+      "compute_full_model_ms": 260.9556421211359
     },
     {
       "worker_stk_id": "LEO017",
@@ -52,59 +75,32 @@
       ],
       "b_dist_mbps": 19447.9556,
       "b_return_mbps": 287.19223999227364,
-      "compute_full_model_ms": 505.7683877252799
+      "compute_full_model_ms": 260.9556421211359
     },
     {
-      "worker_stk_id": "LEO026",
-      "worker_node_id": "SAT-03",
-      "candidate_rank": 5,
+      "worker_stk_id": "LEO117",
+      "worker_node_id": "SAT-02",
+      "candidate_rank": 7,
       "candidate_path": [
         "RS",
         "LEO017",
-        "LEO127",
+        "LEO117",
         "LEO026",
         "Shenzhen"
       ],
       "dispatch_route": [
         "RS",
         "LEO017",
-        "LEO127",
-        "LEO026"
+        "LEO117"
       ],
       "return_route": [
+        "LEO117",
         "LEO026",
         "Shenzhen"
       ],
-      "b_dist_mbps": 5085.648813487758,
-      "b_return_mbps": 299.6905,
-      "compute_full_model_ms": 451.74787905155523
-    },
-    {
-      "worker_stk_id": "LEO166",
-      "worker_node_id": "SAT-01",
-      "candidate_rank": 32,
-      "candidate_path": [
-        "RS",
-        "LEO166",
-        "LEO017",
-        "LEO127",
-        "LEO026",
-        "Shenzhen"
-      ],
-      "dispatch_route": [
-        "RS",
-        "LEO166"
-      ],
-      "return_route": [
-        "LEO166",
-        "LEO017",
-        "LEO127",
-        "LEO026",
-        "Shenzhen"
-      ],
-      "b_dist_mbps": 13807.1786,
-      "b_return_mbps": 282.9344314215227,
-      "compute_full_model_ms": 505.7683877252799
+      "b_dist_mbps": 8225.045060388942,
+      "b_return_mbps": 292.6645914533071,
+      "compute_full_model_ms": 260.9556421211359
     }
   ]
 }

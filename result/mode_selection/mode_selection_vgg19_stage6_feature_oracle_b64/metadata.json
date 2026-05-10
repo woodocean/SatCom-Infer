@@ -4,8 +4,8 @@
   "stage": "stage6_slot_scene_pmp_gs_sat_cdp_fwms_feature_oracle",
   "source_stk_run_dir": "result\\stk_dynamic\\stk_dynamic_vgg19_001",
   "source_run_id": "stk_dynamic_vgg19_001",
-  "started_at": "2026-04-30T02:13:59",
-  "completed_at": "2026-04-30T02:14:27",
+  "started_at": "2026-05-07T11:45:48",
+  "completed_at": "2026-05-07T11:46:16",
   "implemented_modes": [
     "PMP",
     "GS-Only",

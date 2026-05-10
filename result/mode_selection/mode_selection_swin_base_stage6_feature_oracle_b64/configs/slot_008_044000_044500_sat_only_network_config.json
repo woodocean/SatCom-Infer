@@ -28,7 +28,7 @@
         "memory_mb": 4096,
         "compute_speed_tflops": 4.106
       },
-      "stk_id": "LEO147",
+      "stk_id": "LEO056",
       "neighbors": [
         "RS",
         "SAT-02"
@@ -100,13 +100,13 @@
   },
   "links": {
     "RS_to_SAT-01": {
-      "bandwidth_mbps": 13464.4999,
-      "propagation_delay_ms": 14.59831,
+      "bandwidth_mbps": 8301.7646,
+      "propagation_delay_ms": 13.117859,
       "stk_from": "RS",
-      "stk_to": "LEO147",
+      "stk_to": "LEO056",
       "stk_link_type": "RS-SAT",
-      "avg_range_km": 4376.46335,
-      "sample_count": 6,
+      "avg_range_km": 3932.635273,
+      "sample_count": 5,
       "window_count": 1,
       "visibility_duration_s": 300.0,
       "effective_bandwidth_class": "ISL",
@@ -117,13 +117,13 @@
       "bandwidth_model": "effective_random_uniform"
     },
     "SAT-01_to_SAT-02": {
-      "bandwidth_mbps": 19336.8191,
-      "propagation_delay_ms": 11.335041,
-      "stk_from": "LEO147",
+      "bandwidth_mbps": 18406.4105,
+      "propagation_delay_ms": 12.555977,
+      "stk_from": "LEO056",
       "stk_to": "LEO036",
       "stk_link_type": "SAT-SAT",
-      "avg_range_km": 3398.159945,
-      "sample_count": 5,
+      "avg_range_km": 3764.187122,
+      "sample_count": 6,
       "window_count": 1,
       "visibility_duration_s": 300.0,
       "effective_bandwidth_class": "ISL",
@@ -202,10 +202,10 @@
     ],
     "parallel_aggregator": "SAT-04",
     "stk_path": {
-      "rank": 10,
+      "rank": 1,
       "original_path": [
         "RS",
-        "LEO147",
+        "LEO056",
         "LEO036",
         "LEO016",
         "LEO174",
@@ -214,8 +214,23 @@
       "common_start_utcg": "14 Apr 2026 04:40:57.442",
       "common_stop_utcg": "14 Apr 2026 04:45:00.000",
       "common_duration_s": 242.558,
-      "total_range_km": 17446.215542,
-      "total_propagation_delay_ms": 58.194311
+      "total_range_km": 17368.414642,
+      "total_propagation_delay_ms": 57.934795
+    },
+    "stk_dynamic_slot": {
+      "slot_id": "slot_008_044000_044500",
+      "slot_start_utcg": "14 Apr 2026 04:40:00.000",
+      "slot_stop_utcg": "14 Apr 2026 04:45:00.000",
+      "bandwidth_seed": 8114,
+      "path_selection": "max_common_duration_s",
+      "isl_range_mbps": [
+        1000.0,
+        20000.0
+      ],
+      "gsl_range_mbps": [
+        50.0,
+        300.0
+      ]
     },
     "mode_selection": {
       "slot_id": "slot_008_044000_044500",

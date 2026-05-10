@@ -1,118 +1,140 @@
-# SatCom-Infer：面向分布式卫星协同推理的高效通信策略
+# SatCom-Infer
 
-一个分布式卫星协同推理系统，支持在具有异构计算能力的多卫星节点间进行高效的DNN模型拆分与协同推理。
+面向分布式卫星协同推理的实验项目。  
+项目关注这样一个问题：当遥感卫星、LEO 计算卫星和地面站共同参与深度神经网络推理时，如何在**流水线模型切分**与**数据并行**两类协作模式之间做出合理选择，并在通信、算力、内存、可见性等约束下尽量降低端到端时延。
 
-## 项目特性
+## 项目在做什么
 
-- 多卫星协同推理：将DNN模型层分布到卫星网络中执行
-- 智能模型分割：基于计算资源和网络条件的最优层分配策略
-- 时延预测：预训练模型用于准确的计算和传输时延估计
-- 异构算力支持：适配不同计算能力的卫星节点
-- 地面站集成：支持将最终结果传输到地面站
+当前仓库主要围绕三条实验主线展开：
 
-## 项目结构
+1. `PMP` 模式下的模型切分与算法对比  
+   比较 `LADP / Greedy / GA / Random / Uniform / GS-Only` 等算法在流水线协同推理中的表现。
 
-```
-SatCom-Infer/
-├── satellite_node.py          # 卫星节点核心实现
-├── satellite_api.py           # 卫星节点API服务
-├── ground_station_api.py      # 地面站API服务
-├── task_client.py             # 任务提交客户端
-├── models/                    # DNN模型定义
-│   ├── AlexNet.py
-│   ├── LeNet.py
-│   ├── MobileNet.py
-│   └── VggNet.py
-├── utils/                     # 工具模块
-│   ├── inference_utils.py     # 推理工具函数
-│   └── excel_utils.py
-├── predictor/                 # 时延预测器
-│   ├── predictor_utils.py
-│   └── config/               # 预测模型配置
-└── net/                      # 网络通信模块
-    └── net_utils.py
-```
+2. `STK` 动态拓扑下的理论实验  
+   将 STK 可见性报告切分为多个时间片，在动态链路条件下评估协同推理策略。
 
+3. `FWMS` 模式选择实验  
+   在 `PMP / CDP / GS-Only / Sat-Only` 之间进行统一评估，研究不同任务和资源条件下的模式适用边界。
 
+## 项目意义
+
+相比只研究单一推理模式，这个项目更关注：
+
+- 不同协同模式在星地环境中的适用边界
+- 通信压缩收益、内存压力、链路瓶颈对推理模式的影响
+- 动态拓扑和异构资源条件下的稳定性与可行性
+
+因此它更像一个**协同推理实验平台 + 论文实验仓库**，而不是单一算法 demo。
+
+## 核心能力
+
+- 支持 `PMP` 流水线模型切分推理
+- 支持 `CDP` 数据并行推理评估
+- 支持 `FWMS` 模式选择实验
+- 支持基于 STK 可见性报告生成动态网络场景
+- 支持从已有结果重绘论文图
+- 保留半实物验证入口，便于后续接入 PC + Jetson 平台
+
+## 仓库结构
+
+### 核心代码
+
+- [`algorithms/`](./algorithms)
+  - 算法实现，如 `pmp_solver.py`、`cdp_solver.py`、`mode_selector.py`
+- [`core/`](./core)
+  - 调度、节点逻辑、场景构建、STK 解析、模式评估等底层模块
+- [`models/`](./models)
+  - 模型与分层 wrapper
+- [`config/`](./config)
+  - 网络配置、profile、设备参数
+
+### 实验入口
+
+- [`experiments_runner.py`](./experiments_runner.py)
+  - 传统 PMP 理论实验主入口
+- [`stk_dynamic_experiment.py`](./stk_dynamic_experiment.py)
+  - STK 动态拓扑 PMP 实验主入口
+- [`mode_selection_experiment.py`](./mode_selection_experiment.py)
+  - 模式选择实验主入口
+- [`thesis_entry.py`](./thesis_entry.py)
+  - 统一入口，便于调用实验、绘图和工具脚本
+
+### 工具与结果
+
+- [`tools/`](./tools)
+  - 前处理、绘图、半实物工具脚本
+- [`doc/`](./doc)
+  - 使用说明、实验路线、项目状态说明
+- [`result/`](./result)
+  - 全部实验结果、论文图、归档产物
 
 ## 快速开始
 
-### 环境要求
+### 1. 查看统一入口
 
-- Python 3.8+
-- PyTorch 1.9+
-- 其他依赖见 requirements.txt
-
-### 安装步骤
-
-1. 克隆仓库
-```bash
-git clone https://github.com/your-username/SatCom-Infer.git
-cd SatCom-Infer
+```powershell
+python thesis_entry.py --help
 ```
 
-2. 安装依赖
-```bash
-pip install -r requirements.txt
+### 2. 常用命令
+
+传统 PMP 理论实验：
+
+```powershell
+python thesis_entry.py run-legacy --preset algo
 ```
 
-### 运行演示
+STK 动态拓扑 PMP 实验：
 
-1. 启动地面站（终端1）
-```bash
-python ground_station_api.py --station_id GROUND-001 --ip 127.0.0.1 --port 20001
+```powershell
+python thesis_entry.py run-stk --help
 ```
 
-2. 启动卫星节点（终端2、3、4）
-```bash
-# 遥感卫星
-python satellite_api.py --node_id SAT-001 --satellite_type remote_sensing --ip 127.0.0.1 --port 10001 --compute_capacity 8.0 --device cuda --ground_station_id GROUND-001 --ground_station_ip 127.0.0.1 --ground_station_port 20001
+模式选择实验：
 
-# 计算卫星1
-python satellite_api.py --node_id SAT-002 --satellite_type leo_computing --ip 127.0.0.1 --port 10002 --compute_capacity 6.0 --device cuda
-
-# 计算卫星2
-python satellite_api.py --node_id SAT-003 --satellite_type leo_computing --ip 127.0.0.1 --port 10003 --compute_capacity 4.0 --device cpu
+```powershell
+python thesis_entry.py run-mode --help
 ```
 
-3. 提交推理任务（终端5）
-```bash
-python task_client.py
+从已有结果重画论文图：
+
+```powershell
+python thesis_entry.py plot-paper
 ```
 
-## 核心算法
+### 3. 论文图与验收入口
 
-### 模型分割策略
-系统根据卫星节点的计算能力、网络带宽和时延约束，智能地将DNN模型分割成多个部分，分配到不同的卫星节点执行。
+如果你是为了快速查看当前论文结果，优先看：
 
-### 时延预测
-使用预训练的线性回归模型预测各类型DNN层在不同设备上的推理时延，为分割决策提供依据。
+- [`result/paper_figures_v2/README.md`](./result/paper_figures_v2/README.md)
 
-### 协同调度
-遥感卫星作为协调节点，收集网络状态信息，计算最优分割方案，并协调各节点完成协同推理。
+这里统一整理了：
 
-## 引用声明
+- 当前最终图放在哪里
+- 每个实验的参数口径
+- 重跑命令
+- 结题验收时建议怎么展示
 
-本项目基于 [Neurosurgeon](https://github.com/Tjyy-1223/Neurosurgeon) 进行开发，特此感谢原作者的贡献。
+## 推荐阅读顺序
 
-### 主要借鉴内容
-- 模型拆分框架设计
-- 时延预测模型实现
-- DNN层时延分析工具
-- 模型分区基础算法
+如果你第一次接触这个仓库，建议按下面顺序了解：
 
-### 我们的改进与扩展
-- 添加了卫星网络仿真环境
-- 实现了分布式卫星节点发现与通信
-- 开发了多卫星协同推理调度算法
-- 增加了地面站集成支持
-- 优化了异构算力资源管理
+1. 先看本 README，理解项目目标和主线
+2. 再看 [`doc/current_project_state_and_usage.md`](./doc/current_project_state_and_usage.md)
+3. 想看实验路线时，再看 [`doc/experiment_entrypoints_and_mode_selection_plan.md`](./doc/experiment_entrypoints_and_mode_selection_plan.md)
+4. 想直接看最终实验图时，打开 [`result/paper_figures_v2/README.md`](./result/paper_figures_v2/README.md)
 
-## 许可证
+## 说明
 
-本项目基于MIT许可证发布，详见LICENSE文件。
+仓库在开发过程中积累过较多中间脚本、旧图和历史结果。当前已经逐步收口为：
 
-## 联系方式
+- 根目录保留主实验入口
+- 工具脚本统一收进 `tools/`
+- 最终论文图和验收口径统一收进 `result/paper_figures_v2/`
 
-如有问题或建议，请通过GitHub Issues提交。
+如果发现旧文档、旧图或旧结果与当前主线不完全一致，优先以：
 
+- [`result/paper_figures_v2/README.md`](./result/paper_figures_v2/README.md)
+- [`doc/acceptance_structure_and_commands.md`](./doc/acceptance_structure_and_commands.md)
+
+为准。

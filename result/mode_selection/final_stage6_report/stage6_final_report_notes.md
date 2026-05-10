@@ -30,17 +30,17 @@
 | 模型 | 模式 | 完成率 | 平均时延(ms) | 平均卫星能耗(J) |
 | --- | --- | --- | --- | --- |
 | YOLOv5 | PMP | 100% | 6597.55 | 63.06 |
-| YOLOv5 | CDP | 100% | 1995.62 | 77.68 |
+| YOLOv5 | CDP | 100% | 1928.02 | 74.09 |
 | YOLOv5 | GS-Only | 100% | 12134.28 | 119.04 |
-| YOLOv5 | Sat-Only | 100% | 7672.48 | 77.11 |
-| YOLOv5 | FWMS-Feature | 100% | 6597.55 | 63.06 |
-| YOLOv5 | Oracle-Min-Latency | 100% | 1995.62 | 77.68 |
+| YOLOv5 | Sat-Only | 100% | 7435.22 | 73.55 |
+| YOLOv5 | FWMS-Feature | 100% | 1928.02 | 74.09 |
+| YOLOv5 | Oracle-Min-Latency | 100% | 1928.02 | 74.09 |
 | ResNet101 | PMP | 100% | 1957.53 | 20.20 |
-| ResNet101 | CDP | 100% | 453.03 | 18.89 |
+| ResNet101 | CDP | 100% | 380.45 | 14.80 |
 | ResNet101 | GS-Only | 100% | 1530.60 | 14.58 |
-| ResNet101 | Sat-Only | 100% | 1632.95 | 18.55 |
-| ResNet101 | FWMS-Feature | 100% | 1800.20 | 19.60 |
-| ResNet101 | Oracle-Min-Latency | 100% | 453.03 | 18.89 |
+| ResNet101 | Sat-Only | 100% | 1370.97 | 14.73 |
+| ResNet101 | FWMS-Feature | 100% | 380.45 | 14.80 |
+| ResNet101 | Oracle-Min-Latency | 100% | 380.45 | 14.80 |
 | VGG19 | PMP | 100% | 1747.12 | 18.63 |
 | VGG19 | CDP | 0% | - | - |
 | VGG19 | GS-Only | 100% | 1534.05 | 14.58 |
@@ -48,11 +48,11 @@
 | VGG19 | FWMS-Feature | 100% | 1747.12 | 18.63 |
 | VGG19 | Oracle-Min-Latency | 100% | 1343.92 | 14.00 |
 | Swin-Base | PMP | 100% | 1931.36 | 20.95 |
-| Swin-Base | CDP | 100% | 482.25 | 22.88 |
+| Swin-Base | CDP | 100% | 514.34 | 25.05 |
 | Swin-Base | GS-Only | 100% | 1558.18 | 14.58 |
-| Swin-Base | Sat-Only | 100% | 1741.08 | 22.66 |
-| Swin-Base | FWMS-Feature | 100% | 1753.22 | 20.59 |
-| Swin-Base | Oracle-Min-Latency | 100% | 482.25 | 22.88 |
+| Swin-Base | Sat-Only | 100% | 1849.05 | 24.17 |
+| Swin-Base | FWMS-Feature | 100% | 709.08 | 22.19 |
+| Swin-Base | Oracle-Min-Latency | 100% | 514.34 | 25.05 |
 | ViT-Huge | PMP | 100% | 2378.16 | 21.91 |
 | ViT-Huge | CDP | 0% | - | - |
 | ViT-Huge | GS-Only | 100% | 1627.23 | 14.58 |
@@ -64,8 +64,8 @@
 
 | 模型 | PMP完成率 | CDP完成率 | FWMS平均时延(ms) | Oracle平均时延(ms) | FWMS/Oracle时延比 | 边界解释 |
 | --- | --- | --- | --- | --- | --- | --- |
-| YOLOv5 | 100% | 100% | 6597.55 | 1995.62 | 3.31x | CDP可行且低时延优势明显，适合批量数据并行。 |
-| ResNet101 | 100% | 100% | 1800.20 | 453.03 | 3.97x | CDP可行且低时延优势明显，适合批量数据并行。 |
+| YOLOv5 | 100% | 100% | 1928.02 | 1928.02 | 1.00x | CDP可行且低时延优势明显，适合批量数据并行。 |
+| ResNet101 | 100% | 100% | 380.45 | 380.45 | 1.00x | CDP可行且低时延优势明显，适合批量数据并行。 |
 | VGG19 | 100% | 0% | 1747.12 | 1343.92 | 1.30x | CDP因完整模型部署约束不可行，PMP/GS-Only承担保底。 |
-| Swin-Base | 100% | 100% | 1753.22 | 482.25 | 3.64x | CDP可行且低时延优势明显，适合批量数据并行。 |
+| Swin-Base | 100% | 100% | 709.08 | 514.34 | 1.38x | CDP可行且低时延优势明显，适合批量数据并行。 |
 | ViT-Huge | 100% | 0% | 2378.16 | 1627.23 | 1.46x | CDP因完整模型部署约束不可行，PMP/GS-Only承担保底。 |
