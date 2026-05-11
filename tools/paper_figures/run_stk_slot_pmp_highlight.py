@@ -374,7 +374,7 @@ def main() -> None:
     parser.add_argument("--slot-id", required=True, help="Slot id such as slot_033_064500_065000")
     parser.add_argument(
         "--models",
-        default="yolov5,vgg19,swin_base,vit_huge",
+        default="yolov5,resnet101,vgg19,vit_huge",
         help="Comma-separated model ids",
     )
     parser.add_argument("--repeats", type=int, default=100, help="Repeat count for GA and Random")
@@ -397,7 +397,7 @@ def main() -> None:
     df = pd.DataFrame(all_rows)
     summary = summarize(df, model_order)
 
-    file_stem = f"{args.slot_id}_pmp_latency_norm_rerun_no_resnet"
+    file_stem = "exp01_ladp_pmp_algorithm_effectiveness"
     df.to_csv(out_dir / f"{file_stem}_long.csv", index=False, encoding="utf-8-sig")
     summary.to_csv(out_dir / f"{file_stem}_summary.csv", index=False, encoding="utf-8-sig")
     plot(summary, out_dir, file_stem)

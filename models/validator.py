@@ -67,7 +67,6 @@ def generate_hardware_profiles(config_grid, output_json, num_runs=5):
     
     for model_name, cfg in config_grid.items():
         profile_db[model_name] = {}
-        end_idx = cfg['end_idx']
         
         for batch in cfg['batches']:
             for res in cfg['resolutions']:
@@ -90,6 +89,12 @@ def generate_hardware_profiles(config_grid, output_json, num_runs=5):
                     continue
                 
                 model.eval()
+                configured_end_idx = int(cfg.get('end_idx', len(model)))
+                if model_name == 'yolov5' and configured_end_idx == len(model) - 1:
+                    print(f"   - [修正] YOLOv5 profiling 上界由 {configured_end_idx} 自动补到最后一层 {len(model)}")
+                    end_idx = len(model)
+                else:
+                    end_idx = min(configured_end_idx, len(model))
                 # 针对分辨率的不同通道数，大部分是3通道
                 dummy_in = torch.randn(batch, 3, *res).to(device)
                 

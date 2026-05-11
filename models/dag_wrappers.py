@@ -19,6 +19,7 @@ class YOLOv5_DAG_Wrapper(nn.Module):
     def __init__(self, model_path='checkpoints/yolov5nu.pt', device='cuda'):
         super().__init__()
         self.device = device
+        self.max_det = 100
         print(f"[Wrapper] YOLOv5 ({model_path})...")
         
         # 1. 使用临时变量加载，避免污染 self 命名空间，防止被框架的任何 hook 误触！
@@ -47,6 +48,31 @@ class YOLOv5_DAG_Wrapper(nn.Module):
     
     def reset_cache(self): 
         self.feature_cache = {}             # 清空缓存张量
+
+    def _finalize_detection_output(self, output_pack):
+        """将 Detect 末端输出压成紧凑任务结果，避免把检测头特征当作最终通信结果。"""
+        if not isinstance(output_pack, tuple) or len(output_pack) == 0:
+            return output_pack
+
+        pred = output_pack[0]
+        if not isinstance(pred, torch.Tensor) or pred.ndim != 3 or pred.shape[1] < 6:
+            return output_pack
+
+        pred = pred.transpose(1, 2).contiguous()  # [B, N, C]
+        boxes = pred[..., :4]
+        class_logits = pred[..., 4:]
+        if class_logits.shape[-1] == 0:
+            return output_pack
+
+        scores, class_ids = torch.max(class_logits, dim=-1)
+        topk = min(self.max_det, scores.shape[1])
+        top_scores, top_indices = torch.topk(scores, k=topk, dim=1)
+
+        gather_idx = top_indices.unsqueeze(-1).expand(-1, -1, 4)
+        top_boxes = torch.gather(boxes, 1, gather_idx)
+        top_classes = torch.gather(class_ids, 1, top_indices).to(top_boxes.dtype).unsqueeze(-1)
+        top_scores = top_scores.unsqueeze(-1)
+        return torch.cat([top_boxes, top_scores, top_classes], dim=-1)
 
     # 基于yolo模型的层级切分 
     # input_pack 输入数据 start_idx, end_idx 始末层序号
@@ -106,6 +132,10 @@ class YOLOv5_DAG_Wrapper(nn.Module):
                     # 修正：将 < end_idx - 1 改为 < end_idx，救活刚刚产生的 Cache！
                     if req_idx < end_idx and req_idx in self.feature_cache:
                         active_cache[req_idx] = self.feature_cache[req_idx]
+
+        if end_idx >= self.len:
+            current_output = self._finalize_detection_output(current_output)
+            active_cache = {}
 
         # 更新自身的缓存为“已净化”版本
         self.feature_cache = active_cache

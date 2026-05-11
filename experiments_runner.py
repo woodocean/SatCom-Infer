@@ -251,6 +251,13 @@ def _build_run_metadata(args, run_id, sweep_values, started_at, started_at_compa
         "fixed_input_w": args.fixed_input_w,
         "algo_fixed_task": args.algo_fixed_task,
         "repeat_per_point": args.repeat_per_point,
+        "controlled_node_count_sweep": args.controlled_node_count_sweep,
+        "controlled_sat_compute_tflops": args.controlled_sat_compute_tflops,
+        "controlled_sat_memory_mb": args.controlled_sat_memory_mb,
+        "controlled_gs_compute_tflops": args.controlled_gs_compute_tflops,
+        "controlled_gs_memory_mb": args.controlled_gs_memory_mb,
+        "controlled_isl_bandwidth_mbps": args.controlled_isl_bandwidth_mbps,
+        "controlled_gsl_bandwidth_mbps": args.controlled_gsl_bandwidth_mbps,
     }
 
 
@@ -293,6 +300,13 @@ def _collect_explicit_cli_args(raw_args):
         "--repeat-per-point": "repeat_per_point",
         "--preset-file": "preset_file",
         "--seed": "seed",
+        "--controlled-node-count-sweep": "controlled_node_count_sweep",
+        "--controlled-sat-compute-tflops": "controlled_sat_compute_tflops",
+        "--controlled-sat-memory-mb": "controlled_sat_memory_mb",
+        "--controlled-gs-compute-tflops": "controlled_gs_compute_tflops",
+        "--controlled-gs-memory-mb": "controlled_gs_memory_mb",
+        "--controlled-isl-bandwidth-mbps": "controlled_isl_bandwidth_mbps",
+        "--controlled-gsl-bandwidth-mbps": "controlled_gsl_bandwidth_mbps",
     }
 
     for raw_arg in raw_args:
@@ -439,6 +453,81 @@ def _apply_random_resource_profile(base_config):
         info["bandwidth_mbps"] = new_bw
         info["propagation_delay_ms"] = round(new_delay, 2)
     return config
+
+
+def _apply_controlled_resource_profile(
+    base_config,
+    sat_compute_tflops,
+    sat_memory_mb,
+    gs_compute_tflops,
+    gs_memory_mb,
+    isl_bandwidth_mbps,
+    gsl_bandwidth_mbps,
+    sat_compute_template=None,
+):
+    """Apply a controlled homogeneous profile used by paper-ready sensitivity runs."""
+    config = _clone_config(base_config)
+    sat_ids = sorted(node_id for node_id in config.get("nodes", {}) if node_id.startswith("SAT"))
+    template_values = None
+    if sat_compute_template:
+        template_values = [float(v) for v in sat_compute_template]
+
+    for node_id, node_info in config.get("nodes", {}).items():
+        hw = node_info.setdefault("hardware", {})
+        if node_id == "GS":
+            hw["compute_speed_tflops"] = float(gs_compute_tflops)
+            hw["compute_speed_gflops_per_ms"] = float(gs_compute_tflops)
+            hw["memory_mb"] = int(gs_memory_mb)
+        elif node_id.startswith("SAT"):
+            sat_compute = float(sat_compute_tflops)
+            if template_values:
+                sat_idx = sat_ids.index(node_id)
+                sat_compute = template_values[min(sat_idx, len(template_values) - 1)]
+            hw["compute_speed_tflops"] = sat_compute
+            hw["compute_speed_gflops_per_ms"] = sat_compute
+            hw["memory_mb"] = int(sat_memory_mb)
+        else:
+            hw["compute_speed_tflops"] = 0.0
+            hw["compute_speed_gflops_per_ms"] = 0.0
+
+    for link_name, info in config.get("links", {}).items():
+        if "GS" in link_name:
+            info["bandwidth_mbps"] = float(gsl_bandwidth_mbps)
+        else:
+            info["bandwidth_mbps"] = float(isl_bandwidth_mbps)
+
+    config.setdefault("simulation_paths", {}).setdefault("controlled_profile", {})
+    config["simulation_paths"]["controlled_profile"].update(
+        {
+            "sat_compute_tflops": float(sat_compute_tflops),
+            "sat_memory_mb": int(sat_memory_mb),
+            "gs_compute_tflops": float(gs_compute_tflops),
+            "gs_memory_mb": int(gs_memory_mb),
+            "isl_bandwidth_mbps": float(isl_bandwidth_mbps),
+            "gsl_bandwidth_mbps": float(gsl_bandwidth_mbps),
+            "sat_compute_template": [float(v) for v in template_values] if template_values else [],
+        }
+    )
+    return config
+
+
+def _normalize_sat_compute_template(sat_compute_template, node_count, target_avg_tflops):
+    """Scale a heterogeneity template so every node-count point has the same total compute budget."""
+    if not sat_compute_template:
+        return None
+
+    node_count = max(1, int(node_count))
+    raw = [float(v) for v in sat_compute_template[:node_count]]
+    if not raw:
+        return None
+    if len(raw) < node_count:
+        raw.extend([raw[-1]] * (node_count - len(raw)))
+
+    raw_total = sum(raw)
+    target_total = float(target_avg_tflops) * node_count
+    if raw_total <= 0:
+        return [float(target_avg_tflops)] * node_count
+    return [round(v * target_total / raw_total, 6) for v in raw]
 
 
 def _link_class(link_name):
@@ -829,6 +918,15 @@ def _run_node_count_sensitivity_experiment(
     fixed_input_h,
     fixed_input_w,
     repeat_per_point,
+    controlled_node_count_sweep=False,
+    controlled_sat_compute_tflops=3.0,
+    controlled_sat_memory_mb=4096,
+    controlled_gs_compute_tflops=300.0,
+    controlled_gs_memory_mb=64000,
+    controlled_isl_bandwidth_mbps=5000.0,
+    controlled_gsl_bandwidth_mbps=100.0,
+    controlled_sat_compute_template=None,
+    controlled_normalize_sat_compute_template=False,
 ):
     base_config = load_config(net_config_path)
     repeat_per_point = max(1, int(repeat_per_point))
@@ -841,36 +939,94 @@ def _run_node_count_sensitivity_experiment(
     )
     print("=" * 50)
 
-    algorithms = ["LA-DP", "Greedy", "Uniform", "GS-Only", "Random", "GA"]
+    deterministic_algorithms = ["LA-DP", "Greedy", "Uniform", "GS-Only"]
+    stochastic_algorithms = ["Random", "GA"]
 
     for idx, node_count in enumerate(node_counts):
         point_id = f"{exp_type}_{idx:03d}"
         print(f"\n[Sweep] {point_id} | pipeline_node_count={node_count}")
+        point_sat_compute_template = controlled_sat_compute_template
+        if controlled_normalize_sat_compute_template:
+            point_sat_compute_template = _normalize_sat_compute_template(
+                controlled_sat_compute_template,
+                node_count=node_count,
+                target_avg_tflops=controlled_sat_compute_tflops,
+            )
+        if controlled_node_count_sweep:
+            scenario_base_config = _apply_controlled_resource_profile(
+                base_config=base_config,
+                sat_compute_tflops=controlled_sat_compute_tflops,
+                sat_memory_mb=controlled_sat_memory_mb,
+                gs_compute_tflops=controlled_gs_compute_tflops,
+                gs_memory_mb=controlled_gs_memory_mb,
+                isl_bandwidth_mbps=controlled_isl_bandwidth_mbps,
+                gsl_bandwidth_mbps=controlled_gsl_bandwidth_mbps,
+                sat_compute_template=point_sat_compute_template,
+            )
+        else:
+            scenario_base_config = _apply_random_resource_profile(base_config)
+
+        config = update_network_topology(
+            net_config_path,
+            topology_mode="node_count_sweep",
+            base_config=scenario_base_config,
+            sweep_value=node_count,
+            sync_remote=False,
+        )
+        if config is None:
+            raise RuntimeError(f"Failed to build node-count topology for node_count={node_count}")
+
+        pipeline = config.get("simulation_paths", {}).get("pipeline", [])
+        metadata_extra = {
+            "pipeline_node_count": max(0, len(pipeline) - 2),
+            "pipeline_hop_count": max(0, len(pipeline) - 1),
+            "pipeline_path": "->".join(pipeline),
+            "sweep_param": "pipeline_node_count",
+            "sweep_value": node_count,
+        }
+        if controlled_node_count_sweep:
+            metadata_extra.update(
+                {
+                    "controlled_sat_compute_tflops": float(controlled_sat_compute_tflops),
+                    "controlled_sat_memory_mb": int(controlled_sat_memory_mb),
+                    "controlled_gs_compute_tflops": float(controlled_gs_compute_tflops),
+                    "controlled_gs_memory_mb": int(controlled_gs_memory_mb),
+                    "controlled_isl_bandwidth_mbps": float(controlled_isl_bandwidth_mbps),
+                    "controlled_gsl_bandwidth_mbps": float(controlled_gsl_bandwidth_mbps),
+                    "controlled_sat_compute_template": ",".join(str(v) for v in point_sat_compute_template)
+                    if point_sat_compute_template else "",
+                    "controlled_total_sat_compute_tflops": float(controlled_sat_compute_tflops) * int(node_count),
+                    "controlled_normalize_sat_compute_template": bool(controlled_normalize_sat_compute_template),
+                }
+            )
+
+        det_task_id = f"{point_id}_det"
+        _seed_everything(_stable_int_seed(run_id, exp_type, point_id, node_count, "deterministic"))
+        scheduler = _build_scheduler(net_config_path)
+        deterministic_plans = scheduler.generate_task_and_schedule(
+            task_id=det_task_id,
+            model_name=fixed_model,
+            batch_size=fixed_batch_size,
+            target_h=fixed_input_h,
+            target_w=fixed_input_w,
+            run_id=run_id,
+            exp_type=exp_type,
+            mode="theory",
+            standardized_csv_file="results_long.csv",
+            persist_theory=True,
+            algorithm_names=deterministic_algorithms,
+            persist_algorithms=deterministic_algorithms,
+            return_full_plans=True,
+            metadata_extra=metadata_extra,
+        )
+        gs_only_latency = deterministic_plans.get("GS-Only", {}).get("latency", None)
+        gs_only_energy = deterministic_plans.get("GS-Only", {}).get("satellite_energy_j", None)
+        print(f"[Sweep] Done {det_task_id}, path={' -> '.join(pipeline)}, algorithms={list(deterministic_plans.keys())}")
 
         for repeat_idx in range(repeat_per_point):
-            task_id = f"{point_id}_rep{repeat_idx:02d}"
+            task_id = f"{point_id}_stoch_rep{repeat_idx:02d}"
             seed = _stable_int_seed(run_id, exp_type, point_id, node_count, repeat_idx)
             _seed_everything(seed)
-
-            scenario_base_config = _apply_random_resource_profile(base_config)
-            config = update_network_topology(
-                net_config_path,
-                topology_mode="node_count_sweep",
-                base_config=scenario_base_config,
-                sweep_value=node_count,
-                sync_remote=False,
-            )
-            if config is None:
-                raise RuntimeError(f"Failed to build node-count topology for node_count={node_count}")
-
-            pipeline = config.get("simulation_paths", {}).get("pipeline", [])
-            metadata_extra = {
-                "pipeline_node_count": max(0, len(pipeline) - 2),
-                "pipeline_hop_count": max(0, len(pipeline) - 1),
-                "pipeline_path": "->".join(pipeline),
-                "sweep_param": "pipeline_node_count",
-                "sweep_value": node_count,
-            }
 
             scheduler = _build_scheduler(net_config_path)
             plans = scheduler.generate_task_and_schedule(
@@ -884,8 +1040,10 @@ def _run_node_count_sensitivity_experiment(
                 mode="theory",
                 standardized_csv_file="results_long.csv",
                 persist_theory=True,
-                algorithm_names=algorithms,
-                persist_algorithms=algorithms,
+                algorithm_names=stochastic_algorithms,
+                persist_algorithms=stochastic_algorithms,
+                normalization_baseline_latency=gs_only_latency,
+                normalization_baseline_energy=gs_only_energy,
                 return_full_plans=True,
                 metadata_extra=metadata_extra,
             )
@@ -955,6 +1113,15 @@ def run_experiment(
     fixed_input_w=640,
     algo_fixed_task=False,
     repeat_per_point=10,
+    controlled_node_count_sweep=False,
+    controlled_sat_compute_tflops=3.0,
+    controlled_sat_memory_mb=4096,
+    controlled_gs_compute_tflops=300.0,
+    controlled_gs_memory_mb=64000,
+    controlled_isl_bandwidth_mbps=5000.0,
+    controlled_gsl_bandwidth_mbps=100.0,
+    controlled_sat_compute_template=None,
+    controlled_normalize_sat_compute_template=False,
 ):
     if exp_type == "algo_effectiveness":
         return _run_algorithm_effectiveness_experiment(
@@ -1017,6 +1184,15 @@ def run_experiment(
             fixed_input_h=fixed_input_h,
             fixed_input_w=fixed_input_w,
             repeat_per_point=repeat_per_point,
+            controlled_node_count_sweep=controlled_node_count_sweep,
+            controlled_sat_compute_tflops=controlled_sat_compute_tflops,
+            controlled_sat_memory_mb=controlled_sat_memory_mb,
+            controlled_gs_compute_tflops=controlled_gs_compute_tflops,
+            controlled_gs_memory_mb=controlled_gs_memory_mb,
+            controlled_isl_bandwidth_mbps=controlled_isl_bandwidth_mbps,
+            controlled_gsl_bandwidth_mbps=controlled_gsl_bandwidth_mbps,
+            controlled_sat_compute_template=controlled_sat_compute_template,
+            controlled_normalize_sat_compute_template=controlled_normalize_sat_compute_template,
         )
 
     raise ValueError(f"Unsupported exp_type: {exp_type}")
@@ -1105,6 +1281,58 @@ def main():
     )
     parser.add_argument("--preset-file", type=str, default=DEFAULT_PRESET_FILE, help="JSON preset file path")
     parser.add_argument("--seed", type=int, default=42, help="Base seed for deterministic runs")
+    parser.add_argument(
+        "--controlled-node-count-sweep",
+        action="store_true",
+        help="Use a fixed homogeneous profile for node-count sensitivity instead of randomizing resources.",
+    )
+    parser.add_argument(
+        "--controlled-sat-compute-tflops",
+        type=float,
+        default=3.0,
+        help="Homogeneous LEO compute used by controlled node-count sensitivity runs.",
+    )
+    parser.add_argument(
+        "--controlled-sat-memory-mb",
+        type=int,
+        default=4096,
+        help="Homogeneous LEO memory used by controlled node-count sensitivity runs.",
+    )
+    parser.add_argument(
+        "--controlled-gs-compute-tflops",
+        type=float,
+        default=300.0,
+        help="GS compute used by controlled node-count sensitivity runs.",
+    )
+    parser.add_argument(
+        "--controlled-gs-memory-mb",
+        type=int,
+        default=64000,
+        help="GS memory used by controlled node-count sensitivity runs.",
+    )
+    parser.add_argument(
+        "--controlled-isl-bandwidth-mbps",
+        type=float,
+        default=5000.0,
+        help="Fixed ISL bandwidth used by controlled node-count sensitivity runs.",
+    )
+    parser.add_argument(
+        "--controlled-gsl-bandwidth-mbps",
+        type=float,
+        default=100.0,
+        help="Fixed GSL bandwidth used by controlled node-count sensitivity runs.",
+    )
+    parser.add_argument(
+        "--controlled-sat-compute-template",
+        type=str,
+        default=None,
+        help="Optional comma-separated per-satellite compute template for controlled node-count runs, e.g. 1,2,3,4,5",
+    )
+    parser.add_argument(
+        "--controlled-normalize-sat-compute-template",
+        action="store_true",
+        help="Scale the per-satellite compute template at every node count so total LEO compute equals N * controlled-sat-compute-tflops.",
+    )
     explicit_cli_args = _collect_explicit_cli_args(sys.argv[1:])
     args = parser.parse_args()
 
@@ -1153,6 +1381,16 @@ def main():
             fixed_input_w=args.fixed_input_w,
             algo_fixed_task=args.algo_fixed_task,
             repeat_per_point=args.repeat_per_point,
+            controlled_node_count_sweep=args.controlled_node_count_sweep,
+            controlled_sat_compute_tflops=args.controlled_sat_compute_tflops,
+            controlled_sat_memory_mb=args.controlled_sat_memory_mb,
+            controlled_gs_compute_tflops=args.controlled_gs_compute_tflops,
+            controlled_gs_memory_mb=args.controlled_gs_memory_mb,
+            controlled_isl_bandwidth_mbps=args.controlled_isl_bandwidth_mbps,
+            controlled_gsl_bandwidth_mbps=args.controlled_gsl_bandwidth_mbps,
+            controlled_sat_compute_template=_parse_bandwidth_sweep_values(args.controlled_sat_compute_template)
+            if args.controlled_sat_compute_template else None,
+            controlled_normalize_sat_compute_template=args.controlled_normalize_sat_compute_template,
         )
         if archive_dir is not None:
             stem = build_artifact_stem(metadata)

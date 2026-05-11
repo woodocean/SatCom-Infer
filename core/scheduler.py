@@ -31,6 +31,17 @@ STANDARDIZED_RESULT_FIELDS = [
     "norm_energy_vs_gs",
     "satellite_compute_time_ms",
     "satellite_tx_time_ms",
+    "active_sat_count",
+    "plan_json",
+    "controlled_sat_compute_tflops",
+    "controlled_sat_memory_mb",
+    "controlled_gs_compute_tflops",
+    "controlled_gs_memory_mb",
+    "controlled_isl_bandwidth_mbps",
+    "controlled_gsl_bandwidth_mbps",
+    "controlled_sat_compute_template",
+    "controlled_total_sat_compute_tflops",
+    "controlled_normalize_sat_compute_template",
     "energy_model",
     "timestamp",
 ]
@@ -141,6 +152,23 @@ class Scheduler:
         use_energy_norm = gs_only_energy not in (None, float("inf"), 0.0)
         persist_algorithms = set(persist_algorithms) if persist_algorithms else None
 
+        def active_sat_count(plan):
+            if not isinstance(plan, dict):
+                return ""
+            count = 0
+            for node_id, segment in plan.items():
+                if not str(node_id).startswith("SAT"):
+                    continue
+                if not isinstance(segment, (list, tuple)) or len(segment) < 2:
+                    continue
+                try:
+                    start, end = int(segment[0]), int(segment[1])
+                except (TypeError, ValueError):
+                    continue
+                if end >= start >= 0:
+                    count += 1
+            return count
+
         with open(output_csv, 'a', newline='', encoding='utf-8') as f:
             writer = csv.DictWriter(f, fieldnames=STANDARDIZED_RESULT_FIELDS)
             if not file_exists:
@@ -186,6 +214,19 @@ class Scheduler:
                     "norm_energy_vs_gs": norm_energy,
                     "satellite_compute_time_ms": data.get("satellite_compute_time_ms", ""),
                     "satellite_tx_time_ms": data.get("satellite_tx_time_ms", ""),
+                    "active_sat_count": active_sat_count(data.get("plan")),
+                    "plan_json": json.dumps(data.get("plan") or {}, ensure_ascii=False, sort_keys=True),
+                    "controlled_sat_compute_tflops": metadata_extra.get("controlled_sat_compute_tflops", ""),
+                    "controlled_sat_memory_mb": metadata_extra.get("controlled_sat_memory_mb", ""),
+                    "controlled_gs_compute_tflops": metadata_extra.get("controlled_gs_compute_tflops", ""),
+                    "controlled_gs_memory_mb": metadata_extra.get("controlled_gs_memory_mb", ""),
+                    "controlled_isl_bandwidth_mbps": metadata_extra.get("controlled_isl_bandwidth_mbps", ""),
+                    "controlled_gsl_bandwidth_mbps": metadata_extra.get("controlled_gsl_bandwidth_mbps", ""),
+                    "controlled_sat_compute_template": metadata_extra.get("controlled_sat_compute_template", ""),
+                    "controlled_total_sat_compute_tflops": metadata_extra.get("controlled_total_sat_compute_tflops", ""),
+                    "controlled_normalize_sat_compute_template": metadata_extra.get(
+                        "controlled_normalize_sat_compute_template", ""
+                    ),
                     "energy_model": data.get("energy_model", "satellite_only:P_compute=15W,P_tx=10W"),
                     "timestamp": timestamp,
                 }

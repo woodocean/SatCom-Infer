@@ -1,0 +1,222 @@
+{
+  "algo_theory_20": {
+    "exp_type": "algo_effectiveness",
+    "exp_mode": "theory",
+    "num_tasks": 20
+  },
+  "energy_yolo": {
+    "exp_type": "energy_comparison",
+    "exp_mode": "theory",
+    "num_tasks": 30,
+    "fixed_model": "yolov5",
+    "fixed_batch_size": 32,
+    "fixed_input_h": 640,
+    "fixed_input_w": 640
+  },
+  "isl_yolo": {
+    "exp_type": "isl_bandwidth_sensitivity",
+    "exp_mode": "theory",
+    "sweep_start": 500,
+    "sweep_stop": 20000,
+    "sweep_points": 20,
+    "repeat_per_point": 10,
+    "fixed_model": "yolov5",
+    "fixed_batch_size": 32,
+    "fixed_input_h": 640,
+    "fixed_input_w": 640
+  },
+  "gsl_yolo": {
+    "exp_type": "gsl_bandwidth_sensitivity",
+    "exp_mode": "theory",
+    "sweep_start": 20,
+    "sweep_stop": 200,
+    "sweep_points": 20,
+    "repeat_per_point": 10,
+    "fixed_model": "yolov5",
+    "fixed_batch_size": 32,
+    "fixed_input_h": 640,
+    "fixed_input_w": 640
+  },
+  "nodes_yolo": {
+    "exp_type": "node_count_sensitivity",
+    "exp_mode": "theory",
+    "sweep_values": "1,2,3,4,5",
+    "repeat_per_point": 10,
+    "fixed_model": "yolov5",
+    "fixed_batch_size": 32,
+    "fixed_input_h": 640,
+    "fixed_input_w": 640
+  },
+  "isl_resnet101": {
+    "exp_type": "isl_bandwidth_sensitivity",
+    "exp_mode": "theory",
+    "sweep_start": 500,
+    "sweep_stop": 20000,
+    "sweep_points": 20,
+    "repeat_per_point": 10,
+    "fixed_model": "resnet101",
+    "fixed_batch_size": 32,
+    "fixed_input_h": 224,
+    "fixed_input_w": 224
+  },
+  "gsl_resnet101": {
+    "exp_type": "gsl_bandwidth_sensitivity",
+    "exp_mode": "theory",
+    "sweep_start": 20,
+    "sweep_stop": 200,
+    "sweep_points": 20,
+    "repeat_per_point": 10,
+    "fixed_model": "resnet101",
+    "fixed_batch_size": 32,
+    "fixed_input_h": 224,
+    "fixed_input_w": 224
+  },
+  "nodes_resnet101": {
+    "exp_type": "node_count_sensitivity",
+    "exp_mode": "theory",
+    "sweep_values": "1,2,3,4,5",
+    "repeat_per_point": 10,
+    "fixed_model": "resnet101",
+    "fixed_batch_size": 32,
+    "fixed_input_h": 224,
+    "fixed_input_w": 224
+  },
+  "energy_resnet101": {
+    "exp_type": "energy_comparison",
+    "exp_mode": "theory",
+    "num_tasks": 30,
+    "fixed_model": "resnet101",
+    "fixed_batch_size": 32,
+    "fixed_input_h": 224,
+    "fixed_input_w": 224
+  },
+  "isl_vgg19": {
+    "exp_type": "isl_bandwidth_sensitivity",
+    "exp_mode": "theory",
+    "sweep_start": 500,
+    "sweep_stop": 20000,
+    "sweep_points": 20,
+    "repeat_per_point": 10,
+    "fixed_model": "vgg19",
+    "fixed_batch_size": 32,
+    "fixed_input_h": 224,
+    "fixed_input_w": 224
+  },
+  "gsl_vgg19": {
+    "exp_type": "gsl_bandwidth_sensitivity",
+    "exp_mode": "theory",
+    "sweep_start": 20,
+    "sweep_stop": 200,
+    "sweep_points": 20,
+    "repeat_per_point": 10,
+    "fixed_model": "vgg19",
+    "fixed_batch_size": 32,
+    "fixed_input_h": 224,
+    "fixed_input_w": 224
+  },
+  "nodes_vgg19": {
+    "exp_type": "node_count_sensitivity",
+    "exp_mode": "theory",
+    "sweep_values": "1,2,3,4,5",
+    "repeat_per_point": 10,
+    "fixed_model": "vgg19",
+    "fixed_batch_size": 32,
+    "fixed_input_h": 224,
+    "fixed_input_w": 224
+  },
+  "energy_vgg19": {
+    "exp_type": "energy_comparison",
+    "exp_mode": "theory",
+    "num_tasks": 30,
+    "fixed_model": "vgg19",
+    "fixed_batch_size": 32,
+    "fixed_input_h": 224,
+    "fixed_input_w": 224
+  },
+  "isl_swin_base": {
+    "exp_type": "isl_bandwidth_sensitivity",
+    "exp_mode": "theory",
+    "sweep_start": 500,
+    "sweep_stop": 20000,
+    "sweep_points": 20,
+    "repeat_per_point": 10,
+    "fixed_model": "swin_base",
+    "fixed_batch_size": 32,
+    "fixed_input_h": 224,
+    "fixed_input_w": 224
+  },
+  "gsl_swin_base": {
+    "exp_type": "gsl_bandwidth_sensitivity",
+    "exp_mode": "theory",
+    "sweep_start": 20,
+    "sweep_stop": 200,
+    "sweep_points": 20,
+    "repeat_per_point": 10,
+    "fixed_model": "swin_base",
+    "fixed_batch_size": 32,
+    "fixed_input_h": 224,
+    "fixed_input_w": 224
+  },
+  "nodes_swin_base": {
+    "exp_type": "node_count_sensitivity",
+    "exp_mode": "theory",
+    "sweep_values": "1,2,3,4,5",
+    "repeat_per_point": 10,
+    "fixed_model": "swin_base",
+    "fixed_batch_size": 32,
+    "fixed_input_h": 224,
+    "fixed_input_w": 224
+  },
+  "energy_swin_base": {
+    "exp_type": "energy_comparison",
+    "exp_mode": "theory",
+    "num_tasks": 30,
+    "fixed_model": "swin_base",
+    "fixed_batch_size": 32,
+    "fixed_input_h": 224,
+    "fixed_input_w": 224
+  },
+  "isl_vit_huge": {
+    "exp_type": "isl_bandwidth_sensitivity",
+    "exp_mode": "theory",
+    "sweep_start": 500,
+    "sweep_stop": 20000,
+    "sweep_points": 20,
+    "repeat_per_point": 10,
+    "fixed_model": "vit_huge",
+    "fixed_batch_size": 32,
+    "fixed_input_h": 224,
+    "fixed_input_w": 224
+  },
+  "gsl_vit_huge": {
+    "exp_type": "gsl_bandwidth_sensitivity",
+    "exp_mode": "theory",
+    "sweep_start": 20,
+    "sweep_stop": 200,
+    "sweep_points": 20,
+    "repeat_per_point": 10,
+    "fixed_model": "vit_huge",
+    "fixed_batch_size": 32,
+    "fixed_input_h": 224,
+    "fixed_input_w": 224
+  },
+  "nodes_vit_huge": {
+    "exp_type": "node_count_sensitivity",
+    "exp_mode": "theory",
+    "sweep_values": "1,2,3,4,5",
+    "repeat_per_point": 10,
+    "fixed_model": "vit_huge",
+    "fixed_batch_size": 32,
+    "fixed_input_h": 224,
+    "fixed_input_w": 224
+  },
+  "energy_vit_huge": {
+    "exp_type": "energy_comparison",
+    "exp_mode": "theory",
+    "num_tasks": 30,
+    "fixed_model": "vit_huge",
+    "fixed_batch_size": 32,
+    "fixed_input_h": 224,
+    "fixed_input_w": 224
+  }
+}

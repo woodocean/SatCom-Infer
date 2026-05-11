@@ -216,6 +216,15 @@
                 "latency_mean_ms": 3.19,
                 "latency_cv_pct": 12.49,
                 "tflops_efficiency": 0.0
+            },
+            "24": {
+                "flops_gf": 58.112,
+                "comm_total_mb": 0.037,
+                "comm_pure_mb": 0.037,
+                "weight_size_mb": 3.431,
+                "latency_mean_ms": 45.145,
+                "latency_cv_pct": 6.27,
+                "tflops_efficiency": 1.287
             }
         },
         "b32_640x640": {
@@ -434,6 +443,15 @@
                 "latency_mean_ms": 4.303,
                 "latency_cv_pct": 3.55,
                 "tflops_efficiency": 0.0
+            },
+            "24": {
+                "flops_gf": 116.225,
+                "comm_total_mb": 0.073,
+                "comm_pure_mb": 0.073,
+                "weight_size_mb": 3.431,
+                "latency_mean_ms": 105.805,
+                "latency_cv_pct": 2.43,
+                "tflops_efficiency": 1.098
             }
         },
         "b64_640x640": {
@@ -652,6 +670,15 @@
                 "latency_mean_ms": 7.768,
                 "latency_cv_pct": 0.96,
                 "tflops_efficiency": 0.0
+            },
+            "24": {
+                "flops_gf": 232.45,
+                "comm_total_mb": 0.146,
+                "comm_pure_mb": 0.146,
+                "weight_size_mb": 3.431,
+                "latency_mean_ms": 202.901,
+                "latency_cv_pct": 2.44,
+                "tflops_efficiency": 1.146
             }
         },
         "b128_640x640": {
@@ -870,6 +897,15 @@
                 "latency_mean_ms": 14.988,
                 "latency_cv_pct": 0.63,
                 "tflops_efficiency": 0.0
+            },
+            "24": {
+                "flops_gf": 464.899,
+                "comm_total_mb": 0.293,
+                "comm_pure_mb": 0.293,
+                "weight_size_mb": 3.431,
+                "latency_mean_ms": 405.779,
+                "latency_cv_pct": 3.57,
+                "tflops_efficiency": 1.146
             }
         }
     },
