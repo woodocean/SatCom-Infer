@@ -1,4 +1,4 @@
-# paper_figures_v2
+﻿# paper_figures_v2
 
 这个文件夹统一存放论文最终采用的图、实验参数说明，以及结题验收时的重跑步骤。
 
@@ -59,6 +59,11 @@ python thesis_entry.py physical-orchestrator ...
 ```
 
 ### 5. 本次验收最常用命令
+实验 00 重画：
+
+```powershell
+python thesis_entry.py exp00 --profile config/dnn_profiles_database_pc.json --batch-size 1 --out-dir result\paper_figures_v2\00_layer_output_distribution
+```
 
 实验 1 重跑：
 
@@ -87,6 +92,30 @@ python thesis_entry.py exp02 `
 
 ---
 
+
+## 实验 00：层级输出特征图数据量分布
+
+### 图文件
+
+- [exp00_layer_output_yolov5.png](./00_layer_output_distribution/exp00_layer_output_yolov5.png)
+- [exp00_layer_output_resnet101.png](./00_layer_output_distribution/exp00_layer_output_resnet101.png)
+- [exp00_layer_output_vgg19.png](./00_layer_output_distribution/exp00_layer_output_vgg19.png)
+- [exp00_layer_output_vit_huge.png](./00_layer_output_distribution/exp00_layer_output_vit_huge.png)
+
+### 图口径
+
+- profile：`config/dnn_profiles_database_pc.json`
+- 批次：`b1`（YOLOv5 为 `640x640`，其余为 `224x224`；若 profile 未包含 b1，将按最小可用 batch 线性缩放）
+- 绿色虚线：输入 `Input`
+- 红色柱：层输出大于输入大小
+- 蓝色柱：层输出小于输入大小
+- 最后一层标注 `Result`
+
+### 验收时如何重画
+
+```powershell
+python thesis_entry.py exp00 --profile config/dnn_profiles_database_pc.json --batch-size 1 --out-dir result\paper_figures_v2\00_layer_output_distribution
+```
 ## 实验 1：LADP-PMP 模式的算法有效性实验
 
 ### 图文件
@@ -431,3 +460,5 @@ conda activate satellite-split
 python thesis_entry.py exp06 `
   --out-dir result\paper_figures_v2\06_fwms_data_sensitivity
 ```
+
+

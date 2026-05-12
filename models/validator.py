@@ -1,4 +1,4 @@
-import os
+﻿import os
 import time
 import json
 import copy
@@ -22,7 +22,7 @@ except ImportError:
     HAS_FVCORE = False
 
 def parse_pack_size(pack):
-    """加入基于内存地址去重的智能包裹尺寸解析 (防止 Cache 和 Main 双重计算)"""
+    """鍔犲叆鍩轰簬鍐呭瓨鍦板潃鍘婚噸鐨勬櫤鑳藉寘瑁瑰昂瀵歌В鏋?(闃叉 Cache 鍜?Main 鍙岄噸璁＄畻)"""
     visited_ids = set()
     total_bytes = 0
     pure_bytes = 0
@@ -60,9 +60,9 @@ class SliceWrapper(torch.nn.Module):
 
 def generate_hardware_profiles(config_grid, output_json, num_runs=5):
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
-    print(f"[*] 启动全景硬件档案生成的任务。设备: {device.upper()}")
+    print(f"[*] 鍚姩鍏ㄦ櫙纭欢妗ｆ鐢熸垚鐨勪换鍔°€傝澶? {device.upper()}")
     
-    # 最后保存的大字典
+    # 鏈€鍚庝繚瀛樼殑澶у瓧鍏?
     profile_db = {}
     
     for model_name, cfg in config_grid.items():
@@ -71,9 +71,9 @@ def generate_hardware_profiles(config_grid, output_json, num_runs=5):
         for batch in cfg['batches']:
             for res in cfg['resolutions']:
                 config_key = f"b{batch}_{res[0]}x{res[1]}"
-                print(f"\n>> 正在构建档案: {model_name} | {config_key}")
+                print(f"\n>> 姝ｅ湪鏋勫缓妗ｆ: {model_name} | {config_key}")
                 
-                # 1. 动态实例化模型
+                # 1. 鍔ㄦ€佸疄渚嬪寲妯″瀷
                 if model_name == 'vgg19':
                     model = VGG19_DAG_Wrapper(device=device)
                 elif model_name == 'resnet101':
@@ -85,26 +85,26 @@ def generate_hardware_profiles(config_grid, output_json, num_runs=5):
                 elif model_name == 'vit_huge':
                     model = ViT_Huge_DAG_Wrapper(device=device)
                 else:
-                    print(f"未找到 {model_name} 的包装器，跳过！")
+                    print(f"鏈壘鍒?{model_name} 鐨勫寘瑁呭櫒锛岃烦杩囷紒")
                     continue
                 
                 model.eval()
                 configured_end_idx = int(cfg.get('end_idx', len(model)))
                 if model_name == 'yolov5' and configured_end_idx == len(model) - 1:
-                    print(f"   - [修正] YOLOv5 profiling 上界由 {configured_end_idx} 自动补到最后一层 {len(model)}")
+                    print(f"   - [淇] YOLOv5 profiling 涓婄晫鐢?{configured_end_idx} 鑷姩琛ュ埌鏈€鍚庝竴灞?{len(model)}")
                     end_idx = len(model)
                 else:
                     end_idx = min(configured_end_idx, len(model))
-                # 针对分辨率的不同通道数，大部分是3通道
+                # 閽堝鍒嗚鲸鐜囩殑涓嶅悓閫氶亾鏁帮紝澶ч儴鍒嗘槸3閫氶亾
                 dummy_in = torch.randn(batch, 3, *res).to(device)
                 
                 layer_data = {}
                 current_pack = dummy_in
                 
-                # 第一阶段：静态物理测算 (GFLOPs & 通信体积)
-                print("   - 测算网络静态物理属性 (FLOPs与通信量)...")
+                # 绗竴闃舵锛氶潤鎬佺墿鐞嗘祴绠?(GFLOPs & 閫氫俊浣撶Н)
+                print("   - 娴嬬畻缃戠粶闈欐€佺墿鐞嗗睘鎬?(FLOPs涓庨€氫俊閲?...")
                 for i in range(end_idx):
-                    # 备份原始的 Cache 状态，防止 fvcore 计算图追踪器污染内部字典！
+                    # 澶囦唤鍘熷鐨?Cache 鐘舵€侊紝闃叉 fvcore 璁＄畻鍥捐拷韪櫒姹℃煋鍐呴儴瀛楀吀锛?
                     backup_cache = None
                     if hasattr(model, 'feature_cache'):
                         backup_cache = copy.copy(model.feature_cache)
@@ -119,7 +119,7 @@ def generate_hardware_profiles(config_grid, output_json, num_runs=5):
                         except Exception as e:
                             flops_g = 0.0
                             
-                    # 恢复干净的 Cache 状态供真实前向传递使用
+                    # 鎭㈠骞插噣鐨?Cache 鐘舵€佷緵鐪熷疄鍓嶅悜浼犻€掍娇鐢?
                     if backup_cache is not None:
                         model.feature_cache = backup_cache
 
@@ -128,14 +128,14 @@ def generate_hardware_profiles(config_grid, output_json, num_runs=5):
                         
                     c_tot, c_pur = parse_pack_size(current_pack)
 
-                    # === 新增：层级物理参数占用（权重 + BN缓冲层）===
+                    # === 鏂板锛氬眰绾х墿鐞嗗弬鏁板崰鐢紙鏉冮噸 + BN缂撳啿灞傦級===
                     w_size = 0.0
                     if hasattr(model, 'layers') and i < len(model.layers):
                         layer_module = model.layers[i]
-                        # 汇总该层的所有网络参数与缓存占用的元素数量
+                        # 姹囨€昏灞傜殑鎵€鏈夌綉缁滃弬鏁颁笌缂撳瓨鍗犵敤鐨勫厓绱犳暟閲?
                         tensors = list(layer_module.parameters()) + list(layer_module.buffers())
                         w_elements = sum(t.nelement() for t in tensors)
-                        # 每个 float32 参数占用 4 Bytes，转换为 MB
+                        # 姣忎釜 float32 鍙傛暟鍗犵敤 4 Bytes锛岃浆鎹负 MB
                         w_size = (w_elements * 4) / (1024**2) 
 
                     layer_data[i] = {
@@ -145,10 +145,10 @@ def generate_hardware_profiles(config_grid, output_json, num_runs=5):
                         "weight_size_mb": round(w_size, 3)
                     }
 
-                # 第二阶段：真机高吞吐时延测绘
-                print("   - 测绘流水线实际推理时延...")
+                # 绗簩闃舵锛氱湡鏈洪珮鍚炲悙鏃跺欢娴嬬粯
+                print("   - 娴嬬粯娴佹按绾垮疄闄呮帹鐞嗘椂寤?..")
                 with torch.no_grad():
-                    for _ in range(3): # 预热
+                    for _ in range(3): # 棰勭儹
                         model.forward_slice(dummy_in, 0, end_idx)
                 torch.cuda.synchronize()
 
@@ -164,7 +164,7 @@ def generate_hardware_profiles(config_grid, output_json, num_runs=5):
                             t1 = time.perf_counter()
                             latencies[i].append((t1 - t0) * 1000)
 
-                # 数据整合与统计计算
+                # 鏁版嵁鏁村悎涓庣粺璁¤绠?
                 for i in range(end_idx):
                     arr = latencies[i]
                     mean_ms = np.mean(arr)
@@ -179,47 +179,45 @@ def generate_hardware_profiles(config_grid, output_json, num_runs=5):
                 
                 profile_db[model_name][config_key] = layer_data
                 
-                # 释放显存，防止遍历下一个配置时爆掉 OOM
+                # 閲婃斁鏄惧瓨锛岄槻姝㈤亶鍘嗕笅涓€涓厤缃椂鐖嗘帀 OOM
                 del model
                 torch.cuda.empty_cache()
 
-    # 序列化为 JSON
+    # 搴忓垪鍖栦负 JSON
     with open(output_json, 'w', encoding='utf-8') as f:
         json.dump(profile_db, f, indent=4, ensure_ascii=False)
     
-    print(f"\n[成 功] 档案已全面生成并保存至 -> '{output_json}'")
+    print(f"\n[鎴?鍔焆 妗ｆ宸插叏闈㈢敓鎴愬苟淇濆瓨鑷?-> '{output_json}'")
 
 if __name__ == "__main__":
-    # 在这里自由配置你论文实验涉及的所有测试网格！
+    # 鍦ㄨ繖閲岃嚜鐢遍厤缃綘璁烘枃瀹為獙娑夊強鐨勬墍鏈夋祴璇曠綉鏍硷紒
     EXPERIMENT_GRID = {
         'yolov5': {
-            'end_idx': 24, # 确认 Wrapper 是 0 -> 24
+            'end_idx': 24, # 纭 Wrapper 鏄?0 -> 24
             'batches': [16, 32,64,128],
             'resolutions': [(640, 640)]  
         },
         'resnet101': {
-            'end_idx': 33,
             'batches': [16, 32,64,128],
             'resolutions': [(224, 224)]
         },
         'vgg19': {
-            'end_idx': 45,
             'batches': [16, 32,64,128],
             'resolutions': [(224, 224)]
         },
         'swin_base': {
-            'end_idx': 6,
             'batches': [16, 32,64],
             'resolutions': [(224, 224)]
         },
         'vit_huge':{
-            'end_idx': 33,
             'batches': [16, 32,64],
             'resolutions': [(224, 224)]
         }
     }
 
-    OUTPUT_FILE = "dnn_profiles_database.json"
+    OUTPUT_FILE = "config/dnn_profiles_database_pc.json"
     
-    # 推荐跑 10 轮时延，可以熨平 GPU 电压跳动带来的轻微干扰
+    # 鎺ㄨ崘璺?10 杞椂寤讹紝鍙互鐔ㄥ钩 GPU 鐢靛帇璺冲姩甯︽潵鐨勮交寰共鎵?
     generate_hardware_profiles(EXPERIMENT_GRID, OUTPUT_FILE, num_runs=10)
+
+

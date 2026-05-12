@@ -1,4 +1,4 @@
-"""Unified thesis experiment and utility entrypoint.
+﻿"""Unified thesis experiment and utility entrypoint.
 
 This script keeps the root directory clean and exposes one stable CLI for:
 1. Main experiment entrypoints.
@@ -418,6 +418,125 @@ def _plot_exp04_model(df: pd.DataFrame, model_name: str, out_dir: Path) -> None:
     plt.close(fig)
 
 
+
+def _plot_layer_output_distribution(
+    model_name: str,
+    layers: list[dict],
+    input_size_mb: float,
+    config_key: str,
+    out_dir: Path,
+) -> None:
+    setup_style()
+    values = [float(layer.get("comm_total_mb", 0.0)) for layer in layers]
+    if not values:
+        return
+    x = np.arange(len(values))
+    input_color = "#2ECC71"
+    high_color = "#E74C3C"
+    low_color = "#2E86DE"
+    colors = [high_color if value > input_size_mb else low_color for value in values]
+
+    fig, ax = plt.subplots(figsize=(13.8, 5.4))
+    ax.bar(x, values, color=colors, width=0.82, zorder=2)
+
+    y_max = max(max(values), float(input_size_mb))
+    padding = max(y_max * 0.18, 0.6)
+    ax.set_ylim(0, y_max + padding)
+
+    ax.axhline(input_size_mb, color=input_color, linestyle="--", linewidth=2.2, zorder=1)
+    input_offset = max(y_max * 0.04, 0.15)
+    ax.text(
+        -0.6,
+        input_size_mb + input_offset,
+        "Input",
+        color=input_color,
+        fontsize=13,
+        fontweight="bold",
+        va="bottom",
+        ha="left",
+        bbox=dict(facecolor="white", edgecolor="none", alpha=0.85, pad=1.2),
+        clip_on=False,
+    )
+
+    last_idx = len(values) - 1
+    last_val = values[-1]
+    result_offset = max(y_max * 0.06, 0.25)
+    ax.text(
+        last_idx,
+        last_val + result_offset,
+        "Result",
+        ha="center",
+        va="bottom",
+        fontsize=13,
+        fontweight="bold",
+        bbox=dict(facecolor="white", edgecolor="none", alpha=0.85, pad=1.2),
+    )
+
+    step = max(1, len(values) // 12)
+    ticks = list(range(0, len(values), step))
+    ax.set_xticks(ticks)
+    ax.set_xticklabels([str(i) for i in ticks], fontsize=9)
+    ax.set_xlabel("层编号", fontsize=12)
+    ax.set_ylabel("数据量 (MB)", fontsize=12)
+    title = f"{MODEL_LABELS.get(model_name, model_name)} 层级输出特征图数据量分布"
+    ax.set_title(title, fontsize=18, fontweight="bold", pad=12)
+    ax.grid(True, axis="y", alpha=0.35, zorder=0)
+    ax.spines["top"].set_visible(False)
+    ax.spines["right"].set_visible(False)
+    fig.tight_layout()
+    stem = f"exp00_layer_output_{model_name}"
+    fig.savefig(out_dir / f"{stem}.png", bbox_inches="tight", dpi=300)
+    plt.close(fig)
+
+def _run_exp00(args) -> int:
+    def _select_profile_key(model_payload: dict, input_h: int, input_w: int, target_batch: int) -> tuple[str, float]:
+        desired = f"b{target_batch}_{input_h}x{input_w}"
+        if desired in model_payload:
+            return desired, 1.0
+        candidates = []
+        suffix = f"_{input_h}x{input_w}"
+        for key in model_payload:
+            if not key.startswith("b") or not key.endswith(suffix):
+                continue
+            batch_str = key.split("_", 1)[0][1:]
+            if not batch_str.isdigit():
+                continue
+            candidates.append((int(batch_str), key))
+        if not candidates:
+            raise KeyError(f"Missing profile for input {input_h}x{input_w} in {profile_path}")
+        batch, key = sorted(candidates, key=lambda item: item[0])[0]
+        scale = target_batch / float(batch)
+        return key, scale
+
+    profile_path = ROOT / args.profile
+    payload = json.loads(profile_path.read_text(encoding="utf-8"))
+    out_dir = ROOT / args.out_dir
+    out_dir.mkdir(parents=True, exist_ok=True)
+    models = [model.strip() for model in args.models.split(",") if model.strip()]
+
+    for model_name in models:
+        if model_name not in payload:
+            raise KeyError(f"Missing profile for model {model_name} in {profile_path}")
+        input_h, input_w = MODEL_INPUTS[model_name]
+        display_key = f"b{args.batch_size}_{input_h}x{input_w}"
+        profile_key, scale = _select_profile_key(payload[model_name], input_h, input_w, args.batch_size)
+        layers = _profile_entry_to_layers(payload[model_name][profile_key])
+        if scale != 1.0:
+            scaled_layers = []
+            for layer in layers:
+                scaled = dict(layer)
+                if "comm_total_mb" in scaled:
+                    scaled["comm_total_mb"] = float(scaled.get("comm_total_mb", 0.0)) * scale
+                if "comm_pure_mb" in scaled:
+                    scaled["comm_pure_mb"] = float(scaled.get("comm_pure_mb", 0.0)) * scale
+                scaled_layers.append(scaled)
+            layers = scaled_layers
+        input_size_mb = args.batch_size * 3 * input_h * input_w * 4 / (1024**2)
+        _plot_layer_output_distribution(model_name, layers, input_size_mb, display_key, out_dir)
+
+    print(out_dir)
+    return 0
+
 def _write_cdp_notes(out_dir: Path, stem: str, title: str, models: list[str], command: str, conclusion: list[str]) -> None:
     lines = [
         f"# {title}",
@@ -791,6 +910,15 @@ def main() -> None:
 
     _add_passthrough_subparser(subparsers, "semi-physical", "Run semi-physical verification utilities")
     _add_passthrough_subparser(subparsers, "physical-orchestrator", "Run physical experiment orchestration utilities")
+    exp00_parser = subparsers.add_parser("exp00", help="Draw layer output size distribution figures")
+    exp00_parser.add_argument("--profile", default="config/dnn_profiles_database_pc.json", help="Profile database JSON")
+    exp00_parser.add_argument("--models", default="yolov5,resnet101,vgg19,vit_huge", help="Comma-separated model ids")
+    exp00_parser.add_argument("--batch-size", type=int, default=1, help="Batch size used for plotting (auto-scale if profile is missing)")
+    exp00_parser.add_argument(
+        "--out-dir",
+        default="result/paper_figures_v2/00_layer_output_distribution",
+        help="Output directory for exp00 figures",
+    )
     _add_passthrough_subparser(subparsers, "exp01", "Rerun experiment 1 paper figure")
     exp02_parser = subparsers.add_parser("exp02", help="Run experiment 2 and draw the paper figure")
     exp02_parser.add_argument(
@@ -913,6 +1041,8 @@ def main() -> None:
         raise SystemExit(_run("tools.semi_physical_mode_verify", args.extra, use_module=True))
     if args.command == "physical-orchestrator":
         raise SystemExit(_run("tools.physical_experiment_orchestrator", args.extra, use_module=True))
+    if args.command == "exp00":
+        raise SystemExit(_run_exp00(args))
     if args.command == "exp01":
         raise SystemExit(_run("tools.paper_figures.run_stk_slot_pmp_highlight", args.extra, use_module=True))
     if args.command == "exp02":
@@ -931,3 +1061,8 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+
+
+
+
+

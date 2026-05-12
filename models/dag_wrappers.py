@@ -4,6 +4,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import timm
+from pathlib import Path
 from ultralytics import YOLO
 from torchvision.models import (
     resnet18, resnet50, resnet101, 
@@ -16,10 +17,11 @@ from torchvision.models import alexnet, AlexNet_Weights
 # === 1. YOLOv5 ===
 # === 1. YOLOv5 ===
 class YOLOv5_DAG_Wrapper(nn.Module):
-    def __init__(self, model_path='checkpoints/yolov5nu.pt', device='cuda'):
+    def __init__(self, model_path='models/checkpoints/yolov5nu.pt', device='cuda'):
         super().__init__()
         self.device = device
         self.max_det = 100
+        model_path = self._resolve_local_model_path(model_path)
         print(f"[Wrapper] YOLOv5 ({model_path})...")
         
         # 1. 使用临时变量加载，避免污染 self 命名空间，防止被框架的任何 hook 误触！
@@ -45,6 +47,24 @@ class YOLOv5_DAG_Wrapper(nn.Module):
 
     def __len__(self): 
         return self.len
+
+    @staticmethod
+    def _resolve_local_model_path(model_path):
+        """只使用项目内本地权重，避免 Ultralytics 在 Jetson 上自动联网下载。"""
+        raw = Path(model_path)
+        candidates = [
+            raw,
+            Path('models/checkpoints') / raw.name,
+            Path('checkpoints') / raw.name,
+        ]
+        for candidate in candidates:
+            if candidate.exists():
+                return str(candidate)
+        checked = ', '.join(str(candidate) for candidate in candidates)
+        raise FileNotFoundError(
+            f"YOLOv5 local checkpoint not found. Checked: {checked}. "
+            "Please copy yolov5nu.pt to models/checkpoints/ before profiling."
+        )
     
     def reset_cache(self): 
         self.feature_cache = {}             # 清空缓存张量
@@ -170,7 +190,7 @@ class ResNet_DAG_Wrapper(nn.Module):
             self.layers.append(block)
         for block in raw.layer4: 
             self.layers.append(block)
-        self.layers.append(nn.Sequential(raw.avgpool, nn.Flatten(), raw.fc))
+        self.layers.append(nn.Sequential(raw.avgpool, nn.Flatten(), raw.fc, nn.Softmax(dim=1)))
         
         self.len = len(self.layers)
         self.save_indices = []
@@ -206,6 +226,7 @@ class VGG19_DAG_Wrapper(nn.Module):
         self.layers.append(nn.Flatten())
         for layer in self.raw_model.classifier: 
             self.layers.append(layer)
+        self.layers.append(nn.Softmax(dim=1))
         self.len = len(self.layers)
         self.save_indices = []
 
@@ -237,6 +258,7 @@ class MobileNetV2_DAG_Wrapper(nn.Module):
         self.layers.append(nn.AdaptiveAvgPool2d(1))
         self.layers.append(nn.Flatten())
         self.layers.append(self.raw_model.classifier)
+        self.layers.append(nn.Softmax(dim=1))
         self.len = len(self.layers)
         self.save_indices = []
 
@@ -260,7 +282,18 @@ class ViT_Huge_DAG_Wrapper(nn.Module):
         super().__init__()
         self.device = device
         print(f"[Wrapper] 正在加载 ViT-Huge (NO Pretrain, Size={img_size})...")
-        self.raw_model = timm.create_model('vit_huge_patch14_224', pretrained=False, img_size=img_size).to(device)
+        self.raw_model = timm.create_model(
+            'vit_huge_patch14_224',
+            pretrained=False,
+            img_size=img_size,
+            num_classes=1000,
+        )
+        if getattr(self.raw_model, 'num_classes', 0) != 1000 or isinstance(getattr(self.raw_model, 'head', None), nn.Identity):
+            if hasattr(self.raw_model, 'reset_classifier'):
+                self.raw_model.reset_classifier(num_classes=1000)
+            if isinstance(getattr(self.raw_model, 'head', None), nn.Identity):
+                self.raw_model.head = nn.Linear(getattr(self.raw_model, 'num_features', 1280), 1000)
+        self.raw_model = self.raw_model.to(device)
         self.raw_model.eval()
         self.layers = nn.ModuleList()
         self.layers.append(self.raw_model.patch_embed)
@@ -277,6 +310,7 @@ class ViT_Huge_DAG_Wrapper(nn.Module):
                 return self.original_head(x[:, 0])  # 取 CLS token
         
         self.layers.append(CLSHead(self.raw_model.head))
+        self.layers.append(nn.Softmax(dim=1))
         self.len = len(self.layers)
         self.save_indices = []
 
@@ -308,6 +342,7 @@ class Swin_Base_DAG_Wrapper(nn.Module):
             self.layers.append(layer)
         self.layers.append(self.raw_model.norm)
         self.layers.append(self.raw_model.head)
+        self.layers.append(nn.Softmax(dim=1))
         self.len = len(self.layers)
         self.save_indices = []
 
@@ -444,6 +479,7 @@ class AlexNet_DAG_Wrapper(nn.Module):
         self.layers.append(nn.Flatten())
         for layer in self.raw_model.classifier: 
             self.layers.append(layer)
+        self.layers.append(nn.Softmax(dim=1))
         self.len = len(self.layers)
         self.save_indices = []
 
