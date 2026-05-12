@@ -1,0 +1,96 @@
+{
+  "schema_version": 1,
+  "source_run_id": "stk_dynamic_vit_huge_001",
+  "source_run_dir": "E:\\Workspace\\Python_pycharm_workspace\\Projects\\Collabrative_Inference\\Neurosurgeon-main\\result\\stk_dynamic\\stk_dynamic_vit_huge_001",
+  "slot_id": "slot_008_044000_044500",
+  "slot_start": "14 Apr 2026 04:40:00.000",
+  "slot_stop": "14 Apr 2026 04:45:00.000",
+  "task": {
+    "model_name": "vit_huge",
+    "batch_size": 64,
+    "input_h": 224,
+    "input_w": 224
+  },
+  "config_path": "E:\\Workspace\\Python_pycharm_workspace\\Projects\\Collabrative_Inference\\Neurosurgeon-main\\result\\stk_dynamic\\stk_dynamic_vit_huge_001\\configs\\slot_008_044000_044500_network_config.json",
+  "candidate_path": "E:\\Workspace\\Python_pycharm_workspace\\Projects\\Collabrative_Inference\\Neurosurgeon-main\\result\\stk_dynamic\\stk_dynamic_vit_huge_001\\candidates\\slot_008_044000_044500_candidate_paths.json",
+  "selected_candidate_id": "selected_path_rank_001",
+  "selected_stk_path": [
+    "RS",
+    "LEO056",
+    "LEO036",
+    "LEO016",
+    "LEO174",
+    "Shenzhen"
+  ],
+  "pipeline_path": [
+    "RS",
+    "SAT-01",
+    "SAT-02",
+    "SAT-03",
+    "SAT-04",
+    "GS"
+  ],
+  "candidate_count": 32,
+  "slot_row": {
+    "run_id": "stk_dynamic_vit_huge_001",
+    "slot_id": "slot_008_044000_044500",
+    "slot_start": "14 Apr 2026 04:40:00.000",
+    "slot_stop": "14 Apr 2026 04:45:00.000",
+    "status": "completed",
+    "selected_path": "RS->LEO056->LEO036->LEO016->LEO174->Shenzhen",
+    "pipeline_path": "RS->SAT-01->SAT-02->SAT-03->SAT-04->GS",
+    "hop_count": "5",
+    "satellite_count": "4",
+    "common_start": "14 Apr 2026 04:40:57.442",
+    "common_stop": "14 Apr 2026 04:45:00.000",
+    "common_duration_s": "242.558",
+    "total_range_km": "17368.414642",
+    "total_propagation_delay_ms": "57.934795",
+    "isl_avg_bw_mbps": "10736.2454",
+    "gsl_avg_bw_mbps": "100.6388",
+    "config_path": "result\\stk_dynamic\\stk_dynamic_vit_huge_001\\configs\\slot_008_044000_044500_network_config.json",
+    "note": ""
+  },
+  "link_summaries": [
+    {
+      "name": "RS_to_SAT-01",
+      "bandwidth_mbps": 8301.7646,
+      "propagation_delay_ms": 13.117859,
+      "stk_from": "RS",
+      "stk_to": "LEO056",
+      "stk_link_type": "RS-SAT"
+    },
+    {
+      "name": "SAT-01_to_SAT-02",
+      "bandwidth_mbps": 18406.4105,
+      "propagation_delay_ms": 12.555977,
+      "stk_from": "LEO056",
+      "stk_to": "LEO036",
+      "stk_link_type": "SAT-SAT"
+    },
+    {
+      "name": "SAT-02_to_SAT-03",
+      "bandwidth_mbps": 7643.3334,
+      "propagation_delay_ms": 14.066089,
+      "stk_from": "LEO036",
+      "stk_to": "LEO016",
+      "stk_link_type": "SAT-SAT"
+    },
+    {
+      "name": "SAT-03_to_SAT-04",
+      "bandwidth_mbps": 8593.473,
+      "propagation_delay_ms": 15.21726,
+      "stk_from": "LEO016",
+      "stk_to": "LEO174",
+      "stk_link_type": "SAT-SAT"
+    },
+    {
+      "name": "SAT-04_to_GS",
+      "bandwidth_mbps": 100.6388,
+      "propagation_delay_ms": 2.97761,
+      "stk_from": "LEO174",
+      "stk_to": "Shenzhen",
+      "stk_link_type": "SAT-GS"
+    }
+  ]
+}

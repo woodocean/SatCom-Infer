@@ -56,6 +56,10 @@ def _route_to_str(route) -> str:
     return "->".join(route or [])
 
 
+def _split_route_str(value: str) -> List[str]:
+    return [item for item in str(value or "").split("->") if item]
+
+
 def _finite(value) -> bool:
     try:
         return math.isfinite(float(value))
@@ -222,6 +226,12 @@ def _network_config_for_candidate(scene: SlotScene, candidate: CandidatePath) ->
     return config
 
 
+def _route_policy_with_min_hops(base_policy: str, min_hops: int) -> str:
+    if int(min_hops) <= 0:
+        return base_policy
+    return f"{base_policy}_ge{int(min_hops)}hops"
+
+
 _PROFILE_CACHE: Optional[Dict[str, Dict]] = None
 
 
@@ -287,10 +297,50 @@ def evaluate_pmp_slot(
     scene: SlotScene,
     run_id: str,
     algorithm: str = "LA-DP",
+    shared_route_eval: ModeEvaluation | None = None,
+    route_policy: str = "selected_path",
 ) -> ModeEvaluation:
     """Evaluate PMP on the slot's already selected route."""
 
-    scheduler = Scheduler(net_config_path=str(scene.config_path))
+    config_path = scene.config_path
+    route = scene.selected_stk_path
+    pipeline_path = scene.pipeline_path
+    candidate_id = scene.candidate_id
+    candidate_path = str(scene.candidate_path) if scene.candidate_path else ""
+    if shared_route_eval is not None:
+        if (
+            not shared_route_eval.feasible
+            or not str(shared_route_eval.config_path).strip()
+            or not str(shared_route_eval.route).strip()
+        ):
+            return ModeEvaluation(
+                source_run_id=scene.source_run_id,
+                slot_id=scene.slot_id,
+                mode_family="PMP",
+                mode_algo=algorithm,
+                candidate_id="",
+                route_policy=route_policy,
+                feasible=False,
+                reason="no_shared_gs_only_route_candidate",
+                latency_ms="",
+                satellite_energy_j="",
+                energy_compute_j="",
+                energy_comm_j="",
+                satellite_compute_time_ms="",
+                satellite_tx_time_ms="",
+                active_sat_count="",
+                hop_count="",
+                route="",
+                pipeline_path="",
+                plan_json="{}",
+                config_path="",
+                candidate_path=candidate_path,
+            )
+        config_path = Path(str(shared_route_eval.config_path))
+        route = _split_route_str(shared_route_eval.route)
+        pipeline_path = _split_route_str(shared_route_eval.pipeline_path)
+        candidate_id = f"shared_{shared_route_eval.candidate_id}" if shared_route_eval.candidate_id else "shared_gs_only_route"
+    scheduler = Scheduler(net_config_path=str(config_path))
     plans = scheduler.generate_task_and_schedule(
         task_id=f"{scene.slot_id}_pmp",
         model_name=scene.task.model_name,
@@ -320,8 +370,8 @@ def evaluate_pmp_slot(
         slot_id=scene.slot_id,
         mode_family="PMP",
         mode_algo=algorithm,
-        candidate_id=scene.candidate_id,
-        route_policy="selected_path",
+        candidate_id=candidate_id,
+        route_policy=route_policy,
         feasible=feasible,
         reason=reason,
         latency_ms=float(latency) if _finite(latency) else "",
@@ -331,29 +381,27 @@ def evaluate_pmp_slot(
         satellite_compute_time_ms=data.get("satellite_compute_time_ms", "") if feasible else "",
         satellite_tx_time_ms=data.get("satellite_tx_time_ms", "") if feasible else "",
         active_sat_count=_count_active_satellites(plan) if feasible else "",
-        hop_count=len(scene.pipeline_path) - 1 if scene.pipeline_path else "",
-        route=_route_to_str(scene.selected_stk_path),
-        pipeline_path=_route_to_str(scene.pipeline_path),
+        hop_count=len(pipeline_path) - 1 if pipeline_path else "",
+        route=_route_to_str(route),
+        pipeline_path=_route_to_str(pipeline_path),
         plan_json=json.dumps(plan, ensure_ascii=False, sort_keys=True),
-        config_path=str(scene.config_path),
-        candidate_path=str(scene.candidate_path) if scene.candidate_path else "",
+        config_path=str(config_path),
+        candidate_path=candidate_path,
     )
 
 
-def evaluate_gs_only_slot(
+def _best_gs_only_candidate(
     scene: SlotScene,
-    run_id: str,
-    config_output_dir: str | Path,
-    resolver: Optional[StkPathResolver] = None,
-) -> ModeEvaluation:
-    """Evaluate GS-Only on its own lowest predicted-latency route."""
-
-    resolver = resolver or StkPathResolver()
+    resolver: StkPathResolver,
+    min_hops: int = 0,
+):
     candidates = resolver.candidate_paths(scene)
     model_profile = _build_model_profile(scene)
     best = None
 
     for candidate in candidates:
+        if int(candidate.hop_count) < int(min_hops):
+            continue
         config = _network_config_for_candidate(scene, candidate)
         solver = PMPSolver(model_profile, _build_env_status(config))
         try:
@@ -380,17 +428,35 @@ def evaluate_gs_only_slot(
         )
         if best is None or key < best[0]:
             best = (key, candidate_row)
+    return best
+
+
+def evaluate_gs_only_slot(
+    scene: SlotScene,
+    run_id: str,
+    config_output_dir: str | Path,
+    resolver: Optional[StkPathResolver] = None,
+    min_hops: int = 0,
+) -> ModeEvaluation:
+    """Evaluate GS-Only on its own lowest predicted-latency route."""
+
+    resolver = resolver or StkPathResolver()
+    best = _best_gs_only_candidate(scene, resolver, min_hops=min_hops)
+    route_policy = _route_policy_with_min_hops("min_predicted_gs_only_latency", min_hops)
 
     if best is None:
+        reason = "no_gs_only_candidate"
+        if int(min_hops) > 0:
+            reason = f"no_gs_only_candidate_ge{int(min_hops)}hops"
         return ModeEvaluation(
             source_run_id=scene.source_run_id,
             slot_id=scene.slot_id,
             mode_family="GS-Only",
             mode_algo="Min-Latency-Route",
             candidate_id="",
-            route_policy="min_predicted_gs_only_latency",
+            route_policy=route_policy,
             feasible=False,
-            reason="no_gs_only_candidate",
+            reason=reason,
             latency_ms="",
             satellite_energy_j="",
             energy_compute_j="",
@@ -415,7 +481,7 @@ def evaluate_gs_only_slot(
         config["simulation_paths"]["mode_selection"] = {
             "slot_id": scene.slot_id,
             "mode_family": "GS-Only",
-            "route_policy": "min_predicted_gs_only_latency",
+            "route_policy": route_policy,
             "source_stk_run_id": scene.source_run_id,
         }
         config_path = Path(config_output_dir) / f"{scene.slot_id}_gs_only_network_config.json"
@@ -432,7 +498,7 @@ def evaluate_gs_only_slot(
         mode_family="GS-Only",
         mode_algo="Min-Latency-Route",
         candidate_id=f"gs_only_rank_{int(candidate.rank):03d}",
-        route_policy="min_predicted_gs_only_latency",
+        route_policy=route_policy,
         feasible=True,
         reason="",
         latency_ms=float(latency),
@@ -671,47 +737,115 @@ def evaluate_sat_only_slot(
     run_id: str,
     config_output_dir: str | Path,
     resolver: Optional[StkPathResolver] = None,
+    shared_route_eval: ModeEvaluation | None = None,
+    route_policy: str = "best_single_satellite_over_candidate_paths",
 ) -> ModeEvaluation:
     """Evaluate Sat-Only by choosing the fastest single compute satellite."""
 
-    resolver = resolver or StkPathResolver()
-    candidates = resolver.candidate_paths(scene)
     model_profile = _build_model_profile(scene)
     best = None
-
-    for candidate in candidates:
-        satellite_count = max(0, len(candidate.path) - 2)
-        if satellite_count <= 0:
-            continue
-
-        config = _network_config_for_candidate(scene, candidate)
+    if shared_route_eval is not None:
+        if (
+            not shared_route_eval.feasible
+            or not str(shared_route_eval.config_path).strip()
+            or not str(shared_route_eval.route).strip()
+        ):
+            return ModeEvaluation(
+                source_run_id=scene.source_run_id,
+                slot_id=scene.slot_id,
+                mode_family="Sat-Only",
+                mode_algo="Min-Latency-Single-Sat",
+                candidate_id="",
+                route_policy=route_policy,
+                feasible=False,
+                reason="no_shared_route_for_sat_only",
+                latency_ms="",
+                satellite_energy_j="",
+                energy_compute_j="",
+                energy_comm_j="",
+                satellite_compute_time_ms="",
+                satellite_tx_time_ms="",
+                active_sat_count="",
+                hop_count="",
+                route="",
+                pipeline_path="",
+                plan_json="{}",
+                config_path="",
+                candidate_path=str(scene.candidate_path) if scene.candidate_path else "",
+            )
+        config_path = Path(str(shared_route_eval.config_path))
+        config = json.loads(config_path.read_text(encoding="utf-8"))
         env_status = _build_env_status(config)
         solver = PMPSolver(model_profile, env_status)
         pipeline = config.get("simulation_paths", {}).get("pipeline", [])
-
+        satellite_count = max(0, len(pipeline) - 2)
         for compute_idx in range(satellite_count):
             latency_ms, plan, metrics = _sat_only_metrics(solver, compute_idx)
             if not plan or not _finite(latency_ms):
                 continue
             sat_node_id = pipeline[compute_idx + 1]
             candidate_row = {
-                "candidate": candidate,
+                "candidate": None,
                 "config": config,
+                "config_path": config_path,
                 "pipeline": pipeline,
+                "route": _split_route_str(shared_route_eval.route),
                 "compute_node": sat_node_id,
                 "latency_ms": float(latency_ms),
                 "plan": plan,
                 "metrics": metrics,
+                "hop_count": len(pipeline) - 1 if pipeline else 0,
+                "candidate_id": f"shared_{shared_route_eval.candidate_id}" if shared_route_eval.candidate_id else "shared_route",
             }
             key = (
                 candidate_row["latency_ms"],
                 metrics["satellite_energy_j"],
-                candidate.hop_count,
-                _path_key(candidate.path),
+                candidate_row["hop_count"],
+                _path_key(candidate_row["route"]),
                 sat_node_id,
             )
             if best is None or key < best[0]:
                 best = (key, candidate_row)
+    else:
+        resolver = resolver or StkPathResolver()
+        candidates = resolver.candidate_paths(scene)
+        for candidate in candidates:
+            satellite_count = max(0, len(candidate.path) - 2)
+            if satellite_count <= 0:
+                continue
+
+            config = _network_config_for_candidate(scene, candidate)
+            env_status = _build_env_status(config)
+            solver = PMPSolver(model_profile, env_status)
+            pipeline = config.get("simulation_paths", {}).get("pipeline", [])
+
+            for compute_idx in range(satellite_count):
+                latency_ms, plan, metrics = _sat_only_metrics(solver, compute_idx)
+                if not plan or not _finite(latency_ms):
+                    continue
+                sat_node_id = pipeline[compute_idx + 1]
+                candidate_row = {
+                    "candidate": candidate,
+                    "config": config,
+                    "config_path": None,
+                    "pipeline": pipeline,
+                    "route": candidate.path,
+                    "compute_node": sat_node_id,
+                    "latency_ms": float(latency_ms),
+                    "plan": plan,
+                    "metrics": metrics,
+                    "hop_count": candidate.hop_count,
+                    "candidate_id": f"sat_only_rank_{int(candidate.rank):03d}",
+                }
+                key = (
+                    candidate_row["latency_ms"],
+                    metrics["satellite_energy_j"],
+                    candidate.hop_count,
+                    _path_key(candidate.path),
+                    sat_node_id,
+                )
+                if best is None or key < best[0]:
+                    best = (key, candidate_row)
 
     if best is None:
         return ModeEvaluation(
@@ -720,7 +854,7 @@ def evaluate_sat_only_slot(
             mode_family="Sat-Only",
             mode_algo="Min-Latency-Single-Sat",
             candidate_id="",
-            route_policy="best_single_satellite_over_candidate_paths",
+            route_policy=route_policy,
             feasible=False,
             reason="no_feasible_sat_only_candidate",
             latency_ms="",
@@ -739,17 +873,18 @@ def evaluate_sat_only_slot(
         )
 
     selected = best[1]
-    candidate = selected["candidate"]
     config = selected["config"]
-    config["simulation_paths"]["mode_selection"] = {
-        "slot_id": scene.slot_id,
-        "mode_family": "Sat-Only",
-        "route_policy": "best_single_satellite_over_candidate_paths",
-        "compute_node": selected["compute_node"],
-        "source_stk_run_id": scene.source_run_id,
-    }
-    config_path = Path(config_output_dir) / f"{scene.slot_id}_sat_only_network_config.json"
-    _write_network_config(config_path, config)
+    config_path = selected.get("config_path")
+    if config_path is None:
+        config["simulation_paths"]["mode_selection"] = {
+            "slot_id": scene.slot_id,
+            "mode_family": "Sat-Only",
+            "route_policy": route_policy,
+            "compute_node": selected["compute_node"],
+            "source_stk_run_id": scene.source_run_id,
+        }
+        config_path = Path(config_output_dir) / f"{scene.slot_id}_sat_only_network_config.json"
+        _write_network_config(config_path, config)
 
     metrics = selected["metrics"]
     return ModeEvaluation(
@@ -757,8 +892,8 @@ def evaluate_sat_only_slot(
         slot_id=scene.slot_id,
         mode_family="Sat-Only",
         mode_algo="Min-Latency-Single-Sat",
-        candidate_id=f"sat_only_rank_{int(candidate.rank):03d}_{selected['compute_node']}",
-        route_policy="best_single_satellite_over_candidate_paths",
+        candidate_id=f"{selected['candidate_id']}_{selected['compute_node']}",
+        route_policy=route_policy,
         feasible=True,
         reason="",
         latency_ms=selected["latency_ms"],
@@ -768,8 +903,8 @@ def evaluate_sat_only_slot(
         satellite_compute_time_ms=metrics["satellite_compute_time_ms"],
         satellite_tx_time_ms=metrics["satellite_tx_time_ms"],
         active_sat_count=1,
-        hop_count=candidate.hop_count,
-        route=_route_to_str(candidate.path),
+        hop_count=selected["hop_count"],
+        route=_route_to_str(selected["route"]),
         pipeline_path=_route_to_str(selected["pipeline"]),
         plan_json=json.dumps(selected["plan"], ensure_ascii=False, sort_keys=True),
         config_path=str(config_path),

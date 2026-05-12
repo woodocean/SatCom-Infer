@@ -158,29 +158,43 @@ def _run_mode_stage(
     run_id: str,
     config_dir: Path,
     cdp_max_workers: int,
+    shared_pmp_min_hops: int,
 ) -> List[ModeEvaluation]:
     evaluations: List[ModeEvaluation] = []
     resolver = StkPathResolver()
     for scene in scenes:
         scene_evaluations: List[ModeEvaluation] = []
-        print(f"[MODE] PMP/LA-DP | {scene.slot_id} | route={'->'.join(scene.selected_stk_path)}")
-        scene_evaluations.append(evaluate_pmp_slot(scene, run_id=run_id, algorithm="LA-DP"))
-        print(f"[MODE] GS-Only | {scene.slot_id} | route_policy=min_predicted_gs_only_latency")
+        gs_route_policy = f"min_predicted_gs_only_latency_ge{int(shared_pmp_min_hops)}hops"
+        print(f"[MODE] GS-Only | {scene.slot_id} | route_policy={gs_route_policy}")
+        gs_only = evaluate_gs_only_slot(
+            scene,
+            run_id=run_id,
+            config_output_dir=config_dir,
+            resolver=resolver,
+            min_hops=shared_pmp_min_hops,
+        )
+        scene_evaluations.append(gs_only)
+        pmp_route_policy = f"shared_gs_only_route_ge{int(shared_pmp_min_hops)}hops"
+        print(f"[MODE] PMP/LA-DP | {scene.slot_id} | route_policy={pmp_route_policy}")
         scene_evaluations.append(
-            evaluate_gs_only_slot(
+            evaluate_pmp_slot(
                 scene,
                 run_id=run_id,
-                config_output_dir=config_dir,
-                resolver=resolver,
+                algorithm="LA-DP",
+                shared_route_eval=gs_only,
+                route_policy=pmp_route_policy,
             )
         )
-        print(f"[MODE] Sat-Only | {scene.slot_id} | route_policy=best_single_satellite_over_candidate_paths")
+        sat_only_route_policy = f"shared_gs_only_route_single_sat_ge{int(shared_pmp_min_hops)}hops"
+        print(f"[MODE] Sat-Only | {scene.slot_id} | route_policy={sat_only_route_policy}")
         scene_evaluations.append(
             evaluate_sat_only_slot(
                 scene,
                 run_id=run_id,
                 config_output_dir=config_dir,
                 resolver=resolver,
+                shared_route_eval=gs_only,
+                route_policy=sat_only_route_policy,
             )
         )
         print(f"[MODE] CDP/LAWA | {scene.slot_id} | route_policy=best_lawa_worker_set_no_aggregator")
@@ -290,6 +304,12 @@ def main() -> None:
         help="Override the source STK run input width.",
     )
     parser.add_argument("--cdp-max-workers", type=int, default=4, help="Maximum CDP worker satellites to try.")
+    parser.add_argument(
+        "--shared-pmp-min-hops",
+        type=int,
+        default=3,
+        help="Require GS-Only/PMP shared comparison routes to have at least this many hops.",
+    )
     args = parser.parse_args()
 
     stk_run_dir = Path(args.stk_run_dir)
@@ -336,6 +356,7 @@ def main() -> None:
         run_id=run_id,
         config_dir=config_dir,
         cdp_max_workers=args.cdp_max_workers,
+        shared_pmp_min_hops=args.shared_pmp_min_hops,
     )
     row_count = _write_mode_results(results_csv, run_id=run_id, evaluations=evaluations)
     _write_summary_by_mode(summary_csv, evaluations)
@@ -361,9 +382,9 @@ def main() -> None:
         },
         "pending_modes": [],
         "route_policy": {
-            "PMP": "selected_path",
-            "GS-Only": "min_predicted_gs_only_latency",
-            "Sat-Only": "best_single_satellite_over_candidate_paths",
+            "PMP": f"shared_gs_only_route_ge{int(args.shared_pmp_min_hops)}hops",
+            "GS-Only": f"min_predicted_gs_only_latency_ge{int(args.shared_pmp_min_hops)}hops",
+            "Sat-Only": f"shared_gs_only_route_single_sat_ge{int(args.shared_pmp_min_hops)}hops",
             "CDP": "best_lawa_worker_set_no_aggregator",
             "FWMS-Feature": "feature_weighted_pmp_cdp_boundary",
             "Oracle-Min-Latency": "min_predicted_latency_over_all_feasible_modes",
@@ -379,6 +400,7 @@ def main() -> None:
             "input_w": scenes[0].task.input_w,
         },
         "cdp_max_workers": args.cdp_max_workers,
+        "shared_pmp_min_hops": args.shared_pmp_min_hops,
         "slot_scene_count": len(scenes),
         "mode_result_rows": row_count,
         "feasible_rows": feasible_count,

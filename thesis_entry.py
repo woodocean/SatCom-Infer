@@ -31,6 +31,12 @@ MODEL_LABELS = {
     "vgg19": "VGG19",
     "vit_huge": "ViT-Huge",
 }
+MODEL_FIG_LABELS = {
+    "yolov5": "YOLOv5",
+    "resnet101": "ResNet101",
+    "vgg19": "VGG19",
+    "vit_huge": "ViT-Huge",
+}
 MODEL_INPUTS = {
     "yolov5": (640, 640),
     "resnet101": (224, 224),
@@ -38,6 +44,7 @@ MODEL_INPUTS = {
     "vit_huge": (224, 224),
 }
 CDP_ALG_ORDER = ["LAWA", "Greedy", "Uniform", "Random", "Sat-Only"]
+CDP_ALG_ORDER_EXP04 = ["LAWA", "Greedy", "Sat-Only"]
 CDP_ALG_LABEL = {
     "LAWA": "LAWA",
     "Greedy": "贪心",
@@ -66,18 +73,55 @@ CDP_ALG_LINESTYLE = {
     "Random": ":",
     "Sat-Only": (0, (1, 1)),
 }
-MODE_ORDER = ["PMP", "CDP", "GS-Only", "FWMS"]
+MODE_ORDER = ["PMP", "CDP", "GS-Only", "Sat-Only", "FWMS"]
 MODE_LABEL = {
     "PMP": "PMP",
     "CDP": "CDP",
     "GS-Only": "GS-Only",
+    "Sat-Only": "Sat-Only",
     "FWMS": "FWMS",
 }
 MODE_COLOR = {
     "PMP": "#244C85",
     "CDP": "#E39D2D",
     "GS-Only": "#4A4A4A",
+    "Sat-Only": "#8A63D2",
     "FWMS": "#2A8C88",
+}
+MODE_MARKER = {
+    "PMP": "s",
+    "CDP": "o",
+    "GS-Only": "D",
+    "Sat-Only": "X",
+    "FWMS": "^",
+}
+MODE_LINESTYLE = {
+    "PMP": "-",
+    "CDP": "--",
+    "GS-Only": "-",
+    "Sat-Only": ":",
+    "FWMS": "-.",
+}
+MODE_ZORDER = {
+    "PMP": 3,
+    "CDP": 4,
+    "GS-Only": 2,
+    "Sat-Only": 3,
+    "FWMS": 5,
+}
+MODE_SELECTION_STK_RUNS = {
+    "yolov5": "result/stk_dynamic/stk_dynamic_yolo_001",
+    "resnet101": "result/stk_dynamic/stk_dynamic_resnet101_001",
+    "vgg19": "result/stk_dynamic/stk_dynamic_vgg19_001",
+    "vit_huge": "result/stk_dynamic/stk_dynamic_vit_huge_001",
+}
+MODE_SELECTION_ALIASES = {
+    "PMP": "PMP",
+    "CDP": "CDP",
+    "GS-Only": "GS-Only",
+    "Sat-Only": "Sat-Only",
+    "FWMS-Feature": "FWMS",
+    "FWMS": "FWMS",
 }
 
 
@@ -98,6 +142,317 @@ def _add_passthrough_subparser(subparsers, name: str, help_text: str):
     parser = subparsers.add_parser(name, help=help_text)
     parser.add_argument("extra", nargs=argparse.REMAINDER, help="Arguments passed through to the target script")
     return parser
+
+
+def _parse_profile_key(key: str) -> tuple[int, int, int]:
+    batch_part, size_part = key.split("_", 1)
+    batch_size = int(batch_part.lstrip("b"))
+    input_h, input_w = [int(item) for item in size_part.split("x")]
+    return batch_size, input_h, input_w
+
+
+def _profile_key_sort_key(key: str) -> tuple[int, int, int, str]:
+    try:
+        batch_size, input_h, input_w = _parse_profile_key(key)
+        return input_h, input_w, batch_size, key
+    except Exception:
+        return 0, 0, 0, key
+
+
+def _select_profile_key(
+    entries: dict,
+    target_batch: int | None = None,
+    input_h: int | None = None,
+    input_w: int | None = None,
+) -> str:
+    parsed = []
+    for key in entries:
+        if not key.startswith("b") or "_" not in key:
+            continue
+        batch_size, key_h, key_w = _parse_profile_key(key)
+        if input_h is not None and input_w is not None and (key_h != input_h or key_w != input_w):
+            continue
+        parsed.append((batch_size, key))
+    if not parsed:
+        raise ValueError("No matching batch profile keys found.")
+    if target_batch is not None:
+        for batch_size, key in parsed:
+            if batch_size == target_batch:
+                return key
+    return min(parsed, key=lambda item: item[0])[1]
+
+
+def _profile_layers_from_entry(entry: dict | list) -> list[dict]:
+    if isinstance(entry, list):
+        return entry
+    return [entry[key] for key in sorted(entry.keys(), key=lambda item: int(item))]
+
+
+def _profile_consistency_report(primary: dict, reference: dict, models: list[str]) -> list[dict]:
+    rows: list[dict] = []
+    for model_name in models:
+        primary_model = primary.get(model_name)
+        reference_model = reference.get(model_name)
+        if primary_model is None or reference_model is None:
+            rows.append(
+                {
+                    "model_name": model_name,
+                    "profile_key": "",
+                    "check": "model_present",
+                    "primary_layer_count": np.nan,
+                    "reference_layer_count": np.nan,
+                    "max_comm_total_mb_abs_diff": np.nan,
+                    "ok": False,
+                    "detail": "missing model in primary or reference profile",
+                }
+            )
+            continue
+
+        primary_keys = set(primary_model.keys())
+        reference_keys = set(reference_model.keys())
+        key_sets_match = primary_keys == reference_keys
+        rows.append(
+            {
+                "model_name": model_name,
+                "profile_key": "",
+                "check": "profile_keys",
+                "primary_layer_count": len(primary_keys),
+                "reference_layer_count": len(reference_keys),
+                "max_comm_total_mb_abs_diff": np.nan,
+                "ok": key_sets_match,
+                "detail": "" if key_sets_match else f"primary-only={sorted(primary_keys-reference_keys)}, reference-only={sorted(reference_keys-primary_keys)}",
+            }
+        )
+
+        for profile_key in sorted(primary_keys & reference_keys, key=_profile_key_sort_key):
+            primary_layers = _profile_layers_from_entry(primary_model[profile_key])
+            reference_layers = _profile_layers_from_entry(reference_model[profile_key])
+            layer_count_match = len(primary_layers) == len(reference_layers)
+            diffs = []
+            for left, right in zip(primary_layers, reference_layers):
+                diffs.append(abs(float(left.get("comm_total_mb", 0.0)) - float(right.get("comm_total_mb", 0.0))))
+            max_diff = max(diffs) if diffs else 0.0
+            ok = layer_count_match and max_diff <= 1e-9
+            rows.append(
+                {
+                    "model_name": model_name,
+                    "profile_key": profile_key,
+                    "check": "comm_total_mb",
+                    "primary_layer_count": len(primary_layers),
+                    "reference_layer_count": len(reference_layers),
+                    "max_comm_total_mb_abs_diff": max_diff,
+                    "ok": ok,
+                    "detail": "" if ok else "layer count or feature-size mismatch",
+                }
+            )
+    return rows
+
+
+def _plot_model_layer_outputs(
+    model_name: str,
+    profile_key: str,
+    layers: list[dict],
+    plot_batch_size: int,
+    out_dir: Path,
+) -> list[dict]:
+    setup_style()
+    from matplotlib.lines import Line2D
+    from matplotlib.patches import Patch
+
+    source_batch, input_h, input_w = _parse_profile_key(profile_key)
+    batch_scale = float(plot_batch_size) / float(source_batch)
+    input_mb = plot_batch_size * 3 * input_h * input_w * 4 / (1024**2)
+    layer_values = [float(layer.get("comm_total_mb", 0.0)) * batch_scale for layer in layers]
+
+    labels = ["Input"] + [str(idx) for idx in range(len(layer_values))]
+    values = [input_mb] + layer_values
+    input_color = "#2F8F64"
+    low_color = "#3B6EA8"
+    high_color = "#C2413B"
+    edge_color = "#20242A"
+    colors = [input_color] + [high_color if value > input_mb else low_color for value in layer_values]
+
+    fig_width = max(12.0, min(18.0, 0.27 * len(labels) + 7.0))
+    fig, ax = plt.subplots(figsize=(fig_width, 6.6))
+    x = np.arange(len(labels))
+    bars = ax.bar(x, values, color=colors, edgecolor=edge_color, linewidth=0.42, width=0.76, zorder=2)
+    ax.axhline(input_mb, color=input_color, linestyle=(0, (6, 3)), linewidth=2.2, zorder=1.5)
+
+    y_max = max(max(values), input_mb) if values else input_mb
+    y_pad = max(y_max * 0.28, input_mb * 0.60, 0.16)
+    ax.set_ylim(0, y_max + y_pad)
+    ax.set_xlim(-0.75, len(labels) - 0.25)
+
+    input_bar = bars[0]
+    input_text_y = min(input_bar.get_height() + y_pad * 0.12, y_max + y_pad * 0.66)
+    ax.text(
+        input_bar.get_x() + input_bar.get_width() / 2,
+        input_text_y,
+        "input",
+        ha="center",
+        va="bottom",
+        fontsize=10.8,
+        color=input_color,
+        fontweight="bold",
+        linespacing=1.08,
+        bbox=dict(facecolor="white", edgecolor="none", alpha=0.86, pad=1.2),
+        clip_on=False,
+    )
+
+    result_bar = bars[-1]
+    result_value = layer_values[-1] if layer_values else 0.0
+    if result_value <= input_mb:
+        result_text_y = input_mb + y_pad * 0.10
+    else:
+        result_text_y = result_bar.get_height() + y_pad * 0.12
+    result_text_y = min(result_text_y, y_max + y_pad * 0.66)
+    ax.text(
+        result_bar.get_x() + result_bar.get_width() / 2,
+        result_text_y,
+        "result",
+        ha="center",
+        va="bottom",
+        fontsize=10.8,
+        color=edge_color,
+        fontweight="bold",
+        linespacing=1.08,
+        bbox=dict(facecolor="white", edgecolor="none", alpha=0.86, pad=1.2),
+        clip_on=False,
+    )
+
+    tick_step = max(1, int(np.ceil(len(labels) / 22)))
+    tick_positions = [0] + [idx for idx in range(1, len(labels), tick_step)]
+    if len(labels) - 1 not in tick_positions:
+        if tick_positions and len(labels) - 1 - tick_positions[-1] < max(2, tick_step):
+            tick_positions = tick_positions[:-1]
+        tick_positions.append(len(labels) - 1)
+    tick_labels = [labels[idx] for idx in tick_positions]
+    tick_labels[-1] = "Result"
+    ax.set_xticks(tick_positions)
+    ax.set_xticklabels(tick_labels, fontsize=9.8)
+    ax.set_ylabel(f"输出数据量 / MB（batch={plot_batch_size}）", fontsize=12.5, labelpad=8)
+    ax.set_xlabel("层编号", fontsize=12.5, labelpad=8)
+    ax.set_title(
+        f"{MODEL_FIG_LABELS.get(model_name, model_name)} 层级输出特征图数据量分布",
+        fontsize=18,
+        fontweight="bold",
+        pad=14,
+    )
+    ax.grid(True, axis="y", alpha=0.58, zorder=0)
+    ax.spines["top"].set_visible(False)
+    ax.spines["right"].set_visible(False)
+
+    legend_items = [
+        Patch(facecolor=input_color, edgecolor=edge_color, label="输入 input"),
+        Line2D([0], [0], color=input_color, lw=2.2, linestyle=(0, (6, 3)), label="输入大小虚线"),
+        Patch(facecolor=low_color, edgecolor=edge_color, label="层输出 ≤ input"),
+        Patch(facecolor=high_color, edgecolor=edge_color, label="层输出 > input"),
+    ]
+    ax.legend(
+        handles=legend_items,
+        loc="upper right",
+        ncol=2,
+        frameon=True,
+        framealpha=0.92,
+        facecolor="white",
+        edgecolor="none",
+        fontsize=9.8,
+        handlelength=1.8,
+        columnspacing=1.0,
+    )
+
+    out_dir.mkdir(parents=True, exist_ok=True)
+    stem = f"exp00_layer_output_distribution_{model_name}"
+    fig.tight_layout()
+    fig.savefig(out_dir / f"{stem}.png", bbox_inches="tight", dpi=300)
+    fig.savefig(out_dir / f"{stem}.pdf", bbox_inches="tight")
+    plt.close(fig)
+
+    rows = [
+        {
+            "model_name": model_name,
+            "model_label": MODEL_FIG_LABELS.get(model_name, model_name),
+            "source_profile_key": profile_key,
+            "source_batch_size": source_batch,
+            "plot_batch_size": plot_batch_size,
+            "input_h": input_h,
+            "input_w": input_w,
+            "layer": "input",
+            "comm_total_mb": input_mb,
+            "relative_to_input": 1.0,
+            "category": "input",
+        }
+    ]
+    for idx, value in enumerate(layer_values):
+        category = "result" if idx == len(layer_values) - 1 else ("larger_than_input" if value > input_mb else "smaller_or_equal_input")
+        rows.append(
+            {
+                "model_name": model_name,
+                "model_label": MODEL_FIG_LABELS.get(model_name, model_name),
+                "source_profile_key": profile_key,
+                "source_batch_size": source_batch,
+                "plot_batch_size": plot_batch_size,
+                "input_h": input_h,
+                "input_w": input_w,
+                "layer": idx,
+                "comm_total_mb": value,
+                "relative_to_input": value / input_mb if input_mb > 0 else np.nan,
+                "category": category,
+            }
+        )
+    return rows
+
+
+def _run_exp00(args) -> int:
+    out_dir = ROOT / args.out_dir
+    out_dir.mkdir(parents=True, exist_ok=True)
+    profile_path = ROOT / args.profile
+    payload = json.loads(profile_path.read_text(encoding="utf-8"))
+    models = [model.strip() for model in args.models.split(",") if model.strip()]
+
+    consistency_ok = None
+    if args.reference_profile:
+        reference_path = ROOT / args.reference_profile
+        reference_payload = json.loads(reference_path.read_text(encoding="utf-8"))
+        report_rows = _profile_consistency_report(payload, reference_payload, models)
+        report = pd.DataFrame(report_rows)
+        report.to_csv(out_dir / "exp00_profile_consistency_report.csv", index=False, encoding="utf-8-sig")
+        consistency_ok = bool(report["ok"].all()) if not report.empty else True
+        if not consistency_ok:
+            failed = report.loc[~report["ok"], ["model_name", "profile_key", "check", "detail"]]
+            raise ValueError(f"Profile consistency check failed:\n{failed.to_string(index=False)}")
+
+    all_rows: list[dict] = []
+    source_keys: dict[str, str] = {}
+    for model_name in models:
+        if model_name not in payload:
+            raise KeyError(f"Model not found in profile: {model_name}")
+        input_h, input_w = MODEL_INPUTS[model_name]
+        profile_key = _select_profile_key(payload[model_name], target_batch=args.batch_size, input_h=input_h, input_w=input_w)
+        source_keys[model_name] = profile_key
+        layers = _profile_layers_from_entry(payload[model_name][profile_key])
+        all_rows.extend(_plot_model_layer_outputs(model_name, profile_key, layers, args.batch_size, out_dir))
+
+    summary = pd.DataFrame(all_rows)
+    summary.to_csv(out_dir / "exp00_layer_output_distribution_summary.csv", index=False, encoding="utf-8-sig")
+    notes = [
+        "# 实验 00：模型层级输出特征图数据量分布",
+        "",
+        f"- profile：`{args.profile}`",
+        f"- reference profile：`{args.reference_profile}`" if args.reference_profile else "- reference profile：未启用",
+        f"- PC/Jetson 特征图数据量一致性检查：{'通过' if consistency_ok else '未启用'}",
+        f"- 展示批次：batch={args.batch_size}；若 profile 未包含该批次，则按最小可用 batch 线性折算。",
+        "- 绿色柱表示输入 input，绿色虚线表示输入大小。",
+        "- 红色柱表示该层输出大于 input，蓝色柱表示该层输出不大于 input。",
+        "- 最后一层输出标注为 result。",
+        "",
+        "## 使用的源 profile key",
+        "",
+    ]
+    notes.extend(f"- {MODEL_FIG_LABELS.get(model, model)}：`{profile_key}`" for model, profile_key in source_keys.items())
+    (out_dir / "exp00_layer_output_distribution_notes.md").write_text("\n".join(notes), encoding="utf-8")
+    print(out_dir)
+    return 0
 
 
 def _run_exp02(args) -> int:
@@ -388,7 +743,7 @@ def _plot_exp04_model(df: pd.DataFrame, model_name: str, out_dir: Path) -> None:
     model_df = df[df["model_name"] == model_name].copy()
     fig, ax = plt.subplots(figsize=(7.8, 4.8))
     y_values: list[float] = []
-    for algorithm in CDP_ALG_ORDER:
+    for algorithm in CDP_ALG_ORDER_EXP04:
         alg_df = model_df[model_df["algorithm"] == algorithm].sort_values("worker_count")
         if alg_df.empty:
             continue
@@ -416,126 +771,6 @@ def _plot_exp04_model(df: pd.DataFrame, model_name: str, out_dir: Path) -> None:
     fig.savefig(out_dir / f"{stem}.png", bbox_inches="tight")
     fig.savefig(out_dir / f"{stem}.pdf", bbox_inches="tight")
     plt.close(fig)
-
-
-
-def _plot_layer_output_distribution(
-    model_name: str,
-    layers: list[dict],
-    input_size_mb: float,
-    config_key: str,
-    out_dir: Path,
-) -> None:
-    setup_style()
-    values = [float(layer.get("comm_total_mb", 0.0)) for layer in layers]
-    if not values:
-        return
-    x = np.arange(len(values))
-    input_color = "#2ECC71"
-    high_color = "#E74C3C"
-    low_color = "#2E86DE"
-    colors = [high_color if value > input_size_mb else low_color for value in values]
-
-    fig, ax = plt.subplots(figsize=(13.8, 5.4))
-    ax.bar(x, values, color=colors, width=0.82, zorder=2)
-
-    y_max = max(max(values), float(input_size_mb))
-    padding = max(y_max * 0.18, 0.6)
-    ax.set_ylim(0, y_max + padding)
-
-    ax.axhline(input_size_mb, color=input_color, linestyle="--", linewidth=2.2, zorder=1)
-    input_offset = max(y_max * 0.04, 0.15)
-    ax.text(
-        -0.6,
-        input_size_mb + input_offset,
-        "Input",
-        color=input_color,
-        fontsize=13,
-        fontweight="bold",
-        va="bottom",
-        ha="left",
-        bbox=dict(facecolor="white", edgecolor="none", alpha=0.85, pad=1.2),
-        clip_on=False,
-    )
-
-    last_idx = len(values) - 1
-    last_val = values[-1]
-    result_offset = max(y_max * 0.06, 0.25)
-    ax.text(
-        last_idx,
-        last_val + result_offset,
-        "Result",
-        ha="center",
-        va="bottom",
-        fontsize=13,
-        fontweight="bold",
-        bbox=dict(facecolor="white", edgecolor="none", alpha=0.85, pad=1.2),
-    )
-
-    step = max(1, len(values) // 12)
-    ticks = list(range(0, len(values), step))
-    ax.set_xticks(ticks)
-    ax.set_xticklabels([str(i) for i in ticks], fontsize=9)
-    ax.set_xlabel("层编号", fontsize=12)
-    ax.set_ylabel("数据量 (MB)", fontsize=12)
-    title = f"{MODEL_LABELS.get(model_name, model_name)} 层级输出特征图数据量分布"
-    ax.set_title(title, fontsize=18, fontweight="bold", pad=12)
-    ax.grid(True, axis="y", alpha=0.35, zorder=0)
-    ax.spines["top"].set_visible(False)
-    ax.spines["right"].set_visible(False)
-    fig.tight_layout()
-    stem = f"exp00_layer_output_{model_name}"
-    fig.savefig(out_dir / f"{stem}.png", bbox_inches="tight", dpi=300)
-    plt.close(fig)
-
-def _run_exp00(args) -> int:
-    def _select_profile_key(model_payload: dict, input_h: int, input_w: int, target_batch: int) -> tuple[str, float]:
-        desired = f"b{target_batch}_{input_h}x{input_w}"
-        if desired in model_payload:
-            return desired, 1.0
-        candidates = []
-        suffix = f"_{input_h}x{input_w}"
-        for key in model_payload:
-            if not key.startswith("b") or not key.endswith(suffix):
-                continue
-            batch_str = key.split("_", 1)[0][1:]
-            if not batch_str.isdigit():
-                continue
-            candidates.append((int(batch_str), key))
-        if not candidates:
-            raise KeyError(f"Missing profile for input {input_h}x{input_w} in {profile_path}")
-        batch, key = sorted(candidates, key=lambda item: item[0])[0]
-        scale = target_batch / float(batch)
-        return key, scale
-
-    profile_path = ROOT / args.profile
-    payload = json.loads(profile_path.read_text(encoding="utf-8"))
-    out_dir = ROOT / args.out_dir
-    out_dir.mkdir(parents=True, exist_ok=True)
-    models = [model.strip() for model in args.models.split(",") if model.strip()]
-
-    for model_name in models:
-        if model_name not in payload:
-            raise KeyError(f"Missing profile for model {model_name} in {profile_path}")
-        input_h, input_w = MODEL_INPUTS[model_name]
-        display_key = f"b{args.batch_size}_{input_h}x{input_w}"
-        profile_key, scale = _select_profile_key(payload[model_name], input_h, input_w, args.batch_size)
-        layers = _profile_entry_to_layers(payload[model_name][profile_key])
-        if scale != 1.0:
-            scaled_layers = []
-            for layer in layers:
-                scaled = dict(layer)
-                if "comm_total_mb" in scaled:
-                    scaled["comm_total_mb"] = float(scaled.get("comm_total_mb", 0.0)) * scale
-                if "comm_pure_mb" in scaled:
-                    scaled["comm_pure_mb"] = float(scaled.get("comm_pure_mb", 0.0)) * scale
-                scaled_layers.append(scaled)
-            layers = scaled_layers
-        input_size_mb = args.batch_size * 3 * input_h * input_w * 4 / (1024**2)
-        _plot_layer_output_distribution(model_name, layers, input_size_mb, display_key, out_dir)
-
-    print(out_dir)
-    return 0
 
 def _write_cdp_notes(out_dir: Path, stem: str, title: str, models: list[str], command: str, conclusion: list[str]) -> None:
     lines = [
@@ -762,49 +997,438 @@ def _estimate_mode_rows(
     return rows
 
 
+def _truthy(value) -> bool:
+    return str(value).strip().lower() in {"true", "1", "yes", "y"}
+
+
+def _finite_float(value, default: float = float("nan")) -> float:
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return default
+    return number if np.isfinite(number) else default
+
+
+def _route_leo_count(route: str) -> int:
+    nodes = [item.strip().upper() for item in str(route or "").split("->") if item.strip()]
+    return sum(1 for node in nodes if node.startswith("LEO") or node.startswith("SAT-"))
+
+
+def _canonical_mode(mode_family: str) -> str | None:
+    return MODE_SELECTION_ALIASES.get(str(mode_family))
+
+
+def _mode_selection_source_dir(model_name: str) -> Path:
+    if model_name not in MODE_SELECTION_STK_RUNS:
+        raise KeyError(f"No STK dynamic source directory configured for model {model_name!r}.")
+    return ROOT / MODE_SELECTION_STK_RUNS[model_name]
+
+
+def _ensure_mode_selection_results(model_name: str, batch_size: int, args, out_dir: Path, tag: str) -> tuple[pd.DataFrame, Path]:
+    source_dir = _mode_selection_source_dir(model_name)
+    source_out_dir = out_dir / "_mode_selection_sources" / f"{tag}_{model_name}_b{batch_size}"
+    csv_path = source_out_dir / "data" / "slot_mode_results.csv"
+    metadata_path = source_out_dir / "metadata.json"
+
+    reuse = bool(getattr(args, "reuse_mode_results", False))
+    if not reuse or not csv_path.exists() or not metadata_path.exists():
+        command = [
+            sys.executable,
+            str(ROOT / "mode_selection_experiment.py"),
+            "--stk-run-dir",
+            str(source_dir),
+            "--run-id",
+            f"{tag}_{model_name}_b{batch_size}",
+            "--output-dir",
+            str(source_out_dir),
+            "--batch-size-override",
+            str(batch_size),
+            "--cdp-max-workers",
+            str(getattr(args, "worker_count", 4)),
+            "--shared-pmp-min-hops",
+            "3",
+        ]
+        completed = subprocess.run(command, cwd=ROOT)
+        if completed.returncode != 0:
+            raise RuntimeError(f"mode_selection_experiment.py failed for {model_name} batch={batch_size}")
+
+    metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+    task = metadata.get("effective_task", {})
+    df = pd.read_csv(csv_path)
+    df["model_name"] = str(task.get("model_name", model_name))
+    df["model_label"] = df["model_name"].map(lambda value: MODEL_LABELS.get(value, value))
+    df["batch_size"] = int(task.get("batch_size", batch_size))
+    df["input_h"] = int(task.get("input_h", MODEL_INPUTS.get(model_name, (0, 0))[0]))
+    df["input_w"] = int(task.get("input_w", MODEL_INPUTS.get(model_name, (0, 0))[1]))
+    df["mode"] = df["mode_family"].map(_canonical_mode)
+    df["feasible_bool"] = df["feasible"].map(_truthy)
+    df["latency_ms_num"] = pd.to_numeric(df["latency_ms"], errors="coerce")
+    df["active_sat_count_num"] = pd.to_numeric(df["active_sat_count"], errors="coerce").fillna(0)
+    df["pmp_route_leo_count"] = df["route"].map(_route_leo_count)
+    df["source_results_csv"] = str(csv_path)
+    return df, source_out_dir
+
+
+def _mode_row_by_plot_mode(slot_df: pd.DataFrame, mode: str) -> pd.Series | None:
+    sub = slot_df[slot_df["mode"] == mode]
+    if sub.empty:
+        return None
+    return sub.iloc[0]
+
+
+def _strict_representative_slots(df: pd.DataFrame, min_pmp_route_leo: int, min_cdp_active_sats: int) -> list[str]:
+    slots: list[str] = []
+    for slot_id, slot_df in df.groupby("slot_id", sort=True):
+        pmp = _mode_row_by_plot_mode(slot_df, "PMP")
+        cdp = _mode_row_by_plot_mode(slot_df, "CDP")
+        gs = _mode_row_by_plot_mode(slot_df, "GS-Only")
+        fwms = _mode_row_by_plot_mode(slot_df, "FWMS")
+        if pmp is None or cdp is None or gs is None or fwms is None:
+            continue
+        if not (_truthy(pmp["feasible_bool"]) and _truthy(cdp["feasible_bool"]) and _truthy(gs["feasible_bool"]) and _truthy(fwms["feasible_bool"])):
+            continue
+        if int(pmp["pmp_route_leo_count"]) < int(min_pmp_route_leo):
+            continue
+        if int(cdp["active_sat_count_num"]) < int(min_cdp_active_sats):
+            continue
+        slots.append(str(slot_id))
+    return slots
+
+
+def _fallback_representative_slots(df: pd.DataFrame, min_pmp_route_leo: int) -> list[str]:
+    slots: list[str] = []
+    for slot_id, slot_df in df.groupby("slot_id", sort=True):
+        pmp = _mode_row_by_plot_mode(slot_df, "PMP")
+        gs = _mode_row_by_plot_mode(slot_df, "GS-Only")
+        fwms = _mode_row_by_plot_mode(slot_df, "FWMS")
+        if pmp is None or gs is None or fwms is None:
+            continue
+        if not (_truthy(pmp["feasible_bool"]) and _truthy(gs["feasible_bool"]) and _truthy(fwms["feasible_bool"])):
+            continue
+        if int(pmp["pmp_route_leo_count"]) < int(min_pmp_route_leo):
+            continue
+        slots.append(str(slot_id))
+    return slots
+
+
+def _choose_median_pmp_slot(df: pd.DataFrame, slots: list[str]) -> str:
+    candidates = []
+    for slot_id in sorted(slots):
+        slot_df = df[df["slot_id"] == slot_id]
+        pmp = _mode_row_by_plot_mode(slot_df, "PMP")
+        latency = _finite_float(pmp["latency_ms_num"] if pmp is not None else np.nan)
+        if np.isfinite(latency):
+            candidates.append((slot_id, latency))
+    if not candidates:
+        raise ValueError("No representative slot has finite PMP latency.")
+    median_latency = float(np.median([item[1] for item in candidates]))
+    return min(candidates, key=lambda item: (abs(item[1] - median_latency), item[0]))[0]
+
+
+def _selected_mode_from_plan(row: pd.Series | None) -> str:
+    if row is None:
+        return ""
+    try:
+        payload = json.loads(str(row.get("plan_json", "{}")))
+    except json.JSONDecodeError:
+        return ""
+    return str(payload.get("selected_mode", ""))
+
+
+def _rows_for_representative_slot(
+    df: pd.DataFrame,
+    slot_id: str,
+    selection_status: str,
+    strict_slot_count: int,
+    fallback_slot_count: int,
+    source_dir: Path,
+) -> list[dict]:
+    slot_df = df[df["slot_id"] == slot_id]
+    gs_row = _mode_row_by_plot_mode(slot_df, "GS-Only")
+    pmp_row = _mode_row_by_plot_mode(slot_df, "PMP")
+    gs_latency = _finite_float(gs_row["latency_ms_num"] if gs_row is not None else np.nan)
+    model_name = str(slot_df["model_name"].iloc[0])
+    rows = []
+    for mode in MODE_ORDER:
+        row = _mode_row_by_plot_mode(slot_df, mode)
+        feasible = bool(row is not None and _truthy(row["feasible_bool"]))
+        latency = _finite_float(row["latency_ms_num"] if row is not None else np.nan)
+        reason = str(row.get("reason", "")) if row is not None and pd.notna(row.get("reason", "")) else ""
+        if mode == "FWMS":
+            selected_mode = _selected_mode_from_plan(row)
+            reason = f"selected_{selected_mode}" if selected_mode else reason
+        rows.append(
+            {
+                "model_name": model_name,
+                "model_label": MODEL_LABELS.get(model_name, model_name),
+                "batch_size": int(slot_df["batch_size"].iloc[0]),
+                "input_h": int(slot_df["input_h"].iloc[0]),
+                "input_w": int(slot_df["input_w"].iloc[0]),
+                "slot_id": slot_id,
+                "mode": mode,
+                "mode_family_source": str(row.get("mode_family", "")) if row is not None else "",
+                "mode_algo": str(row.get("mode_algo", "")) if row is not None else "",
+                "feasible": feasible,
+                "reason": reason,
+                "latency_ms": latency,
+                "norm_latency_vs_gs": latency / gs_latency if feasible and np.isfinite(latency) and gs_latency > 0 else float("nan"),
+                "active_sat_count": int(_finite_float(row.get("active_sat_count_num", 0), 0.0)) if row is not None else 0,
+                "hop_count": int(_finite_float(row.get("hop_count", 0), 0.0)) if row is not None else 0,
+                "route": str(row.get("route", "")) if row is not None else "",
+                "pmp_route_leo_count": int(_finite_float(pmp_row.get("pmp_route_leo_count", 0), 0.0)) if pmp_row is not None else 0,
+                "strict_slot_count": strict_slot_count,
+                "fallback_slot_count": fallback_slot_count,
+                "selection_status": selection_status,
+                "source_results_csv": str(row.get("source_results_csv", "")) if row is not None else "",
+                "source_mode_selection_dir": str(source_dir),
+            }
+        )
+    return rows
+
+
+def _build_representative_mode_rows(
+    df: pd.DataFrame,
+    source_dir: Path,
+    min_pmp_route_leo: int,
+    min_cdp_active_sats: int,
+    preferred_slot: str | None = None,
+) -> tuple[list[dict], dict]:
+    strict_slots = _strict_representative_slots(df, min_pmp_route_leo, min_cdp_active_sats)
+    fallback_slots = _fallback_representative_slots(df, min_pmp_route_leo)
+    if preferred_slot and preferred_slot in strict_slots:
+        slot_id = preferred_slot
+        status = "strict_common_slot"
+    elif strict_slots:
+        slot_id = _choose_median_pmp_slot(df, strict_slots)
+        status = "strict_median_pmp_latency"
+    elif fallback_slots:
+        slot_id = _choose_median_pmp_slot(df, fallback_slots)
+        status = "fallback_cdp_not_comparable"
+    else:
+        raise ValueError("No slot satisfies the minimum PMP route length filter.")
+    rows = _rows_for_representative_slot(df, slot_id, status, len(strict_slots), len(fallback_slots), source_dir)
+    audit = {
+        "model_name": rows[0]["model_name"],
+        "batch_size": rows[0]["batch_size"],
+        "representative_slot_id": slot_id,
+        "selection_status": status,
+        "strict_slot_count": len(strict_slots),
+        "fallback_slot_count": len(fallback_slots),
+        "min_pmp_route_leo": min_pmp_route_leo,
+        "min_cdp_active_sats": min_cdp_active_sats,
+        "source_mode_selection_dir": str(source_dir),
+    }
+    return rows, audit
+
+
+def _common_representative_slot(loaded: list[tuple[pd.DataFrame, Path]], min_pmp_route_leo: int, min_cdp_active_sats: int) -> str | None:
+    strict_sets = [
+        set(_strict_representative_slots(df, min_pmp_route_leo, min_cdp_active_sats))
+        for df, _ in loaded
+    ]
+    strict_sets = [item for item in strict_sets if item]
+    if not strict_sets:
+        return None
+    common = set.intersection(*strict_sets)
+    if not common:
+        return None
+    scores = []
+    for slot_id in sorted(common):
+        latencies = []
+        for df, _ in loaded:
+            pmp = _mode_row_by_plot_mode(df[df["slot_id"] == slot_id], "PMP")
+            latency = _finite_float(pmp["latency_ms_num"] if pmp is not None else np.nan)
+            if np.isfinite(latency):
+                latencies.append(latency)
+        if latencies:
+            scores.append((slot_id, float(np.mean(latencies))))
+    if not scores:
+        return None
+    median_score = float(np.median([item[1] for item in scores]))
+    return min(scores, key=lambda item: (abs(item[1] - median_score), item[0]))[0]
+
+
+def _baseline_average_slots(df: pd.DataFrame, min_pmp_route_leo: int) -> list[str]:
+    slots: list[str] = []
+    for slot_id, slot_df in df.groupby("slot_id", sort=True):
+        pmp = _mode_row_by_plot_mode(slot_df, "PMP")
+        gs = _mode_row_by_plot_mode(slot_df, "GS-Only")
+        fwms = _mode_row_by_plot_mode(slot_df, "FWMS")
+        if pmp is None or gs is None or fwms is None:
+            continue
+        if not (_truthy(pmp["feasible_bool"]) and _truthy(gs["feasible_bool"]) and _truthy(fwms["feasible_bool"])):
+            continue
+        if int(pmp["pmp_route_leo_count"]) < int(min_pmp_route_leo):
+            continue
+        slots.append(str(slot_id))
+    return slots
+
+
+def _common_average_slots(loaded: list[tuple[pd.DataFrame, Path]], min_pmp_route_leo: int) -> list[str]:
+    slot_sets = [set(_baseline_average_slots(df, min_pmp_route_leo)) for df, _ in loaded]
+    slot_sets = [item for item in slot_sets if item]
+    if not slot_sets:
+        return []
+    return sorted(set.intersection(*slot_sets))
+
+
+def _slot_mode_eligible(row: pd.Series | None, mode: str, min_cdp_active_sats: int) -> bool:
+    if row is None or not _truthy(row.get("feasible_bool", False)):
+        return False
+    if mode == "CDP":
+        return int(_finite_float(row.get("active_sat_count_num", 0), 0.0)) >= int(min_cdp_active_sats)
+    return True
+
+
+def _aggregate_mode_rows_over_slots(
+    df: pd.DataFrame,
+    slots: list[str],
+    source_dir: Path,
+    min_cdp_active_sats: int,
+    selection_status: str,
+) -> list[dict]:
+    if not slots:
+        raise ValueError("No common slots available for averaging.")
+    model_name = str(df["model_name"].iloc[0])
+    batch_size = int(df["batch_size"].iloc[0])
+    input_h = int(df["input_h"].iloc[0])
+    input_w = int(df["input_w"].iloc[0])
+    min_route_leo = min(
+        int(_finite_float(_mode_row_by_plot_mode(df[df["slot_id"] == slot_id], "PMP").get("pmp_route_leo_count", 0), 0.0))
+        for slot_id in slots
+        if _mode_row_by_plot_mode(df[df["slot_id"] == slot_id], "PMP") is not None
+    )
+    rows = []
+    for mode in MODE_ORDER:
+        latencies = []
+        norm_latencies = []
+        active_counts = []
+        hop_counts = []
+        selected_modes = []
+        source_csv = ""
+        first_row = None
+        for slot_id in slots:
+            slot_df = df[df["slot_id"] == slot_id]
+            row = _mode_row_by_plot_mode(slot_df, mode)
+            gs_row = _mode_row_by_plot_mode(slot_df, "GS-Only")
+            if row is None or gs_row is None:
+                continue
+            if first_row is None:
+                first_row = row
+            if not source_csv:
+                source_csv = str(row.get("source_results_csv", ""))
+            if mode == "FWMS":
+                selected_mode = _selected_mode_from_plan(row)
+                if selected_mode:
+                    selected_modes.append(selected_mode)
+            if not _slot_mode_eligible(row, mode, min_cdp_active_sats):
+                continue
+            latency = _finite_float(row.get("latency_ms_num", np.nan))
+            gs_latency = _finite_float(gs_row.get("latency_ms_num", np.nan))
+            if not np.isfinite(latency):
+                continue
+            latencies.append(latency)
+            if np.isfinite(gs_latency) and gs_latency > 0:
+                norm_latencies.append(latency / gs_latency)
+            active_counts.append(int(_finite_float(row.get("active_sat_count_num", 0), 0.0)))
+            hop_counts.append(int(_finite_float(row.get("hop_count", 0), 0.0)))
+        feasible_slot_count = len(latencies)
+        reason = ""
+        if mode == "FWMS" and selected_modes:
+            counts = pd.Series(selected_modes).value_counts()
+            reason = ",".join(f"selected_{idx}:{int(val)}" for idx, val in counts.items())
+        rows.append(
+            {
+                "model_name": model_name,
+                "model_label": MODEL_LABELS.get(model_name, model_name),
+                "batch_size": batch_size,
+                "input_h": input_h,
+                "input_w": input_w,
+                "slot_id": f"AVG[{len(slots)}_common_slots]",
+                "mode": mode,
+                "mode_family_source": str(first_row.get("mode_family", "")) if first_row is not None else "",
+                "mode_algo": "mean_over_common_slots",
+                "feasible": feasible_slot_count > 0,
+                "reason": reason,
+                "latency_ms": float(np.mean(latencies)) if latencies else float("nan"),
+                "norm_latency_vs_gs": float(np.mean(norm_latencies)) if norm_latencies else float("nan"),
+                "active_sat_count": float(np.mean(active_counts)) if active_counts else 0,
+                "hop_count": float(np.mean(hop_counts)) if hop_counts else 0,
+                "route": "avg_over_common_slots",
+                "pmp_route_leo_count": min_route_leo,
+                "strict_slot_count": len(slots),
+                "fallback_slot_count": len(slots),
+                "selection_status": selection_status,
+                "source_results_csv": source_csv,
+                "source_mode_selection_dir": str(source_dir),
+                "common_slot_count": len(slots),
+                "feasible_slot_count": feasible_slot_count,
+            }
+        )
+    return rows
+
 def _plot_exp05(df: pd.DataFrame, out_dir: Path) -> None:
     setup_style()
-    fig, axes = plt.subplots(1, 2, figsize=(13.8, 5.2))
-    theory_ax, semi_ax = axes
+    fig, theory_ax = plt.subplots(figsize=(11.6, 5.4))
     models = [model for model in ["yolov5", "resnet101", "vgg19", "vit_huge"] if model in set(df["model_name"])]
     x = np.arange(len(models))
-    width = 0.18
+    width = 0.145
+    finite_values = df.loc[df["feasible"].apply(_truthy), "norm_latency_vs_gs"].astype(float).tolist()
+    y_max = max(finite_values) if finite_values else 1.0
+    infeasible_y = max(0.05, y_max * 0.07)
     for idx, mode in enumerate(MODE_ORDER):
         values = []
         for model in models:
             row = df[(df["model_name"] == model) & (df["mode"] == mode)].iloc[0]
-            values.append(float(row["norm_latency_vs_gs"]) if bool(row["feasible"]) else np.nan)
+            values.append(float(row["norm_latency_vs_gs"]) if _truthy(row["feasible"]) else np.nan)
         pos = x + (idx - (len(MODE_ORDER) - 1) / 2) * width
-        bars = theory_ax.bar(pos, values, width=width, label=MODE_LABEL[mode], color=MODE_COLOR[mode])
+        bars = theory_ax.bar(
+            pos,
+            values,
+            width=width,
+            label=MODE_LABEL[mode],
+            color=MODE_COLOR[mode],
+            edgecolor="white",
+            linewidth=0.8,
+            hatch="//" if mode == "FWMS" else None,
+        )
         for bar, value in zip(bars, values):
             if np.isfinite(value):
                 theory_ax.text(bar.get_x() + bar.get_width() / 2, value, f"{value:.2f}", ha="center", va="bottom", fontsize=8)
     for model_idx, model in enumerate(models):
-        cdp_row = df[(df["model_name"] == model) & (df["mode"] == "CDP")].iloc[0]
-        if not bool(cdp_row["feasible"]):
-            theory_ax.text(model_idx, 0.08, "CDP\n不可行", ha="center", va="bottom", fontsize=8, color="#E95B45")
-    theory_ax.set_title("理论仿真", pad=10)
+        for mode_idx, mode in enumerate(MODE_ORDER):
+            row = df[(df["model_name"] == model) & (df["mode"] == mode)].iloc[0]
+            if _truthy(row["feasible"]):
+                continue
+            xpos = model_idx + (mode_idx - (len(MODE_ORDER) - 1) / 2) * width
+            theory_ax.scatter(
+                [xpos],
+                [infeasible_y],
+                marker="x",
+                s=46,
+                linewidths=1.2,
+                color=MODE_COLOR[mode],
+                zorder=6,
+            )
+            theory_ax.text(
+                xpos,
+                infeasible_y + y_max * 0.035,
+                "不可行",
+                ha="center",
+                va="bottom",
+                fontsize=7.5,
+                color=MODE_COLOR[mode],
+                rotation=90,
+            )
+    theory_ax.set_title("实验5：同时间片模式选择有效性", pad=12, fontsize=15, fontweight="bold")
     theory_ax.set_xticks(x)
     theory_ax.set_xticklabels([MODEL_LABELS[model] for model in models])
     theory_ax.set_ylabel("归一化时延（GS-Only = 1）")
     theory_ax.grid(True, axis="y", alpha=0.75)
     theory_ax.spines["top"].set_visible(False)
     theory_ax.spines["right"].set_visible(False)
-    theory_ax.legend(loc="upper center", bbox_to_anchor=(0.5, 1.20), ncol=4, frameon=False)
-
-    semi_ax.axis("off")
-    semi_ax.set_title("半实物仿真", pad=10)
-    semi_ax.text(
-        0.5,
-        0.52,
-        "待补充\n不使用占位数据",
-        ha="center",
-        va="center",
-        fontsize=15,
-        color="#4B5563",
-        transform=semi_ax.transAxes,
-    )
-    fig.suptitle("FWMS 模式选择有效性实验", fontsize=16, fontweight="bold", y=1.04)
+    theory_ax.set_ylim(0.0, y_max * 1.16)
+    theory_ax.legend(loc="upper center", bbox_to_anchor=(0.5, 1.16), ncol=5, frameon=False)
     fig.tight_layout()
     fig.savefig(out_dir / "exp05_fwms_mode_selection_effectiveness.png", bbox_inches="tight")
     fig.savefig(out_dir / "exp05_fwms_mode_selection_effectiveness.pdf", bbox_inches="tight")
@@ -813,56 +1437,122 @@ def _plot_exp05(df: pd.DataFrame, out_dir: Path) -> None:
 
 def _plot_exp06(df: pd.DataFrame, out_dir: Path, model_name: str) -> None:
     setup_style()
-    fig, ax = plt.subplots(figsize=(8.4, 5.0))
-    for mode in MODE_ORDER:
-        sub = df[df["mode"] == mode].sort_values("batch_size")
-        y = sub["latency_ms"].to_numpy(dtype=float)
-        x = sub["batch_size"].to_numpy(dtype=float)
-        ax.plot(
-            x,
-            y,
-            label=MODE_LABEL[mode],
-            color=MODE_COLOR[mode],
-            marker="o",
-            linewidth=2.1,
-            markersize=5.2,
-        )
-    selected = df[df["mode"] == "FWMS"].sort_values("batch_size")
-    for _, row in selected.iterrows():
-        ax.text(float(row["batch_size"]), float(row["latency_ms"]), str(row["reason"]).replace("selected_", ""), fontsize=8, ha="center", va="bottom")
-    ax.set_title("FWMS 输入数据量敏感性实验", pad=12, fontsize=15, fontweight="bold")
-    ax.set_xlabel("输入数据量（样本数）")
-    ax.set_ylabel("平均端到端时延 / ms")
-    ax.set_xticks(sorted(df["batch_size"].unique()))
-    ax.grid(True, axis="y", alpha=0.75)
-    ax.spines["top"].set_visible(False)
-    ax.spines["right"].set_visible(False)
-    ax.legend(loc="upper center", bbox_to_anchor=(0.5, 1.18), ncol=4, frameon=False)
-    fig.tight_layout()
     stem = f"exp06_fwms_data_sensitivity_{model_name}"
-    fig.savefig(out_dir / f"{stem}.png", bbox_inches="tight")
-    fig.savefig(out_dir / f"{stem}.pdf", bbox_inches="tight")
-    plt.close(fig)
+
+    def _plot_mode_lines(value_col: str, ylabel: str, title: str, suffix: str) -> None:
+        fig, ax = plt.subplots(figsize=(8.8, 5.2))
+        finite_values: list[float] = []
+        mode_to_idx = {mode: idx for idx, mode in enumerate(MODE_ORDER)}
+        for mode in MODE_ORDER:
+            sub = df[df["mode"] == mode].sort_values("batch_size")
+            x = sub["batch_size"].to_numpy(dtype=float)
+            y = sub[value_col].to_numpy(dtype=float)
+            finite_values.extend([float(value) for value in y if np.isfinite(float(value))])
+            ax.plot(
+                x,
+                y,
+                label=MODE_LABEL[mode],
+                color=MODE_COLOR[mode],
+                marker=MODE_MARKER[mode],
+                linestyle=MODE_LINESTYLE[mode],
+                linewidth=2.2,
+                markersize=6.0,
+                zorder=MODE_ZORDER[mode],
+                markeredgecolor="white",
+                markeredgewidth=0.6,
+            )
+            for xv, yv, feasible in zip(x, y, sub["feasible"].tolist()):
+                if np.isfinite(float(yv)):
+                    continue
+                if not _truthy(feasible):
+                    max_value = max(finite_values) if finite_values else 1.0
+                    anchor = max_value * 0.03
+                    y_step = max_value * 0.028
+                    x_offset = (mode_to_idx[mode] - (len(MODE_ORDER) - 1) / 2) * 1.25
+                    ax.text(
+                        xv + x_offset,
+                        anchor + mode_to_idx[mode] * y_step,
+                        "不可行",
+                        ha="center",
+                        va="bottom",
+                        fontsize=7.5,
+                        color=MODE_COLOR[mode],
+                        rotation=90,
+                    )
+        ax.set_title(title, pad=12, fontsize=15, fontweight="bold")
+        ax.set_xlabel("输入数据量（样本数）")
+        ax.set_ylabel(ylabel)
+        ax.set_xticks(sorted(df["batch_size"].unique()))
+        ax.grid(True, axis="y", alpha=0.75)
+        ax.spines["top"].set_visible(False)
+        ax.spines["right"].set_visible(False)
+        if finite_values:
+            ax.set_ylim(0.0, max(finite_values) * 1.16)
+        ax.legend(loc="upper center", bbox_to_anchor=(0.5, 1.15), ncol=5, frameon=False)
+        fig.tight_layout()
+        fig.savefig(out_dir / f"{stem}{suffix}.png", bbox_inches="tight")
+        fig.savefig(out_dir / f"{stem}{suffix}.pdf", bbox_inches="tight")
+        plt.close(fig)
+
+    _plot_mode_lines(
+        "latency_ms",
+        "平均端到端时延 / ms",
+        f"实验6：同时间片输入数据量敏感性（{MODEL_LABELS.get(model_name, model_name)}）",
+        "",
+    )
+    _plot_mode_lines(
+        "norm_latency_vs_gs",
+        "归一化时延（GS-Only = 1）",
+        f"实验6：同时间片输入数据量敏感性（归一化，{MODEL_LABELS.get(model_name, model_name)}）",
+        "_normalized",
+    )
 
 
 def _run_exp05(args) -> int:
     out_dir = ROOT / args.out_dir
     out_dir.mkdir(parents=True, exist_ok=True)
     models = [model.strip() for model in args.models.split(",") if model.strip()]
-    pmp_norms = _load_pmp_norms(ROOT / args.pmp_summary)
-    rows: list[dict] = []
+    loaded: list[tuple[pd.DataFrame, Path]] = []
     for model_name in models:
-        rows.extend(_estimate_mode_rows(model_name, args.data_size, args, pmp_norms))
+        loaded.append(_ensure_mode_selection_results(model_name, args.data_size, args, out_dir, "exp05_fair"))
+    common_slots = _common_average_slots(loaded, args.min_pmp_route_leo)
+    if not common_slots:
+        raise ValueError("No common slots satisfy the shared-route baseline filter for exp05.")
+    rows: list[dict] = []
+    audits: list[dict] = []
+    for df_source, source_dir in loaded:
+        model_rows = _aggregate_mode_rows_over_slots(
+            df_source,
+            common_slots,
+            source_dir,
+            args.min_cdp_active_sats,
+            "common_slot_mean",
+        )
+        cdp_row = next(row for row in model_rows if row["mode"] == "CDP")
+        audit = {
+            "model_name": model_rows[0]["model_name"],
+            "batch_size": model_rows[0]["batch_size"],
+            "selection_status": "common_slot_mean",
+            "common_slot_count": len(common_slots),
+            "common_slot_ids": "|".join(common_slots),
+            "min_pmp_route_leo": args.min_pmp_route_leo,
+            "min_cdp_active_sats": args.min_cdp_active_sats,
+            "cdp_feasible_slot_count": int(cdp_row["feasible_slot_count"]),
+            "source_mode_selection_dir": str(source_dir),
+        }
+        rows.extend(model_rows)
+        audits.append(audit)
     df = pd.DataFrame(rows)
     df.to_csv(out_dir / "exp05_fwms_mode_selection_effectiveness_summary.csv", index=False, encoding="utf-8-sig")
+    pd.DataFrame(audits).to_csv(out_dir / "exp05_fwms_mode_selection_effectiveness_slot_filter.csv", index=False, encoding="utf-8-sig")
     _plot_exp05(df, out_dir)
     notes = [
         "# 实验 5：FWMS 模式选择有效性实验",
         "",
-        "- 理论仿真部分已生成。",
-        "- 半实物仿真部分暂不填充数据，图中明确标注待补充。",
-        "- CDP 可行性由完整模型权重是否超过 worker 内存约束判断。",
-        "- FWMS 规则：CDP 可行且相对 PMP/GS-Only 有明确时延收益时选择 CDP，否则回退到 PMP 或 GS-Only。",
+        "- 本实验直接读取 mode_selection_experiment.py 生成的 slot_mode_results.csv。",
+        f"- 共同时间片集合：所有模型共享同一批 slot，并要求 PMP/GS-Only/FWMS 可行且 PMP 路由至少包含 {args.min_pmp_route_leo} 颗 LEO。",
+        f"- 统计口径：各模式在共同 slot 集合上取均值；CDP 仅统计 active_sat_count 至少为 {args.min_cdp_active_sats} 的可行 slot。",
+        "- 路由口径：PMP、GS-Only、Sat-Only 在每个 slot 上共用同一路由；Sat-Only 只在该共享路由上选择单星执行位置。",
     ]
     (out_dir / "exp05_fwms_mode_selection_effectiveness_notes.md").write_text("\n".join(notes), encoding="utf-8")
     print(out_dir)
@@ -872,19 +1562,49 @@ def _run_exp05(args) -> int:
 def _run_exp06(args) -> int:
     out_dir = ROOT / args.out_dir
     out_dir.mkdir(parents=True, exist_ok=True)
-    pmp_norms = _load_pmp_norms(ROOT / args.pmp_summary)
+    loaded: list[tuple[pd.DataFrame, Path]] = []
+    batches = [int(value) for value in args.data_sizes.split(",") if value.strip()]
+    for batch_size in batches:
+        loaded.append(_ensure_mode_selection_results(args.model, batch_size, args, out_dir, "exp06_fair"))
+    common_slots = _common_average_slots(loaded, args.min_pmp_route_leo)
+    if not common_slots:
+        raise ValueError("No common slots satisfy the shared-route baseline filter for exp06.")
     rows: list[dict] = []
-    for batch_size in [int(value) for value in args.data_sizes.split(",") if value.strip()]:
-        rows.extend(_estimate_mode_rows(args.model, batch_size, args, pmp_norms))
+    audits: list[dict] = []
+    for df_source, source_dir in loaded:
+        model_rows = _aggregate_mode_rows_over_slots(
+            df_source,
+            common_slots,
+            source_dir,
+            args.min_cdp_active_sats,
+            "common_slot_mean",
+        )
+        cdp_row = next(row for row in model_rows if row["mode"] == "CDP")
+        audit = {
+            "model_name": model_rows[0]["model_name"],
+            "batch_size": model_rows[0]["batch_size"],
+            "selection_status": "common_slot_mean",
+            "common_slot_count": len(common_slots),
+            "common_slot_ids": "|".join(common_slots),
+            "min_pmp_route_leo": args.min_pmp_route_leo,
+            "min_cdp_active_sats": args.min_cdp_active_sats,
+            "cdp_feasible_slot_count": int(cdp_row["feasible_slot_count"]),
+            "source_mode_selection_dir": str(source_dir),
+        }
+        rows.extend(model_rows)
+        audits.append(audit)
     df = pd.DataFrame(rows)
     df.to_csv(out_dir / f"exp06_fwms_data_sensitivity_{args.model}_summary.csv", index=False, encoding="utf-8-sig")
+    pd.DataFrame(audits).to_csv(out_dir / f"exp06_fwms_data_sensitivity_{args.model}_slot_filter.csv", index=False, encoding="utf-8-sig")
     _plot_exp06(df, out_dir, args.model)
     notes = [
         "# 实验 6：FWMS 输入数据量敏感性实验",
         "",
         f"- 模型：{MODEL_LABELS.get(args.model, args.model)}。",
-        "- 横坐标为输入数据量（样本数），纵坐标为平均端到端时延。",
-        "- 若 YOLOv5 修正最终检测输出后 PMP 一直较优，这是合理结果，说明该任务的最终输出极小，PMP 可显著减少回传通信量。",
+        "- 每个 batch 都读取 mode_selection_experiment.py 的 slot_mode_results.csv，不使用实验 1 的 PMP 比例外推。",
+        f"- 共同时间片集合：所有 batch 共享同一批 slot，并要求 PMP/GS-Only/FWMS 可行且 PMP 路由至少包含 {args.min_pmp_route_leo} 颗 LEO。",
+        f"- 统计口径：各模式在共同 slot 集合上取均值；CDP 仅统计 active_sat_count 至少为 {args.min_cdp_active_sats} 的可行 slot。",
+        "- 路由口径：PMP、GS-Only、Sat-Only 在每个 slot 上共用同一路由；Sat-Only 只在该共享路由上选择单星执行位置。",
     ]
     (out_dir / f"exp06_fwms_data_sensitivity_{args.model}_notes.md").write_text("\n".join(notes), encoding="utf-8")
     print(out_dir)
@@ -912,6 +1632,11 @@ def main() -> None:
     _add_passthrough_subparser(subparsers, "physical-orchestrator", "Run physical experiment orchestration utilities")
     exp00_parser = subparsers.add_parser("exp00", help="Draw layer output size distribution figures")
     exp00_parser.add_argument("--profile", default="config/dnn_profiles_database_pc.json", help="Profile database JSON")
+    exp00_parser.add_argument(
+        "--reference-profile",
+        default="config/dnn_profiles_database_jetson.json",
+        help="Optional second profile JSON used to validate layer output sizes before drawing",
+    )
     exp00_parser.add_argument("--models", default="yolov5,resnet101,vgg19,vit_huge", help="Comma-separated model ids")
     exp00_parser.add_argument("--batch-size", type=int, default=1, help="Batch size used for plotting (auto-scale if profile is missing)")
     exp00_parser.add_argument(
@@ -985,10 +1710,17 @@ def main() -> None:
     exp05_parser.add_argument("--gs-compute-factor", type=float, default=100.0, help="GS speedup over profiled Jetson latency")
     exp05_parser.add_argument("--min-cdp-gain", type=float, default=0.05, help="Minimum CDP gain required by FWMS")
     exp05_parser.add_argument("--profile", default="config/dnn_profiles_database_jetson.json", help="DNN profile database")
+    exp05_parser.add_argument("--min-pmp-route-leo", type=int, default=3, help="Minimum LEO satellites on the PMP route for representative-slot filtering")
+    exp05_parser.add_argument("--min-cdp-active-sats", type=int, default=3, help="Minimum active CDP worker satellites for representative-slot filtering")
+    exp05_parser.add_argument(
+        "--reuse-mode-results",
+        action="store_true",
+        help="Reuse existing mode_selection sources under the output directory instead of rerunning them",
+    )
     exp05_parser.add_argument(
         "--pmp-summary",
         default="result/paper_figures_v2/01_ladp_pmp_algorithm_effectiveness/exp01_ladp_pmp_algorithm_effectiveness_summary.csv",
-        help="Experiment 1 PMP summary used as PMP reference",
+        help="Deprecated: kept for backward compatibility; exp05 now reads mode_selection slot_mode_results.csv",
     )
     exp05_parser.add_argument(
         "--out-dir",
@@ -1004,10 +1736,17 @@ def main() -> None:
     exp06_parser.add_argument("--gs-compute-factor", type=float, default=100.0, help="GS speedup over profiled Jetson latency")
     exp06_parser.add_argument("--min-cdp-gain", type=float, default=0.05, help="Minimum CDP gain required by FWMS")
     exp06_parser.add_argument("--profile", default="config/dnn_profiles_database_jetson.json", help="DNN profile database")
+    exp06_parser.add_argument("--min-pmp-route-leo", type=int, default=3, help="Minimum LEO satellites on the PMP route for representative-slot filtering")
+    exp06_parser.add_argument("--min-cdp-active-sats", type=int, default=3, help="Minimum active CDP worker satellites for representative-slot filtering")
+    exp06_parser.add_argument(
+        "--reuse-mode-results",
+        action="store_true",
+        help="Reuse existing mode_selection sources under the output directory instead of rerunning them",
+    )
     exp06_parser.add_argument(
         "--pmp-summary",
         default="result/paper_figures_v2/01_ladp_pmp_algorithm_effectiveness/exp01_ladp_pmp_algorithm_effectiveness_summary.csv",
-        help="Experiment 1 PMP summary used as PMP reference",
+        help="Deprecated: kept for backward compatibility; exp06 now reads mode_selection slot_mode_results.csv",
     )
     exp06_parser.add_argument(
         "--out-dir",

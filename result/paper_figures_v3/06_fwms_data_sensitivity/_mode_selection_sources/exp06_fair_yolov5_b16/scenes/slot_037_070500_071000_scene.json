@@ -1,0 +1,76 @@
+{
+  "schema_version": 1,
+  "source_run_id": "stk_dynamic_yolo_001",
+  "source_run_dir": "E:\\Workspace\\Python_pycharm_workspace\\Projects\\Collabrative_Inference\\Neurosurgeon-main\\result\\stk_dynamic\\stk_dynamic_yolo_001",
+  "slot_id": "slot_037_070500_071000",
+  "slot_start": "14 Apr 2026 07:05:00.000",
+  "slot_stop": "14 Apr 2026 07:10:00.000",
+  "task": {
+    "model_name": "yolov5",
+    "batch_size": 16,
+    "input_h": 640,
+    "input_w": 640
+  },
+  "config_path": "E:\\Workspace\\Python_pycharm_workspace\\Projects\\Collabrative_Inference\\Neurosurgeon-main\\result\\stk_dynamic\\stk_dynamic_yolo_001\\configs\\slot_037_070500_071000_network_config.json",
+  "candidate_path": "E:\\Workspace\\Python_pycharm_workspace\\Projects\\Collabrative_Inference\\Neurosurgeon-main\\result\\stk_dynamic\\stk_dynamic_yolo_001\\candidates\\slot_037_070500_071000_candidate_paths.json",
+  "selected_candidate_id": "selected_path_rank_001",
+  "selected_stk_path": [
+    "RS",
+    "LEO095",
+    "LEO104",
+    "Shenzhen"
+  ],
+  "pipeline_path": [
+    "RS",
+    "SAT-01",
+    "SAT-02",
+    "GS"
+  ],
+  "candidate_count": 48,
+  "slot_row": {
+    "run_id": "stk_dynamic_yolo_001",
+    "slot_id": "slot_037_070500_071000",
+    "slot_start": "14 Apr 2026 07:05:00.000",
+    "slot_stop": "14 Apr 2026 07:10:00.000",
+    "status": "completed",
+    "selected_path": "RS->LEO095->LEO104->Shenzhen",
+    "pipeline_path": "RS->SAT-01->SAT-02->GS",
+    "hop_count": "3",
+    "satellite_count": "2",
+    "common_start": "14 Apr 2026 07:05:00.000",
+    "common_stop": "14 Apr 2026 07:06:26.570",
+    "common_duration_s": "86.570",
+    "total_range_km": "10926.244151",
+    "total_propagation_delay_ms": "36.446027",
+    "isl_avg_bw_mbps": "7946.5051",
+    "gsl_avg_bw_mbps": "139.1403",
+    "config_path": "result\\stk_dynamic\\stk_dynamic_yolo_001\\configs\\slot_037_070500_071000_network_config.json",
+    "note": ""
+  },
+  "link_summaries": [
+    {
+      "name": "RS_to_SAT-01",
+      "bandwidth_mbps": 11346.3802,
+      "propagation_delay_ms": 15.387208,
+      "stk_from": "RS",
+      "stk_to": "LEO095",
+      "stk_link_type": "RS-SAT"
+    },
+    {
+      "name": "SAT-01_to_SAT-02",
+      "bandwidth_mbps": 4546.63,
+      "propagation_delay_ms": 16.842145,
+      "stk_from": "LEO095",
+      "stk_to": "LEO104",
+      "stk_link_type": "SAT-SAT"
+    },
+    {
+      "name": "SAT-02_to_GS",
+      "bandwidth_mbps": 139.1403,
+      "propagation_delay_ms": 4.216674,
+      "stk_from": "LEO104",
+      "stk_to": "Shenzhen",
+      "stk_link_type": "SAT-GS"
+    }
+  ]
+}

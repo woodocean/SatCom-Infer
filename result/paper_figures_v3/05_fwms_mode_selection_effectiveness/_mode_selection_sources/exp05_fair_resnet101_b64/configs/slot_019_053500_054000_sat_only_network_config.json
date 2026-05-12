@@ -1,0 +1,134 @@
+{
+  "global_settings": {
+    "base_gpu_speed_gflops_per_ms": 100.0,
+    "hardware_baseline_mbps": 800.0
+  },
+  "nodes": {
+    "RS": {
+      "ip": "192.168.10.165",
+      "port": 8000,
+      "role": "remote_sensing",
+      "device": "PC",
+      "hardware": {
+        "compute_speed_gflops_per_ms": 0.0,
+        "memory_mb": 0,
+        "compute_speed_tflops": 0.0
+      },
+      "neighbors": [
+        "SAT-01"
+      ]
+    },
+    "SAT-01": {
+      "ip": "192.168.10.181",
+      "port": 8001,
+      "role": "leo_computing",
+      "device": "Jetson_1",
+      "hardware": {
+        "compute_speed_gflops_per_ms": 4.106,
+        "memory_mb": 4096,
+        "compute_speed_tflops": 4.106
+      },
+      "stk_id": "LEO187",
+      "neighbors": [
+        "RS",
+        "GS"
+      ]
+    },
+    "GS": {
+      "ip": "192.168.10.165",
+      "port": 8006,
+      "role": "ground_station",
+      "device": "PC",
+      "hardware": {
+        "compute_speed_gflops_per_ms": 300.0,
+        "memory_mb": 64000,
+        "compute_speed_tflops": 300.0
+      },
+      "neighbors": [
+        "SAT-01"
+      ]
+    }
+  },
+  "links": {
+    "RS_to_SAT-01": {
+      "bandwidth_mbps": 1398.7773,
+      "propagation_delay_ms": 17.762466,
+      "stk_from": "RS",
+      "stk_to": "LEO187",
+      "stk_link_type": "RS-SAT",
+      "avg_range_km": 5325.053486,
+      "sample_count": 6,
+      "window_count": 1,
+      "visibility_duration_s": 300.0,
+      "effective_bandwidth_class": "ISL",
+      "bandwidth_sampling_range_mbps": [
+        1000.0,
+        20000.0
+      ],
+      "bandwidth_model": "effective_random_uniform"
+    },
+    "SAT-01_to_GS": {
+      "bandwidth_mbps": 176.2399,
+      "propagation_delay_ms": 4.065606,
+      "stk_from": "LEO187",
+      "stk_to": "Shenzhen",
+      "stk_link_type": "SAT-GS",
+      "avg_range_km": 1218.838043,
+      "sample_count": 2,
+      "window_count": 1,
+      "visibility_duration_s": 72.421,
+      "effective_bandwidth_class": "GSL",
+      "bandwidth_sampling_range_mbps": [
+        50.0,
+        300.0
+      ],
+      "bandwidth_model": "effective_random_uniform"
+    }
+  },
+  "simulation_paths": {
+    "pipeline": [
+      "RS",
+      "SAT-01",
+      "GS"
+    ],
+    "parallel_candidates": [
+      "SAT-01"
+    ],
+    "parallel_aggregator": "SAT-01",
+    "stk_path": {
+      "rank": 1,
+      "original_path": [
+        "RS",
+        "LEO187",
+        "Shenzhen"
+      ],
+      "common_start_utcg": "14 Apr 2026 05:38:47.579",
+      "common_stop_utcg": "14 Apr 2026 05:40:00.000",
+      "common_duration_s": 72.421,
+      "total_range_km": 6543.891529,
+      "total_propagation_delay_ms": 21.828073
+    },
+    "stk_dynamic_slot": {
+      "slot_id": "slot_019_053500_054000",
+      "slot_start_utcg": "14 Apr 2026 05:35:00.000",
+      "slot_stop_utcg": "14 Apr 2026 05:40:00.000",
+      "bandwidth_seed": 19213,
+      "path_selection": "max_common_duration_s",
+      "isl_range_mbps": [
+        1000.0,
+        20000.0
+      ],
+      "gsl_range_mbps": [
+        50.0,
+        300.0
+      ]
+    },
+    "mode_selection": {
+      "slot_id": "slot_019_053500_054000",
+      "mode_family": "Sat-Only",
+      "route_policy": "best_single_satellite_over_candidate_paths",
+      "compute_node": "SAT-01",
+      "source_stk_run_id": "stk_dynamic_resnet101_001"
+    }
+  }
+}

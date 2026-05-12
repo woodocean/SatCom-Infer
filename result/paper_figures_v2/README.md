@@ -62,7 +62,7 @@ python thesis_entry.py physical-orchestrator ...
 实验 00 重画：
 
 ```powershell
-python thesis_entry.py exp00 --profile config/dnn_profiles_database_pc.json --batch-size 1 --out-dir result\paper_figures_v2\00_layer_output_distribution
+python thesis_entry.py exp00 --profile config/dnn_profiles_database_pc.json --reference-profile config/dnn_profiles_database_jetson.json --batch-size 1 --out-dir result\paper_figures_v2\00_layer_output_distribution
 ```
 
 实验 1 重跑：
@@ -97,24 +97,32 @@ python thesis_entry.py exp02 `
 
 ### 图文件
 
-- [exp00_layer_output_yolov5.png](./00_layer_output_distribution/exp00_layer_output_yolov5.png)
-- [exp00_layer_output_resnet101.png](./00_layer_output_distribution/exp00_layer_output_resnet101.png)
-- [exp00_layer_output_vgg19.png](./00_layer_output_distribution/exp00_layer_output_vgg19.png)
-- [exp00_layer_output_vit_huge.png](./00_layer_output_distribution/exp00_layer_output_vit_huge.png)
+- [exp00_layer_output_distribution_yolov5.png](./00_layer_output_distribution/exp00_layer_output_distribution_yolov5.png)
+- [exp00_layer_output_distribution_yolov5.pdf](./00_layer_output_distribution/exp00_layer_output_distribution_yolov5.pdf)
+- [exp00_layer_output_distribution_resnet101.png](./00_layer_output_distribution/exp00_layer_output_distribution_resnet101.png)
+- [exp00_layer_output_distribution_resnet101.pdf](./00_layer_output_distribution/exp00_layer_output_distribution_resnet101.pdf)
+- [exp00_layer_output_distribution_vgg19.png](./00_layer_output_distribution/exp00_layer_output_distribution_vgg19.png)
+- [exp00_layer_output_distribution_vgg19.pdf](./00_layer_output_distribution/exp00_layer_output_distribution_vgg19.pdf)
+- [exp00_layer_output_distribution_vit_huge.png](./00_layer_output_distribution/exp00_layer_output_distribution_vit_huge.png)
+- [exp00_layer_output_distribution_vit_huge.pdf](./00_layer_output_distribution/exp00_layer_output_distribution_vit_huge.pdf)
+- [exp00_layer_output_distribution_summary.csv](./00_layer_output_distribution/exp00_layer_output_distribution_summary.csv)
+- [exp00_profile_consistency_report.csv](./00_layer_output_distribution/exp00_profile_consistency_report.csv)
 
 ### 图口径
 
 - profile：`config/dnn_profiles_database_pc.json`
+- reference profile：`config/dnn_profiles_database_jetson.json`
 - 批次：`b1`（YOLOv5 为 `640x640`，其余为 `224x224`；若 profile 未包含 b1，将按最小可用 batch 线性缩放）
 - 绿色虚线：输入 `Input`
 - 红色柱：层输出大于输入大小
-- 蓝色柱：层输出小于输入大小
+- 蓝色柱：层输出小于或等于输入大小
 - 最后一层标注 `Result`
+- 重画前会检查 PC/Jetson 两个 profile 的四个模型层数和 `comm_total_mb` 是否一致
 
 ### 验收时如何重画
 
 ```powershell
-python thesis_entry.py exp00 --profile config/dnn_profiles_database_pc.json --batch-size 1 --out-dir result\paper_figures_v2\00_layer_output_distribution
+python thesis_entry.py exp00 --profile config/dnn_profiles_database_pc.json --reference-profile config/dnn_profiles_database_jetson.json --batch-size 1 --out-dir result\paper_figures_v2\00_layer_output_distribution
 ```
 ## 实验 1：LADP-PMP 模式的算法有效性实验
 
