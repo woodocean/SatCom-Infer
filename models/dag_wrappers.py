@@ -53,17 +53,18 @@ class YOLOv5_DAG_Wrapper(nn.Module):
         """只使用项目内本地权重，避免 Ultralytics 在 Jetson 上自动联网下载。"""
         raw = Path(model_path)
         candidates = [
-            raw,
             Path('models/checkpoints') / raw.name,
+            raw,
             Path('checkpoints') / raw.name,
         ]
         for candidate in candidates:
-            if candidate.exists():
+            if candidate.exists() and candidate.stat().st_size > 1024 * 1024:
                 return str(candidate)
         checked = ', '.join(str(candidate) for candidate in candidates)
         raise FileNotFoundError(
             f"YOLOv5 local checkpoint not found. Checked: {checked}. "
-            "Please copy yolov5nu.pt to models/checkpoints/ before profiling."
+            "Please copy a complete yolov5nu.pt to models/checkpoints/ before profiling. "
+            "Tiny checkpoint files are ignored because they are usually incomplete downloads."
         )
     
     def reset_cache(self): 
