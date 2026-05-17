@@ -1,0 +1,91 @@
+{
+  "source_run_id": "stk_dynamic_resnet101_001",
+  "slot_id": "slot_015_051500_052000",
+  "mode_family": "CDP",
+  "mode_algo": "LAWA-Discrete",
+  "route_policy": "best_lawa_worker_set_no_aggregator",
+  "no_aggregator": true,
+  "workers": [
+    {
+      "worker_stk_id": "LEO178",
+      "worker_node_id": "SAT-02",
+      "candidate_rank": 8,
+      "candidate_path": [
+        "RS",
+        "LEO077",
+        "LEO178",
+        "LEO086",
+        "LEO095",
+        "Shenzhen"
+      ],
+      "dispatch_route": [
+        "RS",
+        "LEO077",
+        "LEO178"
+      ],
+      "return_route": [
+        "LEO178",
+        "LEO086",
+        "LEO095",
+        "Shenzhen"
+      ],
+      "b_dist_mbps": 4025.2308442019325,
+      "b_return_mbps": 96.15641049683236,
+      "compute_full_model_ms": 87.00141288990326
+    },
+    {
+      "worker_stk_id": "LEO077",
+      "worker_node_id": "SAT-01",
+      "candidate_rank": 8,
+      "candidate_path": [
+        "RS",
+        "LEO077",
+        "LEO178",
+        "LEO086",
+        "LEO095",
+        "Shenzhen"
+      ],
+      "dispatch_route": [
+        "RS",
+        "LEO077"
+      ],
+      "return_route": [
+        "LEO077",
+        "LEO178",
+        "LEO086",
+        "LEO095",
+        "Shenzhen"
+      ],
+      "b_dist_mbps": 7728.180400000001,
+      "b_return_mbps": 95.06824866431323,
+      "compute_full_model_ms": 194.95859717486604
+    },
+    {
+      "worker_stk_id": "LEO086",
+      "worker_node_id": "SAT-03",
+      "candidate_rank": 8,
+      "candidate_path": [
+        "RS",
+        "LEO077",
+        "LEO178",
+        "LEO086",
+        "LEO095",
+        "Shenzhen"
+      ],
+      "dispatch_route": [
+        "RS",
+        "LEO077",
+        "LEO178",
+        "LEO086"
+      ],
+      "return_route": [
+        "LEO086",
+        "LEO095",
+        "Shenzhen"
+      ],
+      "b_dist_mbps": 2141.927663603361,
+      "b_return_mbps": 98.21941528154025,
+      "compute_full_model_ms": 174.1353056341092
+    }
+  ]
+}

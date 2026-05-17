@@ -10,17 +10,31 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import pandas as pd
 import numpy as np
+import shutil
 import subprocess
 import sys
+import tempfile
+from dataclasses import replace
 from datetime import datetime
 from pathlib import Path
 
 import matplotlib.pyplot as plt
+from matplotlib.ticker import AutoMinorLocator
 
 from algorithms.cdp_solver import CDPSolver
+from algorithms.pmp_solver import PMPSolver
 from core.experiment_archive import find_run_archive
+from core.mode_evaluators import (
+    StkPathResolver,
+    _build_env_status,
+    _build_model_profile,
+    _network_config_for_candidate,
+)
+from core.mode_scene_builder import TaskSpec, load_stk_slot_scenes
+from core.scheduler import Scheduler
 from tools.plot_runs_sensitivity_figures import setup_style
 
 
@@ -123,6 +137,56 @@ MODE_SELECTION_ALIASES = {
     "FWMS-Feature": "FWMS",
     "FWMS": "FWMS",
 }
+EXP02_MODEL = "yolov5"
+EXP02_MODELS = ["yolov5", "resnet101", "vgg19", "vit_huge"]
+EXP02_BLOCK_BATCH = 64
+EXP02_BLOCK_COUNT = 50
+EXP02_RAW_IMAGE_GIB = (4096 * 4096 * 3) / float(1024 ** 3)
+EXP02_EQ_IMAGES_PER_BLOCK = 1.0
+
+
+def _is_show_only(args) -> bool:
+    return bool(getattr(args, "show_only", False))
+
+
+def _prepare_runtime_out_dir(requested_out_dir: str, show_only: bool, prefix: str) -> tuple[Path, Path | None]:
+    if show_only:
+        base = ROOT / ".codex_tmp"
+        base.mkdir(parents=True, exist_ok=True)
+        temp_dir = Path(tempfile.mkdtemp(prefix=f"{prefix}_", dir=base))
+        return temp_dir, temp_dir
+    out_dir = ROOT / requested_out_dir
+    out_dir.mkdir(parents=True, exist_ok=True)
+    return out_dir, None
+
+
+def _cleanup_runtime_dir(cleanup_dir: Path | None) -> None:
+    if cleanup_dir is not None:
+        shutil.rmtree(cleanup_dir, ignore_errors=True)
+
+
+def _finalize_figure(
+    fig: plt.Figure,
+    png_path: Path | None,
+    pdf_path: Path | None,
+    *,
+    show_only: bool = False,
+    dpi: int | None = None,
+) -> None:
+    if show_only:
+        plt.show()
+        plt.close(fig)
+        return
+    if png_path is not None:
+        png_path.parent.mkdir(parents=True, exist_ok=True)
+        save_kwargs = {"bbox_inches": "tight"}
+        if dpi is not None:
+            save_kwargs["dpi"] = dpi
+        fig.savefig(png_path, **save_kwargs)
+    if pdf_path is not None:
+        pdf_path.parent.mkdir(parents=True, exist_ok=True)
+        fig.savefig(pdf_path, bbox_inches="tight")
+    plt.close(fig)
 
 
 def _run(module_or_script: str, extra: list[str], use_module: bool = False) -> int:
@@ -254,6 +318,7 @@ def _plot_model_layer_outputs(
     layers: list[dict],
     plot_batch_size: int,
     out_dir: Path,
+    show_only: bool = False,
 ) -> list[dict]:
     setup_style()
     from matplotlib.lines import Line2D
@@ -361,12 +426,15 @@ def _plot_model_layer_outputs(
         columnspacing=1.0,
     )
 
-    out_dir.mkdir(parents=True, exist_ok=True)
     stem = f"exp00_layer_output_distribution_{model_name}"
     fig.tight_layout()
-    fig.savefig(out_dir / f"{stem}.png", bbox_inches="tight", dpi=300)
-    fig.savefig(out_dir / f"{stem}.pdf", bbox_inches="tight")
-    plt.close(fig)
+    _finalize_figure(
+        fig,
+        out_dir / f"{stem}.png",
+        out_dir / f"{stem}.pdf",
+        show_only=show_only,
+        dpi=300,
+    )
 
     rows = [
         {
@@ -404,169 +472,521 @@ def _plot_model_layer_outputs(
 
 
 def _run_exp00(args) -> int:
-    out_dir = ROOT / args.out_dir
-    out_dir.mkdir(parents=True, exist_ok=True)
+    out_dir, cleanup_dir = _prepare_runtime_out_dir(args.out_dir, _is_show_only(args), "exp00_show")
     profile_path = ROOT / args.profile
     payload = json.loads(profile_path.read_text(encoding="utf-8"))
     models = [model.strip() for model in args.models.split(",") if model.strip()]
+    try:
+        consistency_ok = None
+        if args.reference_profile:
+            reference_path = ROOT / args.reference_profile
+            reference_payload = json.loads(reference_path.read_text(encoding="utf-8"))
+            report_rows = _profile_consistency_report(payload, reference_payload, models)
+            report = pd.DataFrame(report_rows)
+            if not _is_show_only(args):
+                report.to_csv(out_dir / "exp00_profile_consistency_report.csv", index=False, encoding="utf-8-sig")
+            consistency_ok = bool(report["ok"].all()) if not report.empty else True
+            if not consistency_ok:
+                failed = report.loc[~report["ok"], ["model_name", "profile_key", "check", "detail"]]
+                raise ValueError(f"Profile consistency check failed:\n{failed.to_string(index=False)}")
 
-    consistency_ok = None
-    if args.reference_profile:
-        reference_path = ROOT / args.reference_profile
-        reference_payload = json.loads(reference_path.read_text(encoding="utf-8"))
-        report_rows = _profile_consistency_report(payload, reference_payload, models)
-        report = pd.DataFrame(report_rows)
-        report.to_csv(out_dir / "exp00_profile_consistency_report.csv", index=False, encoding="utf-8-sig")
-        consistency_ok = bool(report["ok"].all()) if not report.empty else True
-        if not consistency_ok:
-            failed = report.loc[~report["ok"], ["model_name", "profile_key", "check", "detail"]]
-            raise ValueError(f"Profile consistency check failed:\n{failed.to_string(index=False)}")
+        all_rows: list[dict] = []
+        source_keys: dict[str, str] = {}
+        for model_name in models:
+            if model_name not in payload:
+                raise KeyError(f"Model not found in profile: {model_name}")
+            input_h, input_w = MODEL_INPUTS[model_name]
+            profile_key = _select_profile_key(payload[model_name], target_batch=args.batch_size, input_h=input_h, input_w=input_w)
+            source_keys[model_name] = profile_key
+            layers = _profile_layers_from_entry(payload[model_name][profile_key])
+            all_rows.extend(_plot_model_layer_outputs(model_name, profile_key, layers, args.batch_size, out_dir, show_only=_is_show_only(args)))
 
-    all_rows: list[dict] = []
-    source_keys: dict[str, str] = {}
-    for model_name in models:
-        if model_name not in payload:
-            raise KeyError(f"Model not found in profile: {model_name}")
-        input_h, input_w = MODEL_INPUTS[model_name]
-        profile_key = _select_profile_key(payload[model_name], target_batch=args.batch_size, input_h=input_h, input_w=input_w)
-        source_keys[model_name] = profile_key
-        layers = _profile_layers_from_entry(payload[model_name][profile_key])
-        all_rows.extend(_plot_model_layer_outputs(model_name, profile_key, layers, args.batch_size, out_dir))
-
-    summary = pd.DataFrame(all_rows)
-    summary.to_csv(out_dir / "exp00_layer_output_distribution_summary.csv", index=False, encoding="utf-8-sig")
-    notes = [
-        "# 实验 00：模型层级输出特征图数据量分布",
-        "",
-        f"- profile：`{args.profile}`",
-        f"- reference profile：`{args.reference_profile}`" if args.reference_profile else "- reference profile：未启用",
-        f"- PC/Jetson 特征图数据量一致性检查：{'通过' if consistency_ok else '未启用'}",
-        f"- 展示批次：batch={args.batch_size}；若 profile 未包含该批次，则按最小可用 batch 线性折算。",
-        "- 绿色柱表示输入 input，绿色虚线表示输入大小。",
-        "- 红色柱表示该层输出大于 input，蓝色柱表示该层输出不大于 input。",
-        "- 最后一层输出标注为 result。",
-        "",
-        "## 使用的源 profile key",
-        "",
-    ]
-    notes.extend(f"- {MODEL_FIG_LABELS.get(model, model)}：`{profile_key}`" for model, profile_key in source_keys.items())
-    (out_dir / "exp00_layer_output_distribution_notes.md").write_text("\n".join(notes), encoding="utf-8")
-    print(out_dir)
-    return 0
+        if not _is_show_only(args):
+            summary = pd.DataFrame(all_rows)
+            summary.to_csv(out_dir / "exp00_layer_output_distribution_summary.csv", index=False, encoding="utf-8-sig")
+            notes = [
+                "# 实验 00：模型层级输出特征图数据量分布",
+                "",
+                f"- profile：`{args.profile}`",
+                f"- reference profile：`{args.reference_profile}`" if args.reference_profile else "- reference profile：未启用",
+                f"- PC/Jetson 特征图数据量一致性检查：{'通过' if consistency_ok else '未启用'}",
+                f"- 展示批次：batch={args.batch_size}；若 profile 未包含该批次，则按最小可用 batch 线性折算。",
+                "- 绿色柱表示输入 input，绿色虚线表示输入大小。",
+                "- 红色柱表示该层输出大于 input，蓝色柱表示该层输出不大于 input。",
+                "- 最后一层输出标注为 result。",
+                "",
+                "## 使用的源 profile key",
+                "",
+            ]
+            notes.extend(f"- {MODEL_FIG_LABELS.get(model, model)}：`{profile_key}`" for model, profile_key in source_keys.items())
+            (out_dir / "exp00_layer_output_distribution_notes.md").write_text("\n".join(notes), encoding="utf-8")
+            print(out_dir)
+        return 0
+    finally:
+        if _is_show_only(args):
+            _cleanup_runtime_dir(cleanup_dir)
 
 
 def _run_exp02(args) -> int:
+    out_dir, cleanup_dir = _prepare_runtime_out_dir(args.out_dir, _is_show_only(args), "exp02_show")
+    try:
+        controlled_long_df, controlled_summary_df = _run_exp02_controlled(args, out_dir)
+        engineering_long_df, engineering_summary_df = _run_exp02_engineering(args, out_dir)
+
+        if not _is_show_only(args):
+            controlled_long_df.to_csv(
+                out_dir / "exp02a_control_node_count_total_latency_long.csv",
+                index=False,
+                encoding="utf-8-sig",
+            )
+            controlled_summary_df.to_csv(
+                out_dir / "exp02a_control_node_count_total_latency_summary.csv",
+                index=False,
+                encoding="utf-8-sig",
+            )
+            engineering_long_df.to_csv(
+                out_dir / "exp02b_engineering_node_count_capacity_long.csv",
+                index=False,
+                encoding="utf-8-sig",
+            )
+            engineering_summary_df.to_csv(
+                out_dir / "exp02b_engineering_node_count_capacity_summary.csv",
+                index=False,
+                encoding="utf-8-sig",
+            )
+
+        _plot_exp02a_control_total_latency(controlled_summary_df, out_dir, show_only=_is_show_only(args))
+        _plot_exp02b_engineering_capacity_gb(engineering_summary_df, out_dir, show_only=_is_show_only(args))
+        return 0
+    finally:
+        if _is_show_only(args):
+            _cleanup_runtime_dir(cleanup_dir)
+
+
+def _exp02_models(args) -> list[str]:
+    raw_value = str(getattr(args, "engineering_model", "") or "")
+    models = [item.strip() for item in raw_value.split(",") if item.strip()]
+    if not models:
+        models = list(EXP02_MODELS)
+    valid = [model for model in models if model in MODEL_INPUTS]
+    if not valid:
+        raise ValueError(f"No valid exp02 models found in '{raw_value}'")
+    return valid
+
+
+def _run_exp02_controlled(args, out_dir: Path) -> tuple[pd.DataFrame, pd.DataFrame]:
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    run_specs = [
-        ("yolov5", 32, 640, 640),
-        ("resnet101", 32, 224, 224),
-        ("vgg19", 32, 224, 224),
-        ("vit_huge", 32, 224, 224),
-    ]
-    scenario_specs = [
-        ("同构场景", [None]),
-        ("异构场景", ["1,2,3,4,5"]),
-        ("典型异构均值", ["1,2,3,4,5", "5,4,3,2,1", "2,4,1,5,3"]),
-    ]
-    out_dir = ROOT / args.out_dir
-    out_dir.mkdir(parents=True, exist_ok=True)
+    batch_size = int(getattr(args, "task_block_batch", EXP02_BLOCK_BATCH))
+    templates = ["1,2,3,4,5", "5,4,3,2,1", "2,4,1,5,3"]
     long_frames: list[pd.DataFrame] = []
 
-    for scenario_label, templates in scenario_specs:
+    for model_name in _exp02_models(args):
+        input_h, input_w = MODEL_INPUTS[model_name]
         for template_idx, template in enumerate(templates):
-            template_tag = "homo" if template is None else template.replace(",", "-")
-            for model_name, batch_size, input_h, input_w in run_specs:
-                run_id = f"exp02_{model_name}_{template_tag}_{template_idx}_{timestamp}"
-                command = [
-                    sys.executable,
-                    str(ROOT / "experiments_runner.py"),
-                    "--config",
-                    args.config,
-                    "--exp-type",
-                    "node_count_sensitivity",
-                    "--exp-mode",
-                    "theory",
-                    "--run-id",
-                    run_id,
-                    "--sweep-values",
-                    args.sweep_values,
-                    "--fixed-model",
-                    model_name,
-                    "--fixed-batch-size",
-                    str(batch_size),
-                    "--fixed-input-h",
-                    str(input_h),
-                    "--fixed-input-w",
-                    str(input_w),
-                    "--repeat-per-point",
-                    str(args.repeats),
-                    "--controlled-node-count-sweep",
-                    "--controlled-sat-compute-tflops",
-                    str(args.sat_compute_tflops),
-                    "--controlled-sat-memory-mb",
-                    str(args.sat_memory_mb),
-                    "--controlled-gs-compute-tflops",
-                    str(args.gs_compute_tflops),
-                    "--controlled-gs-memory-mb",
-                    str(args.gs_memory_mb),
-                    "--controlled-isl-bandwidth-mbps",
-                    str(args.isl_bandwidth_mbps),
-                    "--controlled-gsl-bandwidth-mbps",
-                    str(args.gsl_bandwidth_mbps),
-                ]
-                if template is not None:
-                    command.extend(["--controlled-sat-compute-template", template])
-                    command.append("--controlled-normalize-sat-compute-template")
-                completed = subprocess.run(command, cwd=ROOT)
-                if completed.returncode != 0:
-                    return int(completed.returncode)
+            template_tag = template.replace(",", "-")
+            run_id = f"exp02a_control_{model_name}_{template_tag}_{template_idx}_{timestamp}"
+            command = [
+                sys.executable,
+                str(ROOT / "experiments_runner.py"),
+                "--config",
+                args.config,
+                "--exp-type",
+                "node_count_sensitivity",
+                "--exp-mode",
+                "theory",
+                "--run-id",
+                run_id,
+                "--sweep-values",
+                args.sweep_values,
+                "--fixed-model",
+                model_name,
+                "--fixed-batch-size",
+                str(batch_size),
+                "--fixed-input-h",
+                str(input_h),
+                "--fixed-input-w",
+                str(input_w),
+                "--repeat-per-point",
+                str(args.repeats),
+                "--controlled-node-count-sweep",
+                "--controlled-sat-compute-tflops",
+                str(args.sat_compute_tflops),
+                "--controlled-sat-memory-mb",
+                str(args.sat_memory_mb),
+                "--controlled-gs-compute-tflops",
+                str(args.gs_compute_tflops),
+                "--controlled-gs-memory-mb",
+                str(args.gs_memory_mb),
+                "--controlled-isl-bandwidth-mbps",
+                str(args.isl_bandwidth_mbps),
+                "--controlled-gsl-bandwidth-mbps",
+                str(args.gsl_bandwidth_mbps),
+                "--controlled-sat-compute-template",
+                template,
+                "--controlled-normalize-sat-compute-template",
+            ]
+            completed = subprocess.run(command, cwd=ROOT)
+            if completed.returncode != 0:
+                raise RuntimeError(f"Controlled exp02 runner failed for {model_name} template {template}")
 
-                archive_dir = find_run_archive(run_id)
-                if archive_dir is None:
-                    raise RuntimeError(f"Cannot find archived run for {run_id}")
-                data_dir = Path(archive_dir) / "data"
-                csv_candidates = sorted(data_dir.glob("results_long_*.csv"))
-                if not csv_candidates:
-                    raise RuntimeError(f"No exported results_long CSV found under {data_dir}")
+            archive_dir = find_run_archive(run_id)
+            if archive_dir is None:
+                raise RuntimeError(f"Cannot find archived run for {run_id}")
+            data_dir = Path(archive_dir) / "data"
+            csv_candidates = sorted(data_dir.glob("results_long_*.csv"))
+            if not csv_candidates:
+                raise RuntimeError(f"No exported results_long CSV found under {data_dir}")
 
-                df = pd.read_csv(csv_candidates[-1])
-                df = df[df["algorithm"] == "LA-DP"].copy()
-                df["scenario_label"] = scenario_label
-                df["scenario_template"] = template or "3,3,3,3,3"
-                long_frames.append(df)
+            df = pd.read_csv(csv_candidates[-1])
+            df = df[df["algorithm"].isin(["LA-DP", "GS-Only"])].copy()
+            df["scenario_template"] = template
+            long_frames.append(df)
 
     long_df = pd.concat(long_frames, ignore_index=True)
-    long_path = out_dir / "exp02_ladp_pmp_node_count_sensitivity_long.csv"
-    long_df.to_csv(long_path, index=False, encoding="utf-8-sig")
+    long_df["block_count"] = int(args.task_block_count)
+    long_df["total_latency_ms_50_blocks"] = long_df["latency_ms"].astype(float) * int(args.task_block_count)
+    long_df["total_latency_s_50_blocks"] = long_df["total_latency_ms_50_blocks"] / 1000.0
+    long_df["total_latency_min_50_blocks"] = long_df["total_latency_s_50_blocks"] / 60.0
+    long_df["algorithm_label"] = long_df["algorithm"].map({"LA-DP": "LADP-PMP", "GS-Only": "GS-Only"})
 
-    aggregations = {"mean_norm_latency_vs_gs": ("norm_latency_vs_gs", "mean")}
-    if "active_sat_count" in long_df.columns:
-        aggregations["mean_active_sat_count"] = ("active_sat_count", "mean")
-    scenario_df = (
-        long_df.groupby(["scenario_label", "model_name", "pipeline_node_count"], dropna=False)
-        .agg(**aggregations)
+    summary_df = (
+        long_df.groupby(["model_name", "pipeline_node_count", "algorithm_label"], dropna=False)
+        .agg(
+            mean_latency_ms=("latency_ms", "mean"),
+            mean_total_latency_s_50_blocks=("total_latency_s_50_blocks", "mean"),
+            mean_total_latency_min_50_blocks=("total_latency_min_50_blocks", "mean"),
+        )
         .reset_index()
     )
-    scenario_csv = out_dir / "exp02_ladp_pmp_node_count_sensitivity_scenarios.csv"
-    scenario_df.to_csv(scenario_csv, index=False, encoding="utf-8-sig")
+    summary_df["experiment"] = "exp02A_control"
+    return long_df, summary_df
 
-    plot_command = [
-        sys.executable,
-        "-m",
-        "tools.plot_runs_sensitivity_figures",
-        "--scenario-csv",
-        str(scenario_csv),
-        "--output-dir",
-        args.out_dir,
-        "--models",
-        "yolov5,resnet101,vgg19,vit_huge",
-        "--title",
-        "PMP 模式节点数量敏感性分析",
-        "--stem",
-        "exp02_ladp_pmp_node_count_sensitivity",
+
+def _select_best_candidate_for_satellite_count(candidates, satellite_count: int, min_common_duration_s: float):
+    filtered = [
+        candidate
+        for candidate in candidates
+        if int(candidate.satellite_count) == int(satellite_count) and float(candidate.common_duration_s) >= float(min_common_duration_s)
     ]
-    completed = subprocess.run(plot_command, cwd=ROOT)
-    return int(completed.returncode)
+    if not filtered:
+        return None
+    filtered.sort(key=lambda item: (-float(item.common_duration_s), int(item.rank)))
+    return filtered[0]
+
+
+def _write_json(path: Path, payload: dict) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+def _evaluate_shared_route_pmp(scene, config_path: Path, run_id: str) -> tuple[bool, float, dict]:
+    scheduler = Scheduler(net_config_path=str(config_path))
+    plans = scheduler.generate_task_and_schedule(
+        task_id=f"{scene.slot_id}_exp02b_pmp",
+        model_name=scene.task.model_name,
+        batch_size=scene.task.batch_size,
+        target_h=scene.task.input_h,
+        target_w=scene.task.input_w,
+        run_id=run_id,
+        exp_type="mode_selection",
+        mode="theory",
+        persist_theory=False,
+        algorithm_names=["LA-DP"],
+        return_full_plans=True,
+        metadata_extra={"sweep_param": "time_slot", "sweep_value": scene.slot_id},
+    )
+    data = plans.get("LA-DP", {})
+    latency = float(data.get("latency", float("inf")))
+    plan = data.get("plan") or {}
+    feasible = bool(plan) and np.isfinite(latency)
+    return feasible, latency, data
+
+
+def _evaluate_shared_route_gs_only(scene, config: dict) -> tuple[bool, float, dict]:
+    model_profile = _build_model_profile(scene)
+    env_status = _build_env_status(config)
+    solver = PMPSolver(model_profile, env_status)
+    latency, plan = solver.solve_bent_pipe()
+    feasible = bool(plan) and np.isfinite(float(latency))
+    return feasible, float(latency), plan
+
+
+def _run_exp02_engineering(args, out_dir: Path) -> tuple[pd.DataFrame, pd.DataFrame]:
+    resolver = StkPathResolver()
+    config_dir = out_dir / "_exp02b_route_configs"
+    rows: list[dict] = []
+    batch_size = int(getattr(args, "task_block_batch", EXP02_BLOCK_BATCH))
+    min_common_duration_s = float(getattr(args, "min_common_duration_s", 0.0))
+
+    for model_name in _exp02_models(args):
+        run_dir = ROOT / MODE_SELECTION_STK_RUNS[model_name]
+        scenes = load_stk_slot_scenes(run_dir)
+        input_h, input_w = MODEL_INPUTS[model_name]
+
+        for scene in scenes:
+            scene_for_eval = replace(
+                scene,
+                task=TaskSpec(
+                    model_name=model_name,
+                    batch_size=batch_size,
+                    input_h=input_h,
+                    input_w=input_w,
+                ),
+            )
+            candidates = resolver.candidate_paths(scene_for_eval)
+            for satellite_count in range(1, 6):
+                candidate = _select_best_candidate_for_satellite_count(
+                    candidates,
+                    satellite_count=satellite_count,
+                    min_common_duration_s=min_common_duration_s,
+                )
+                if candidate is None:
+                    continue
+
+                config = _network_config_for_candidate(scene_for_eval, candidate)
+                config["simulation_paths"]["mode_selection"] = {
+                    "slot_id": scene_for_eval.slot_id,
+                    "mode_family": "PMP",
+                    "route_policy": f"exp02b_shared_route_sat{satellite_count}",
+                    "source_stk_run_id": scene_for_eval.source_run_id,
+                }
+                config_path = config_dir / f"{model_name}_{scene_for_eval.slot_id}_sat{satellite_count}_shared_route.json"
+                _write_json(config_path, config)
+
+                pmp_feasible, pmp_latency_ms, _ = _evaluate_shared_route_pmp(
+                    scene_for_eval,
+                    config_path,
+                    run_id=f"exp02b_{model_name}_{scene_for_eval.slot_id}_sat{satellite_count}",
+                )
+                gs_feasible, gs_latency_ms, _ = _evaluate_shared_route_gs_only(scene_for_eval, config)
+
+                for mode, feasible, latency_ms in (
+                    ("LADP-PMP", pmp_feasible, pmp_latency_ms),
+                    ("GS-Only", gs_feasible, gs_latency_ms),
+                ):
+                    row = {
+                        "model_name": model_name,
+                        "slot_id": scene_for_eval.slot_id,
+                        "pipeline_node_count": satellite_count,
+                        "mode": mode,
+                        "feasible": bool(feasible),
+                        "latency_ms": float(latency_ms) if feasible else np.nan,
+                        "common_duration_s": float(candidate.common_duration_s),
+                        "candidate_rank": int(candidate.rank),
+                        "route_hop_count": int(candidate.hop_count),
+                        "task_block_batch": batch_size,
+                        "task_block_count": int(args.task_block_count),
+                    }
+                    if feasible:
+                        total_ms = float(latency_ms) * int(args.task_block_count)
+                        max_blocks = math.floor((float(candidate.common_duration_s) * 1000.0) / float(latency_ms))
+                        row.update(
+                            {
+                                "total_latency_ms_50_blocks": total_ms,
+                                "total_latency_s_50_blocks": total_ms / 1000.0,
+                                "total_latency_min_50_blocks": total_ms / 60000.0,
+                                "max_blocks_in_visibility": max_blocks,
+                                "max_raw_images_in_visibility": max_blocks * EXP02_EQ_IMAGES_PER_BLOCK,
+                                "max_raw_gib_in_visibility": max_blocks * EXP02_RAW_IMAGE_GIB,
+                            }
+                        )
+                    rows.append(row)
+
+    long_df = pd.DataFrame(rows)
+    if long_df.empty:
+        raise RuntimeError("No engineering exp02 rows were produced.")
+    feasible_df = long_df[long_df["feasible"]].copy()
+    if feasible_df.empty:
+        raise RuntimeError("No feasible engineering exp02 rows were produced.")
+
+    summary_df = (
+        feasible_df.groupby(["model_name", "pipeline_node_count", "mode"], dropna=False)
+        .agg(
+            mean_total_latency_s_50_blocks=("total_latency_s_50_blocks", "mean"),
+            mean_total_latency_min_50_blocks=("total_latency_min_50_blocks", "mean"),
+            mean_max_blocks_in_visibility=("max_blocks_in_visibility", "mean"),
+            mean_max_raw_images_in_visibility=("max_raw_images_in_visibility", "mean"),
+            mean_max_raw_gib_in_visibility=("max_raw_gib_in_visibility", "mean"),
+            mean_common_duration_s=("common_duration_s", "mean"),
+            slot_count=("slot_id", "nunique"),
+        )
+        .reset_index()
+    )
+    summary_df["experiment"] = "exp02B_engineering"
+    return long_df, summary_df
+
+
+def _plot_exp02a_control_total_latency(df: pd.DataFrame, out_dir: Path, show_only: bool = False) -> None:
+    setup_style()
+    fig, axes = plt.subplots(1, 3, figsize=(13.2, 4.6), sharex=True)
+    style_map = {
+        "LADP-PMP": ("#244C85", "o", "-"),
+        "GS-Only": ("#4A4A4A", "D", "--"),
+    }
+    models = [model for model in ["yolov5", "resnet101", "vgg19"] if model in set(df["model_name"])]
+    handles = []
+    labels = []
+    for ax, model_name in zip(axes, models):
+        model_df = df[df["model_name"] == model_name]
+        for mode in ["LADP-PMP", "GS-Only"]:
+            sub = model_df[model_df["algorithm_label"] == mode].sort_values("pipeline_node_count")
+            x = sub["pipeline_node_count"].astype(float).to_numpy()
+            y = sub["mean_total_latency_min_50_blocks"].astype(float).to_numpy()
+            color, marker, linestyle = style_map[mode]
+            line, = ax.plot(x, y, color=color, marker=marker, linestyle=linestyle, linewidth=2.0, markersize=5.4, label=mode)
+            if mode not in labels:
+                handles.append(line)
+                labels.append(mode)
+        ax.set_title(MODEL_LABELS[model_name], fontsize=13, fontweight="bold", pad=8)
+        ax.set_xticks(sorted(model_df["pipeline_node_count"].astype(int).unique()))
+        ax.grid(axis="y", which="major", alpha=0.85)
+        ax.grid(axis="y", which="minor", alpha=0.3, linewidth=0.6)
+        ax.spines["top"].set_visible(False)
+        ax.spines["right"].set_visible(False)
+        ax.yaxis.set_major_locator(plt.MaxNLocator(9))
+        ax.yaxis.set_minor_locator(AutoMinorLocator(2))
+        ax.set_xlabel("LEO节点数")
+    axes[0].set_ylabel("总时延 / min")
+    fig.suptitle("50个任务块总时延", fontsize=15, fontweight="bold", y=0.975)
+    fig.legend(handles, labels, frameon=False, loc="upper center", ncol=2, bbox_to_anchor=(0.5, 0.935))
+    fig.tight_layout(rect=(0, 0, 1, 0.84))
+    _finalize_figure(
+        fig,
+        out_dir / "exp02a_control_node_count_total_latency.png",
+        out_dir / "exp02a_control_node_count_total_latency.pdf",
+        show_only=show_only,
+    )
+
+
+def _plot_exp02b_engineering_total_latency(df: pd.DataFrame, out_dir: Path, show_only: bool = False) -> None:
+    setup_style()
+    fig, axes = plt.subplots(2, 2, figsize=(11.8, 8.2), sharex=True)
+    axes = axes.flatten()
+    style_map = {
+        "LADP-PMP": ("#244C85", "o", "-"),
+        "GS-Only": ("#4A4A4A", "D", "--"),
+    }
+    models = [model for model in EXP02_MODELS if model in set(df["model_name"])]
+    handles = []
+    labels = []
+    for ax, model_name in zip(axes, models):
+        model_df = df[df["model_name"] == model_name]
+        slot_count = int(model_df["slot_count"].max()) if not model_df.empty else 0
+        for mode in ["LADP-PMP", "GS-Only"]:
+            sub = model_df[model_df["mode"] == mode].sort_values("pipeline_node_count")
+            x = sub["pipeline_node_count"].astype(float).to_numpy()
+            y = sub["mean_total_latency_min_50_blocks"].astype(float).to_numpy()
+            color, marker, linestyle = style_map[mode]
+            line, = ax.plot(x, y, color=color, marker=marker, linestyle=linestyle, linewidth=2.0, markersize=5.4, label=mode)
+            if mode not in labels:
+                handles.append(line)
+                labels.append(mode)
+        ax.set_title(f"{MODEL_LABELS[model_name]}（{slot_count}个时间片）", fontsize=13, fontweight="bold", pad=8)
+        ax.set_xticks(sorted(model_df["pipeline_node_count"].astype(int).unique()))
+        ax.grid(axis="y", alpha=0.85)
+        ax.spines["top"].set_visible(False)
+        ax.spines["right"].set_visible(False)
+    for idx, ax in enumerate(axes):
+        if idx >= len(models):
+            ax.axis("off")
+            continue
+        if idx % 2 == 0:
+            ax.set_ylabel("总时延 / min")
+        if idx >= 2:
+            ax.set_xlabel("参与协作的 LEO 节点数")
+    fig.suptitle("实验2B：时间窗口场景下 50 个任务块总时延", fontsize=16, fontweight="bold", y=0.98)
+    fig.legend(handles, labels, frameon=False, loc="upper center", ncol=2, bbox_to_anchor=(0.5, 0.945))
+    _finalize_figure(
+        fig,
+        out_dir / "exp02b_engineering_total_latency_50_blocks.png",
+        out_dir / "exp02b_engineering_total_latency_50_blocks.pdf",
+        show_only=show_only,
+    )
+
+
+def _plot_exp02b_engineering_capacity_gb(df: pd.DataFrame, out_dir: Path, show_only: bool = False) -> None:
+    setup_style()
+    fig, axes = plt.subplots(1, 3, figsize=(13.2, 4.6), sharex=True)
+    colors = {"LADP-PMP": "#244C85", "GS-Only": "#9A9A9A"}
+    width = 0.36
+    models = [model for model in ["yolov5", "resnet101", "vgg19"] if model in set(df["model_name"])]
+    handles = []
+    labels = []
+    for ax, model_name in zip(axes, models):
+        model_df = df[df["model_name"] == model_name].sort_values("pipeline_node_count")
+        node_counts = sorted(model_df["pipeline_node_count"].astype(int).unique())
+        x = np.arange(len(node_counts), dtype=float)
+        for offset, mode in [(-width / 2, "LADP-PMP"), (width / 2, "GS-Only")]:
+            sub = model_df[model_df["mode"] == mode].sort_values("pipeline_node_count")
+            y = sub["mean_max_raw_gib_in_visibility"].astype(float).to_numpy()
+            bars = ax.bar(x + offset, y, width=width, color=colors[mode], label=mode)
+            if mode not in labels:
+                handles.append(bars[0])
+                labels.append(mode)
+        ax.set_title(MODEL_LABELS[model_name], fontsize=13, fontweight="bold", pad=8)
+        ax.set_xticks(x)
+        ax.set_xticklabels(node_counts)
+        ax.yaxis.set_major_locator(plt.MaxNLocator(9))
+        ax.yaxis.set_minor_locator(AutoMinorLocator(2))
+        ax.grid(axis="y", which="major", alpha=0.85)
+        ax.grid(axis="y", which="minor", alpha=0.3, linewidth=0.6)
+        ax.spines["top"].set_visible(False)
+        ax.spines["right"].set_visible(False)
+        ax.set_xlabel("LEO节点数")
+    axes[0].set_ylabel("可处理数据量 / GiB")
+    fig.suptitle("时间窗口内可处理数据量", fontsize=15, fontweight="bold", y=0.975)
+    fig.legend(handles, labels, frameon=False, loc="upper center", ncol=2, bbox_to_anchor=(0.5, 0.935))
+    fig.tight_layout(rect=(0, 0, 1, 0.84))
+    _finalize_figure(
+        fig,
+        out_dir / "exp02b_engineering_visibility_capacity_gib.png",
+        out_dir / "exp02b_engineering_visibility_capacity_gib.pdf",
+        show_only=show_only,
+    )
+
+
+def _plot_exp02b_engineering_capacity_images(df: pd.DataFrame, out_dir: Path, show_only: bool = False) -> None:
+    setup_style()
+    fig, axes = plt.subplots(2, 2, figsize=(11.8, 8.2), sharex=True)
+    axes = axes.flatten()
+    colors = {"LADP-PMP": "#244C85", "GS-Only": "#9A9A9A"}
+    width = 0.36
+    models = [model for model in EXP02_MODELS if model in set(df["model_name"])]
+    handles = []
+    labels = []
+    for ax, model_name in zip(axes, models):
+        model_df = df[df["model_name"] == model_name].sort_values("pipeline_node_count")
+        node_counts = sorted(model_df["pipeline_node_count"].astype(int).unique())
+        x = np.arange(len(node_counts), dtype=float)
+        for offset, mode in [(-width / 2, "LADP-PMP"), (width / 2, "GS-Only")]:
+            sub = model_df[model_df["mode"] == mode].sort_values("pipeline_node_count")
+            y = sub["mean_max_raw_images_in_visibility"].astype(float).to_numpy()
+            bars = ax.bar(x + offset, y, width=width, color=colors[mode], label=mode)
+            if mode not in labels:
+                handles.append(bars[0])
+                labels.append(mode)
+        ax.set_title(MODEL_LABELS[model_name], fontsize=13, fontweight="bold", pad=8)
+        ax.set_xticks(x)
+        ax.set_xticklabels(node_counts)
+        ax.grid(axis="y", alpha=0.85)
+        ax.spines["top"].set_visible(False)
+        ax.spines["right"].set_visible(False)
+    for idx, ax in enumerate(axes):
+        if idx >= len(models):
+            ax.axis("off")
+            continue
+        if idx % 2 == 0:
+            ax.set_ylabel("最大可处理等效原始图像数 / 张")
+        if idx >= 2:
+            ax.set_xlabel("参与协作的 LEO 节点数")
+    fig.suptitle("实验2B：时间窗口内最大可处理等效 4096×4096 遥感图像数", fontsize=16, fontweight="bold", y=0.98)
+    fig.legend(handles, labels, frameon=False, loc="upper center", ncol=2, bbox_to_anchor=(0.5, 0.945))
+    _finalize_figure(
+        fig,
+        out_dir / "exp02b_engineering_visibility_capacity_images.png",
+        out_dir / "exp02b_engineering_visibility_capacity_images.pdf",
+        show_only=show_only,
+    )
 
 
 def _profile_entry_to_layers(entry: dict) -> list[dict]:
@@ -698,47 +1118,54 @@ def _style_cdp_axis(ax: plt.Axes, y_values: list[float]) -> None:
         ax.set_ylim(max(0.0, y_min - pad), y_max + pad)
 
 
-def _plot_exp03_model(df: pd.DataFrame, model_name: str, out_dir: Path) -> None:
+def _plot_exp03_model(df: pd.DataFrame, model_name: str, out_dir: Path, show_only: bool = False) -> None:
     setup_style()
     model_df = df[df["model_name"] == model_name].copy()
-    fig, axes = plt.subplots(1, 2, figsize=(12.8, 4.8), sharey=False)
-    scenario_labels = [("homogeneous", "同构 worker 场景"), ("heterogeneous", "异构 worker 场景")]
-    for ax, (scenario, scenario_label) in zip(axes, scenario_labels):
-        sub = model_df[model_df["scenario"] == scenario]
-        y_values: list[float] = []
-        for algorithm in CDP_ALG_ORDER:
-            alg_df = sub[sub["algorithm"] == algorithm].sort_values("batch_size")
-            if alg_df.empty:
-                continue
-            x = alg_df["batch_size"].to_numpy(dtype=float)
-            y = alg_df["norm_latency_vs_sat_only"].to_numpy(dtype=float)
-            y_values.extend(y.tolist())
-            ax.plot(
-                x,
-                y,
-                label=CDP_ALG_LABEL[algorithm],
-                color=CDP_ALG_COLOR[algorithm],
-                marker=CDP_ALG_MARKER[algorithm],
-                linestyle=CDP_ALG_LINESTYLE[algorithm],
-                linewidth=2.0,
-                markersize=5.2,
-            )
-        ax.set_title(scenario_label, pad=8)
-        ax.set_xlabel("输入数据量（样本数）")
-        ax.set_xticks(sorted(sub["batch_size"].unique()))
-        _style_cdp_axis(ax, y_values)
-    axes[0].set_ylabel("归一化时延（Sat-Only = 1）")
-    handles, labels = axes[0].get_legend_handles_labels()
-    fig.legend(handles, labels, loc="upper center", bbox_to_anchor=(0.5, 1.02), ncol=5, frameon=False)
-    fig.suptitle("LAWA-CDP 模式的数据量敏感性实验", fontsize=16, fontweight="bold", y=1.12)
-    fig.tight_layout(rect=[0, 0, 1, 0.96])
+    sub = model_df[model_df["scenario"] == "heterogeneous"].copy()
+    fig, ax = plt.subplots(figsize=(9.4, 4.9))
+    batch_order = sorted(sub["batch_size"].unique())
+    batch_to_mb = {
+        int(batch): float(
+            sub.loc[sub["batch_size"] == batch, "input_size_mb"].iloc[0]
+        )
+        for batch in batch_order
+    }
+    x = np.arange(len(batch_order), dtype=float) * 1.35
+    width = 0.14
+    offsets = np.linspace(-2 * width, 2 * width, num=len(CDP_ALG_ORDER))
+    y_values: list[float] = []
+    handles = []
+    labels = []
+    for offset, algorithm in zip(offsets, CDP_ALG_ORDER):
+        alg_df = sub[sub["algorithm"] == algorithm].sort_values("batch_size")
+        if alg_df.empty:
+            continue
+        y = alg_df["norm_latency_vs_sat_only"].to_numpy(dtype=float)
+        y_values.extend(y.tolist())
+        bars = ax.bar(
+            x + offset,
+            y,
+            width=width,
+            color=CDP_ALG_COLOR[algorithm],
+            edgecolor="white",
+            linewidth=0.7,
+            label=CDP_ALG_LABEL[algorithm],
+        )
+        handles.append(bars[0])
+        labels.append(CDP_ALG_LABEL[algorithm])
+    ax.set_title("异构场景下处理数据量敏感性", pad=10, fontsize=15, fontweight="bold")
+    ax.set_xlabel("处理数据量 / MB")
+    ax.set_ylabel("归一化时延（Sat-Only = 1）")
+    ax.set_xticks(x)
+    ax.set_xticklabels([f"{batch_to_mb[int(batch)]:.1f}" for batch in batch_order])
+    _style_cdp_axis(ax, y_values)
+    ax.legend(handles, labels, loc="upper center", bbox_to_anchor=(0.5, 1.18), ncol=5, frameon=False)
+    fig.tight_layout(rect=[0, 0, 1, 0.93])
     stem = f"exp03_lawa_cdp_data_sensitivity_{model_name}"
-    fig.savefig(out_dir / f"{stem}.png", bbox_inches="tight")
-    fig.savefig(out_dir / f"{stem}.pdf", bbox_inches="tight")
-    plt.close(fig)
+    _finalize_figure(fig, out_dir / f"{stem}.png", out_dir / f"{stem}.pdf", show_only=show_only)
 
 
-def _plot_exp04_model(df: pd.DataFrame, model_name: str, out_dir: Path) -> None:
+def _plot_exp04_model(df: pd.DataFrame, model_name: str, out_dir: Path, show_only: bool = False) -> None:
     setup_style()
     model_df = df[df["model_name"] == model_name].copy()
     fig, ax = plt.subplots(figsize=(7.8, 4.8))
@@ -768,9 +1195,7 @@ def _plot_exp04_model(df: pd.DataFrame, model_name: str, out_dir: Path) -> None:
     ax.legend(loc="upper center", bbox_to_anchor=(0.5, 1.18), ncol=5, frameon=False)
     fig.tight_layout()
     stem = f"exp04_lawa_cdp_worker_count_sensitivity_{model_name}"
-    fig.savefig(out_dir / f"{stem}.png", bbox_inches="tight")
-    fig.savefig(out_dir / f"{stem}.pdf", bbox_inches="tight")
-    plt.close(fig)
+    _finalize_figure(fig, out_dir / f"{stem}.png", out_dir / f"{stem}.pdf", show_only=show_only)
 
 def _write_cdp_notes(out_dir: Path, stem: str, title: str, models: list[str], command: str, conclusion: list[str]) -> None:
     lines = [
@@ -794,116 +1219,124 @@ def _write_cdp_notes(out_dir: Path, stem: str, title: str, models: list[str], co
 
 
 def _run_exp03(args) -> int:
-    out_dir = ROOT / args.out_dir
-    out_dir.mkdir(parents=True, exist_ok=True)
+    out_dir, cleanup_dir = _prepare_runtime_out_dir(args.out_dir, _is_show_only(args), "exp03_show")
     models = [model.strip() for model in args.models.split(",") if model.strip()]
     batches = [int(value) for value in args.data_sizes.split(",") if value.strip()]
     profile_path = ROOT / args.profile
     rows: list[dict] = []
+    try:
+        for model_name in models:
+            for batch_size in batches:
+                raw_profile = _load_cdp_model_profile(model_name, batch_size, profile_path)
+                cdp_profile = {
+                    "input_size_mb": raw_profile["input_size_mb"],
+                    "output_size_mb": raw_profile["output_size_mb"],
+                    "batch_size": raw_profile["batch_size"],
+                }
+                for scenario in ["homogeneous", "heterogeneous"]:
+                    env = _build_cdp_env(raw_profile, scenario=scenario, worker_count=args.worker_count)
+                    for result in _evaluate_cdp_algorithms(
+                        cdp_profile,
+                        env,
+                        seed=args.seed + batch_size + len(model_name),
+                        random_repeats=args.random_repeats,
+                    ):
+                        rows.append(
+                            {
+                                **raw_profile,
+                                "scenario": scenario,
+                                "scenario_label": "同构 worker 场景" if scenario == "homogeneous" else "异构 worker 场景",
+                                "worker_count": args.worker_count,
+                                **result,
+                            }
+                        )
 
-    for model_name in models:
-        for batch_size in batches:
-            raw_profile = _load_cdp_model_profile(model_name, batch_size, profile_path)
+        df = pd.DataFrame(rows)
+        if not _is_show_only(args):
+            long_csv = out_dir / "exp03_lawa_cdp_data_sensitivity_long.csv"
+            summary_csv = out_dir / "exp03_lawa_cdp_data_sensitivity_summary.csv"
+            df.to_csv(long_csv, index=False, encoding="utf-8-sig")
+            df.drop(columns=["plan_json"]).to_csv(summary_csv, index=False, encoding="utf-8-sig")
+        for model_name in models:
+            _plot_exp03_model(df, model_name, out_dir, show_only=_is_show_only(args))
+        if not _is_show_only(args):
+            _write_cdp_notes(
+                out_dir,
+                "exp03_lawa_cdp_data_sensitivity",
+                "实验 3：LAWA-CDP 模式的数据量敏感性实验",
+                models,
+                f"python thesis_entry.py exp03 --out-dir {args.out_dir}",
+                [
+                    "同构 worker 场景下，各 worker 能力一致，均匀分配通常接近 LAWA。",
+                    "异构 worker 场景下，LAWA 会把更多数据分给算力强、链路好的 worker，优势更明显。",
+                    "输入数据量增大后，离散样本分配更接近连续最优解，LAWA 相对随机/贪心/均匀的稳定性更容易体现。",
+                ],
+            )
+            print(out_dir)
+        return 0
+    finally:
+        if _is_show_only(args):
+            _cleanup_runtime_dir(cleanup_dir)
+
+
+def _run_exp04(args) -> int:
+    out_dir, cleanup_dir = _prepare_runtime_out_dir(args.out_dir, _is_show_only(args), "exp04_show")
+    models = [model.strip() for model in args.models.split(",") if model.strip()]
+    worker_counts = [int(value) for value in args.worker_counts.split(",") if value.strip()]
+    profile_path = ROOT / args.profile
+    rows: list[dict] = []
+    try:
+        for model_name in models:
+            raw_profile = _load_cdp_model_profile(model_name, args.data_size, profile_path)
             cdp_profile = {
                 "input_size_mb": raw_profile["input_size_mb"],
                 "output_size_mb": raw_profile["output_size_mb"],
                 "batch_size": raw_profile["batch_size"],
             }
-            for scenario in ["homogeneous", "heterogeneous"]:
-                env = _build_cdp_env(raw_profile, scenario=scenario, worker_count=args.worker_count)
+            for worker_count in worker_counts:
+                env = _build_cdp_env(raw_profile, scenario="heterogeneous", worker_count=worker_count)
                 for result in _evaluate_cdp_algorithms(
                     cdp_profile,
                     env,
-                    seed=args.seed + batch_size + len(model_name),
+                    seed=args.seed + worker_count + len(model_name),
                     random_repeats=args.random_repeats,
                 ):
                     rows.append(
                         {
                             **raw_profile,
-                            "scenario": scenario,
-                            "scenario_label": "同构 worker 场景" if scenario == "homogeneous" else "异构 worker 场景",
-                            "worker_count": args.worker_count,
+                            "scenario": "heterogeneous",
+                            "scenario_label": "异构 worker 场景",
+                            "worker_count": worker_count,
                             **result,
                         }
                     )
 
-    df = pd.DataFrame(rows)
-    long_csv = out_dir / "exp03_lawa_cdp_data_sensitivity_long.csv"
-    summary_csv = out_dir / "exp03_lawa_cdp_data_sensitivity_summary.csv"
-    df.to_csv(long_csv, index=False, encoding="utf-8-sig")
-    df.drop(columns=["plan_json"]).to_csv(summary_csv, index=False, encoding="utf-8-sig")
-    for model_name in models:
-        _plot_exp03_model(df, model_name, out_dir)
-    _write_cdp_notes(
-        out_dir,
-        "exp03_lawa_cdp_data_sensitivity",
-        "实验 3：LAWA-CDP 模式的数据量敏感性实验",
-        models,
-        f"python thesis_entry.py exp03 --out-dir {args.out_dir}",
-        [
-            "同构 worker 场景下，各 worker 能力一致，均匀分配通常接近 LAWA。",
-            "异构 worker 场景下，LAWA 会把更多数据分给算力强、链路好的 worker，优势更明显。",
-            "输入数据量增大后，离散样本分配更接近连续最优解，LAWA 相对随机/贪心/均匀的稳定性更容易体现。",
-        ],
-    )
-    print(out_dir)
-    return 0
-
-
-def _run_exp04(args) -> int:
-    out_dir = ROOT / args.out_dir
-    out_dir.mkdir(parents=True, exist_ok=True)
-    models = [model.strip() for model in args.models.split(",") if model.strip()]
-    worker_counts = [int(value) for value in args.worker_counts.split(",") if value.strip()]
-    profile_path = ROOT / args.profile
-    rows: list[dict] = []
-
-    for model_name in models:
-        raw_profile = _load_cdp_model_profile(model_name, args.data_size, profile_path)
-        cdp_profile = {
-            "input_size_mb": raw_profile["input_size_mb"],
-            "output_size_mb": raw_profile["output_size_mb"],
-            "batch_size": raw_profile["batch_size"],
-        }
-        for worker_count in worker_counts:
-            env = _build_cdp_env(raw_profile, scenario="heterogeneous", worker_count=worker_count)
-            for result in _evaluate_cdp_algorithms(
-                cdp_profile,
-                env,
-                seed=args.seed + worker_count + len(model_name),
-                random_repeats=args.random_repeats,
-            ):
-                rows.append(
-                    {
-                        **raw_profile,
-                        "scenario": "heterogeneous",
-                        "scenario_label": "异构 worker 场景",
-                        "worker_count": worker_count,
-                        **result,
-                    }
-                )
-
-    df = pd.DataFrame(rows)
-    long_csv = out_dir / "exp04_lawa_cdp_worker_count_sensitivity_long.csv"
-    summary_csv = out_dir / "exp04_lawa_cdp_worker_count_sensitivity_summary.csv"
-    df.to_csv(long_csv, index=False, encoding="utf-8-sig")
-    df.drop(columns=["plan_json"]).to_csv(summary_csv, index=False, encoding="utf-8-sig")
-    for model_name in models:
-        _plot_exp04_model(df, model_name, out_dir)
-    _write_cdp_notes(
-        out_dir,
-        "exp04_lawa_cdp_worker_count_sensitivity",
-        "实验 4：LAWA-CDP 模式的 worker 数量敏感性实验",
-        models,
-        f"python thesis_entry.py exp04 --out-dir {args.out_dir}",
-        [
-            "worker 数量增加通常会降低 CDP 时延，但收益不是线性的。",
-            "当新增 worker 算力或链路条件较弱时，额外分发和回传开销会削弱并行收益。",
-            "LAWA 的作用是根据 worker 的计算和链路状态调节数据量，避免简单均分在异构场景下失效。",
-        ],
-    )
-    print(out_dir)
-    return 0
+        df = pd.DataFrame(rows)
+        if not _is_show_only(args):
+            long_csv = out_dir / "exp04_lawa_cdp_worker_count_sensitivity_long.csv"
+            summary_csv = out_dir / "exp04_lawa_cdp_worker_count_sensitivity_summary.csv"
+            df.to_csv(long_csv, index=False, encoding="utf-8-sig")
+            df.drop(columns=["plan_json"]).to_csv(summary_csv, index=False, encoding="utf-8-sig")
+        for model_name in models:
+            _plot_exp04_model(df, model_name, out_dir, show_only=_is_show_only(args))
+        if not _is_show_only(args):
+            _write_cdp_notes(
+                out_dir,
+                "exp04_lawa_cdp_worker_count_sensitivity",
+                "实验 4：LAWA-CDP 模式的 worker 数量敏感性实验",
+                models,
+                f"python thesis_entry.py exp04 --out-dir {args.out_dir}",
+                [
+                    "worker 数量增加通常会降低 CDP 时延，但收益不是线性的。",
+                    "当新增 worker 算力或链路条件较弱时，额外分发和回传开销会削弱并行收益。",
+                    "LAWA 的作用是根据 worker 的计算和链路状态调节数据量，避免简单均分在异构场景下失效。",
+                ],
+            )
+            print(out_dir)
+        return 0
+    finally:
+        if _is_show_only(args):
+            _cleanup_runtime_dir(cleanup_dir)
 
 
 def _tx_ms(data_mb: float, bandwidth_mbps: float) -> float:
@@ -1024,13 +1457,21 @@ def _mode_selection_source_dir(model_name: str) -> Path:
     return ROOT / MODE_SELECTION_STK_RUNS[model_name]
 
 
-def _ensure_mode_selection_results(model_name: str, batch_size: int, args, out_dir: Path, tag: str) -> tuple[pd.DataFrame, Path]:
+def _ensure_mode_selection_results(
+    model_name: str,
+    batch_size: int,
+    args,
+    out_dir: Path,
+    tag: str,
+    worker_count: int | None = None,
+) -> tuple[pd.DataFrame, Path]:
     source_dir = _mode_selection_source_dir(model_name)
     source_out_dir = out_dir / "_mode_selection_sources" / f"{tag}_{model_name}_b{batch_size}"
     csv_path = source_out_dir / "data" / "slot_mode_results.csv"
     metadata_path = source_out_dir / "metadata.json"
 
     reuse = bool(getattr(args, "reuse_mode_results", False))
+    effective_worker_count = int(worker_count if worker_count is not None else getattr(args, "worker_count", 4))
     if not reuse or not csv_path.exists() or not metadata_path.exists():
         command = [
             sys.executable,
@@ -1044,7 +1485,7 @@ def _ensure_mode_selection_results(model_name: str, batch_size: int, args, out_d
             "--batch-size-override",
             str(batch_size),
             "--cdp-max-workers",
-            str(getattr(args, "worker_count", 4)),
+            str(effective_worker_count),
             "--shared-pmp-min-hops",
             "3",
         ]
@@ -1367,7 +1808,7 @@ def _aggregate_mode_rows_over_slots(
         )
     return rows
 
-def _plot_exp05(df: pd.DataFrame, out_dir: Path) -> None:
+def _plot_exp05(df: pd.DataFrame, out_dir: Path, show_only: bool = False) -> None:
     setup_style()
     fig, theory_ax = plt.subplots(figsize=(11.6, 5.4))
     models = [model for model in ["yolov5", "resnet101", "vgg19", "vit_huge"] if model in set(df["model_name"])]
@@ -1420,7 +1861,7 @@ def _plot_exp05(df: pd.DataFrame, out_dir: Path) -> None:
                 color=MODE_COLOR[mode],
                 rotation=90,
             )
-    theory_ax.set_title("实验5：同时间片模式选择有效性", pad=12, fontsize=15, fontweight="bold")
+    theory_ax.set_title("实验5：模式选择有效性", pad=12, fontsize=15, fontweight="bold")
     theory_ax.set_xticks(x)
     theory_ax.set_xticklabels([MODEL_LABELS[model] for model in models])
     theory_ax.set_ylabel("归一化时延（GS-Only = 1）")
@@ -1430,12 +1871,15 @@ def _plot_exp05(df: pd.DataFrame, out_dir: Path) -> None:
     theory_ax.set_ylim(0.0, y_max * 1.16)
     theory_ax.legend(loc="upper center", bbox_to_anchor=(0.5, 1.16), ncol=5, frameon=False)
     fig.tight_layout()
-    fig.savefig(out_dir / "exp05_fwms_mode_selection_effectiveness.png", bbox_inches="tight")
-    fig.savefig(out_dir / "exp05_fwms_mode_selection_effectiveness.pdf", bbox_inches="tight")
-    plt.close(fig)
+    _finalize_figure(
+        fig,
+        out_dir / "exp05_fwms_mode_selection_effectiveness.png",
+        out_dir / "exp05_fwms_mode_selection_effectiveness.pdf",
+        show_only=show_only,
+    )
 
 
-def _plot_exp06(df: pd.DataFrame, out_dir: Path, model_name: str) -> None:
+def _plot_exp06(df: pd.DataFrame, out_dir: Path, model_name: str, show_only: bool = False) -> None:
     setup_style()
     stem = f"exp06_fwms_data_sensitivity_{model_name}"
 
@@ -1490,125 +1934,420 @@ def _plot_exp06(df: pd.DataFrame, out_dir: Path, model_name: str) -> None:
             ax.set_ylim(0.0, max(finite_values) * 1.16)
         ax.legend(loc="upper center", bbox_to_anchor=(0.5, 1.15), ncol=5, frameon=False)
         fig.tight_layout()
-        fig.savefig(out_dir / f"{stem}{suffix}.png", bbox_inches="tight")
-        fig.savefig(out_dir / f"{stem}{suffix}.pdf", bbox_inches="tight")
-        plt.close(fig)
+        _finalize_figure(
+            fig,
+            out_dir / f"{stem}{suffix}.png",
+            out_dir / f"{stem}{suffix}.pdf",
+            show_only=show_only,
+        )
 
     _plot_mode_lines(
         "latency_ms",
         "平均端到端时延 / ms",
-        f"实验6：同时间片输入数据量敏感性（{MODEL_LABELS.get(model_name, model_name)}）",
+        "实验6：输入数据量敏感性",
         "",
     )
     _plot_mode_lines(
         "norm_latency_vs_gs",
         "归一化时延（GS-Only = 1）",
-        f"实验6：同时间片输入数据量敏感性（归一化，{MODEL_LABELS.get(model_name, model_name)}）",
+        "实验6：输入数据量敏感性",
         "_normalized",
     )
 
 
-def _run_exp05(args) -> int:
-    out_dir = ROOT / args.out_dir
-    out_dir.mkdir(parents=True, exist_ok=True)
-    models = [model.strip() for model in args.models.split(",") if model.strip()]
-    loaded: list[tuple[pd.DataFrame, Path]] = []
-    for model_name in models:
-        loaded.append(_ensure_mode_selection_results(model_name, args.data_size, args, out_dir, "exp05_fair"))
-    common_slots = _common_average_slots(loaded, args.min_pmp_route_leo)
-    if not common_slots:
-        raise ValueError("No common slots satisfy the shared-route baseline filter for exp05.")
+BOUNDARY_CATEGORY_ORDER = ["PMP更快", "CDP更快", "仅PMP可行", "仅CDP可行", "均不可行", "并列"]
+BOUNDARY_CATEGORY_COLOR = {
+    "PMP更快": "#244C85",
+    "CDP更快": "#E39D2D",
+    "仅PMP可行": "#2A8C88",
+    "仅CDP可行": "#8A63D2",
+    "均不可行": "#9CA3AF",
+    "并列": "#4A4A4A",
+}
+
+
+def _classify_pmp_cdp_boundary(pmp_row: pd.Series | None, cdp_row: pd.Series | None) -> tuple[str, float, float]:
+    pmp_feasible = bool(pmp_row is not None and _truthy(pmp_row.get("feasible_bool", False)))
+    cdp_feasible = bool(cdp_row is not None and _truthy(cdp_row.get("feasible_bool", False)))
+    pmp_latency = _finite_float(pmp_row.get("latency_ms_num", np.nan) if pmp_row is not None else np.nan)
+    cdp_latency = _finite_float(cdp_row.get("latency_ms_num", np.nan) if cdp_row is not None else np.nan)
+    if pmp_feasible and cdp_feasible and np.isfinite(pmp_latency) and np.isfinite(cdp_latency):
+        if pmp_latency < cdp_latency:
+            return "PMP更快", pmp_latency, cdp_latency
+        if cdp_latency < pmp_latency:
+            return "CDP更快", pmp_latency, cdp_latency
+        return "并列", pmp_latency, cdp_latency
+    if pmp_feasible:
+        return "仅PMP可行", pmp_latency, cdp_latency
+    if cdp_feasible:
+        return "仅CDP可行", pmp_latency, cdp_latency
+    return "均不可行", pmp_latency, cdp_latency
+
+
+def _build_exp07_boundary_rows(df: pd.DataFrame, model_name: str, batch_size: int, worker_count: int) -> list[dict]:
     rows: list[dict] = []
-    audits: list[dict] = []
-    for df_source, source_dir in loaded:
-        model_rows = _aggregate_mode_rows_over_slots(
-            df_source,
-            common_slots,
-            source_dir,
-            args.min_cdp_active_sats,
-            "common_slot_mean",
+    for slot_id, slot_df in df.groupby("slot_id", sort=True):
+        pmp_row = _mode_row_by_plot_mode(slot_df, "PMP")
+        cdp_row = _mode_row_by_plot_mode(slot_df, "CDP")
+        category, pmp_latency, cdp_latency = _classify_pmp_cdp_boundary(pmp_row, cdp_row)
+        ratio = float("nan")
+        gap_ms = float("nan")
+        if np.isfinite(pmp_latency) and np.isfinite(cdp_latency) and pmp_latency > 0:
+            ratio = cdp_latency / pmp_latency
+            gap_ms = cdp_latency - pmp_latency
+        rows.append(
+            {
+                "model_name": model_name,
+                "model_label": MODEL_LABELS.get(model_name, model_name),
+                "batch_size": batch_size,
+                "worker_count": worker_count,
+                "slot_id": str(slot_id),
+                "category": category,
+                "pmp_feasible": bool(pmp_row is not None and _truthy(pmp_row.get("feasible_bool", False))),
+                "cdp_feasible": bool(cdp_row is not None and _truthy(cdp_row.get("feasible_bool", False))),
+                "pmp_latency_ms": pmp_latency,
+                "cdp_latency_ms": cdp_latency,
+                "cdp_over_pmp_ratio": ratio,
+                "cdp_minus_pmp_ms": gap_ms,
+                "pmp_route_leo_count": int(_finite_float(pmp_row.get("pmp_route_leo_count", 0), 0.0)) if pmp_row is not None else 0,
+                "cdp_active_sat_count": int(_finite_float(cdp_row.get("active_sat_count_num", 0), 0.0)) if cdp_row is not None else 0,
+                "source_results_csv": str(pmp_row.get("source_results_csv", "")) if pmp_row is not None else str(cdp_row.get("source_results_csv", "")) if cdp_row is not None else "",
+            }
         )
-        cdp_row = next(row for row in model_rows if row["mode"] == "CDP")
-        audit = {
-            "model_name": model_rows[0]["model_name"],
-            "batch_size": model_rows[0]["batch_size"],
-            "selection_status": "common_slot_mean",
-            "common_slot_count": len(common_slots),
-            "common_slot_ids": "|".join(common_slots),
-            "min_pmp_route_leo": args.min_pmp_route_leo,
-            "min_cdp_active_sats": args.min_cdp_active_sats,
-            "cdp_feasible_slot_count": int(cdp_row["feasible_slot_count"]),
-            "source_mode_selection_dir": str(source_dir),
-        }
-        rows.extend(model_rows)
-        audits.append(audit)
-    df = pd.DataFrame(rows)
-    df.to_csv(out_dir / "exp05_fwms_mode_selection_effectiveness_summary.csv", index=False, encoding="utf-8-sig")
-    pd.DataFrame(audits).to_csv(out_dir / "exp05_fwms_mode_selection_effectiveness_slot_filter.csv", index=False, encoding="utf-8-sig")
-    _plot_exp05(df, out_dir)
-    notes = [
-        "# 实验 5：FWMS 模式选择有效性实验",
-        "",
-        "- 本实验直接读取 mode_selection_experiment.py 生成的 slot_mode_results.csv。",
-        f"- 共同时间片集合：所有模型共享同一批 slot，并要求 PMP/GS-Only/FWMS 可行且 PMP 路由至少包含 {args.min_pmp_route_leo} 颗 LEO。",
-        f"- 统计口径：各模式在共同 slot 集合上取均值；CDP 仅统计 active_sat_count 至少为 {args.min_cdp_active_sats} 的可行 slot。",
-        "- 路由口径：PMP、GS-Only、Sat-Only 在每个 slot 上共用同一路由；Sat-Only 只在该共享路由上选择单星执行位置。",
-    ]
-    (out_dir / "exp05_fwms_mode_selection_effectiveness_notes.md").write_text("\n".join(notes), encoding="utf-8")
-    print(out_dir)
-    return 0
+    return rows
+
+
+def _summarize_exp07(boundary_df: pd.DataFrame) -> pd.DataFrame:
+    summary_rows: list[dict] = []
+    for (model_name, worker_count), sub in boundary_df.groupby(["model_name", "worker_count"], sort=True):
+        total_slots = len(sub)
+        both = sub[sub["category"].isin(["PMP更快", "CDP更快", "并列"])]
+        pmp_better = int((sub["category"] == "PMP更快").sum())
+        cdp_better = int((sub["category"] == "CDP更快").sum())
+        tied = int((sub["category"] == "并列").sum())
+        pmp_only = int((sub["category"] == "仅PMP可行").sum())
+        cdp_only = int((sub["category"] == "仅CDP可行").sum())
+        neither = int((sub["category"] == "均不可行").sum())
+        summary_rows.append(
+            {
+                "model_name": model_name,
+                "model_label": MODEL_LABELS.get(model_name, model_name),
+                "batch_size": int(sub["batch_size"].iloc[0]),
+                "worker_count": int(worker_count),
+                "total_slots": total_slots,
+                "both_feasible_slots": len(both),
+                "pmp_better_slots": pmp_better,
+                "cdp_better_slots": cdp_better,
+                "tied_slots": tied,
+                "pmp_only_feasible_slots": pmp_only,
+                "cdp_only_feasible_slots": cdp_only,
+                "neither_feasible_slots": neither,
+                "pmp_win_rate_among_both": (pmp_better / len(both)) if len(both) else float("nan"),
+                "cdp_win_rate_among_both": (cdp_better / len(both)) if len(both) else float("nan"),
+                "mean_pmp_latency_ms_both": float(both["pmp_latency_ms"].mean()) if len(both) else float("nan"),
+                "mean_cdp_latency_ms_both": float(both["cdp_latency_ms"].mean()) if len(both) else float("nan"),
+                "mean_cdp_over_pmp_ratio_both": float(both["cdp_over_pmp_ratio"].mean()) if len(both) else float("nan"),
+                "median_cdp_over_pmp_ratio_both": float(both["cdp_over_pmp_ratio"].median()) if len(both) else float("nan"),
+            }
+        )
+    return pd.DataFrame(summary_rows)
+
+
+def _plot_exp07_counts(summary_df: pd.DataFrame, out_dir: Path, batch_size: int, show_only: bool = False) -> None:
+    setup_style()
+    models = [model for model in ["yolov5", "resnet101", "vgg19", "vit_huge"] if model in set(summary_df["model_name"])]
+    workers = sorted(summary_df["worker_count"].unique())
+    x = np.arange(len(models))
+    width = 0.22
+    fig, ax = plt.subplots(figsize=(12.0, 5.6))
+
+    for worker_idx, worker_count in enumerate(workers):
+        sub = summary_df[summary_df["worker_count"] == worker_count]
+        pos = x + (worker_idx - (len(workers) - 1) / 2) * width
+        bottom = np.zeros(len(models), dtype=float)
+        for category in BOUNDARY_CATEGORY_ORDER:
+            values = []
+            for model_name in models:
+                row = sub[sub["model_name"] == model_name]
+                if row.empty:
+                    values.append(0.0)
+                    continue
+                row = row.iloc[0]
+                field_map = {
+                    "PMP更快": "pmp_better_slots",
+                    "CDP更快": "cdp_better_slots",
+                    "仅PMP可行": "pmp_only_feasible_slots",
+                    "仅CDP可行": "cdp_only_feasible_slots",
+                    "均不可行": "neither_feasible_slots",
+                    "并列": "tied_slots",
+                }
+                values.append(float(row[field_map[category]]))
+            label = f"{category}（w={worker_count}）"
+            ax.bar(
+                pos,
+                values,
+                width=width * 0.92,
+                bottom=bottom,
+                color=BOUNDARY_CATEGORY_COLOR[category],
+                edgecolor="white",
+                linewidth=0.5,
+                label=label,
+            )
+            bottom += np.asarray(values, dtype=float)
+        for xpos, total in zip(pos, bottom):
+            ax.text(xpos, total + 0.35, f"w={worker_count}", ha="center", va="bottom", fontsize=8)
+
+    ax.set_title(f"实验7：PMP/CDP 翻转边界统计（batch={batch_size}）", pad=12, fontsize=15, fontweight="bold")
+    ax.set_xticks(x)
+    ax.set_xticklabels([MODEL_LABELS[model] for model in models])
+    ax.set_ylabel("slot 数量")
+    ax.set_ylim(0.0, max(float(summary_df["total_slots"].max()), 1.0) * 1.16)
+    ax.grid(True, axis="y", alpha=0.75)
+    ax.spines["top"].set_visible(False)
+    ax.spines["right"].set_visible(False)
+    handles, labels = ax.get_legend_handles_labels()
+    unique = dict(zip(labels, handles))
+    ax.legend(unique.values(), unique.keys(), loc="upper center", bbox_to_anchor=(0.5, 1.22), ncol=3, frameon=False, fontsize=8)
+    fig.tight_layout()
+    _finalize_figure(
+        fig,
+        out_dir / "exp07_pmp_cdp_flip_boundary_counts.png",
+        out_dir / "exp07_pmp_cdp_flip_boundary_counts.pdf",
+        show_only=show_only,
+    )
+
+
+def _plot_exp07_ratio(summary_df: pd.DataFrame, out_dir: Path, batch_size: int, show_only: bool = False) -> None:
+    setup_style()
+    fig, ax = plt.subplots(figsize=(8.8, 5.2))
+    workers = sorted(summary_df["worker_count"].unique())
+    colors = {
+        "yolov5": "#244C85",
+        "resnet101": "#E39D2D",
+        "vgg19": "#2A8C88",
+        "vit_huge": "#8A63D2",
+    }
+    markers = {
+        "yolov5": "o",
+        "resnet101": "s",
+        "vgg19": "D",
+        "vit_huge": "^",
+    }
+
+    finite_values: list[float] = []
+    for model_name in ["yolov5", "resnet101", "vgg19", "vit_huge"]:
+        sub = summary_df[summary_df["model_name"] == model_name].sort_values("worker_count")
+        if sub.empty:
+            continue
+        x = sub["worker_count"].to_numpy(dtype=float)
+        y = sub["mean_cdp_over_pmp_ratio_both"].to_numpy(dtype=float)
+        finite_values.extend([float(value) for value in y if np.isfinite(float(value))])
+        ax.plot(
+            x,
+            y,
+            color=colors[model_name],
+            marker=markers[model_name],
+            linewidth=2.2,
+            markersize=6.5,
+            label=MODEL_LABELS.get(model_name, model_name),
+        )
+        for xv, yv, both in zip(x, y, sub["both_feasible_slots"].tolist()):
+            if np.isfinite(float(yv)):
+                ax.text(xv, yv, f"{yv:.2f}", ha="center", va="bottom", fontsize=8)
+            elif int(both) == 0:
+                ax.text(xv, 1.02, "无共同可行", ha="center", va="bottom", fontsize=7.5, color=colors[model_name], rotation=90)
+
+    ax.axhline(1.0, color="#2F855A", linestyle="--", linewidth=1.3)
+    ax.text(workers[0] - 0.1, 1.0, "CDP/PMP = 1", color="#2F855A", ha="right", va="bottom", fontsize=8)
+    ax.set_title(f"实验7：PMP/CDP 翻转边界（batch={batch_size}）", pad=12, fontsize=15, fontweight="bold")
+    ax.set_xlabel("CDP 并行卫星数")
+    ax.set_ylabel("平均时延比（CDP / PMP，仅统计两者都可行的 slot）")
+    ax.set_xticks(workers)
+    ax.grid(True, axis="y", alpha=0.75)
+    ax.spines["top"].set_visible(False)
+    ax.spines["right"].set_visible(False)
+    if finite_values:
+        ymin = min(min(finite_values), 1.0)
+        ymax = max(max(finite_values), 1.0)
+        ax.set_ylim(max(0.0, ymin * 0.9), ymax * 1.16)
+    ax.legend(loc="upper center", bbox_to_anchor=(0.5, 1.16), ncol=4, frameon=False)
+    fig.tight_layout()
+    _finalize_figure(
+        fig,
+        out_dir / "exp07_pmp_cdp_flip_boundary_ratio.png",
+        out_dir / "exp07_pmp_cdp_flip_boundary_ratio.pdf",
+        show_only=show_only,
+    )
+
+
+def _run_exp07(args) -> int:
+    out_dir, cleanup_dir = _prepare_runtime_out_dir(args.out_dir, _is_show_only(args), "exp07_show")
+    models = [model.strip() for model in args.models.split(",") if model.strip()]
+    worker_counts = [int(value) for value in args.worker_counts.split(",") if value.strip()]
+    try:
+        boundary_rows: list[dict] = []
+        audits: list[dict] = []
+        for model_name in models:
+            for worker_count in worker_counts:
+                tag = f"exp07_boundary_w{worker_count}"
+                df_source, source_dir = _ensure_mode_selection_results(
+                    model_name,
+                    args.batch_size,
+                    args,
+                    out_dir,
+                    tag,
+                    worker_count=worker_count,
+                )
+                model_rows = _build_exp07_boundary_rows(df_source, model_name, args.batch_size, worker_count)
+                boundary_rows.extend(model_rows)
+                audits.append(
+                    {
+                        "model_name": model_name,
+                        "batch_size": args.batch_size,
+                        "worker_count": worker_count,
+                        "slot_count": len({row["slot_id"] for row in model_rows}),
+                        "source_mode_selection_dir": str(source_dir),
+                    }
+                )
+
+        boundary_df = pd.DataFrame(boundary_rows)
+        summary_df = _summarize_exp07(boundary_df)
+        if not _is_show_only(args):
+            boundary_df.to_csv(out_dir / "exp07_pmp_cdp_flip_boundary_long.csv", index=False, encoding="utf-8-sig")
+            summary_df.to_csv(out_dir / "exp07_pmp_cdp_flip_boundary_summary.csv", index=False, encoding="utf-8-sig")
+            pd.DataFrame(audits).to_csv(out_dir / "exp07_pmp_cdp_flip_boundary_audit.csv", index=False, encoding="utf-8-sig")
+        _plot_exp07_counts(summary_df, out_dir, args.batch_size, show_only=_is_show_only(args))
+        _plot_exp07_ratio(summary_df, out_dir, args.batch_size, show_only=_is_show_only(args))
+        if not _is_show_only(args):
+            notes = [
+                "# 实验 7：PMP/CDP 翻转边界验证",
+                "",
+                f"- 模型：{', '.join(MODEL_LABELS.get(model, model) for model in models)}。",
+                f"- batch 固定为 {args.batch_size}。",
+                f"- CDP 并行卫星数：{', '.join(str(item) for item in worker_counts)}。",
+                "- 每个模型-并行卫星数组合都直接运行 mode_selection_experiment.py，读取相同 STK 时隙集合的 PMP/CDP 结果。",
+                "- 比较类别定义：PMP更快 / CDP更快 / 仅PMP可行 / 仅CDP可行 / 均不可行 / 并列。",
+                "- 比值图中的 CDP/PMP > 1 表示 PMP 更快，< 1 表示 CDP 更快。",
+            ]
+            (out_dir / "exp07_pmp_cdp_flip_boundary_notes.md").write_text("\n".join(notes), encoding="utf-8")
+            print(out_dir)
+        return 0
+    finally:
+        if _is_show_only(args):
+            _cleanup_runtime_dir(cleanup_dir)
+
+
+def _run_exp05(args) -> int:
+    out_dir, cleanup_dir = _prepare_runtime_out_dir(args.out_dir, _is_show_only(args), "exp05_show")
+    models = [model.strip() for model in args.models.split(",") if model.strip()]
+    try:
+        loaded: list[tuple[pd.DataFrame, Path]] = []
+        for model_name in models:
+            loaded.append(_ensure_mode_selection_results(model_name, args.data_size, args, out_dir, "exp05_fair"))
+        common_slots = _common_average_slots(loaded, args.min_pmp_route_leo)
+        if not common_slots:
+            raise ValueError("No common slots satisfy the shared-route baseline filter for exp05.")
+        rows: list[dict] = []
+        audits: list[dict] = []
+        for df_source, source_dir in loaded:
+            model_rows = _aggregate_mode_rows_over_slots(
+                df_source,
+                common_slots,
+                source_dir,
+                args.min_cdp_active_sats,
+                "common_slot_mean",
+            )
+            cdp_row = next(row for row in model_rows if row["mode"] == "CDP")
+            audit = {
+                "model_name": model_rows[0]["model_name"],
+                "batch_size": model_rows[0]["batch_size"],
+                "selection_status": "common_slot_mean",
+                "common_slot_count": len(common_slots),
+                "common_slot_ids": "|".join(common_slots),
+                "min_pmp_route_leo": args.min_pmp_route_leo,
+                "min_cdp_active_sats": args.min_cdp_active_sats,
+                "cdp_feasible_slot_count": int(cdp_row["feasible_slot_count"]),
+                "source_mode_selection_dir": str(source_dir),
+            }
+            rows.extend(model_rows)
+            audits.append(audit)
+        df = pd.DataFrame(rows)
+        if not _is_show_only(args):
+            df.to_csv(out_dir / "exp05_fwms_mode_selection_effectiveness_summary.csv", index=False, encoding="utf-8-sig")
+            pd.DataFrame(audits).to_csv(out_dir / "exp05_fwms_mode_selection_effectiveness_slot_filter.csv", index=False, encoding="utf-8-sig")
+        _plot_exp05(df, out_dir, show_only=_is_show_only(args))
+        if not _is_show_only(args):
+            notes = [
+                "# 实验 5：FWMS 模式选择有效性实验",
+                "",
+                "- 本实验直接读取 mode_selection_experiment.py 生成的 slot_mode_results.csv。",
+                f"- 共同时间片集合：所有模型共享同一批 slot，并要求 PMP/GS-Only/FWMS 可行且 PMP 路由至少包含 {args.min_pmp_route_leo} 颗 LEO。",
+                f"- 统计口径：各模式在共同 slot 集合上取均值；CDP 仅统计 active_sat_count 至少为 {args.min_cdp_active_sats} 的可行 slot。",
+                "- 路由口径：PMP、GS-Only、Sat-Only 在每个 slot 上共用同一路由；Sat-Only 只在该共享路由上选择单星执行位置。",
+            ]
+            (out_dir / "exp05_fwms_mode_selection_effectiveness_notes.md").write_text("\n".join(notes), encoding="utf-8")
+            print(out_dir)
+        return 0
+    finally:
+        if _is_show_only(args):
+            _cleanup_runtime_dir(cleanup_dir)
 
 
 def _run_exp06(args) -> int:
-    out_dir = ROOT / args.out_dir
-    out_dir.mkdir(parents=True, exist_ok=True)
-    loaded: list[tuple[pd.DataFrame, Path]] = []
-    batches = [int(value) for value in args.data_sizes.split(",") if value.strip()]
-    for batch_size in batches:
-        loaded.append(_ensure_mode_selection_results(args.model, batch_size, args, out_dir, "exp06_fair"))
-    common_slots = _common_average_slots(loaded, args.min_pmp_route_leo)
-    if not common_slots:
-        raise ValueError("No common slots satisfy the shared-route baseline filter for exp06.")
-    rows: list[dict] = []
-    audits: list[dict] = []
-    for df_source, source_dir in loaded:
-        model_rows = _aggregate_mode_rows_over_slots(
-            df_source,
-            common_slots,
-            source_dir,
-            args.min_cdp_active_sats,
-            "common_slot_mean",
-        )
-        cdp_row = next(row for row in model_rows if row["mode"] == "CDP")
-        audit = {
-            "model_name": model_rows[0]["model_name"],
-            "batch_size": model_rows[0]["batch_size"],
-            "selection_status": "common_slot_mean",
-            "common_slot_count": len(common_slots),
-            "common_slot_ids": "|".join(common_slots),
-            "min_pmp_route_leo": args.min_pmp_route_leo,
-            "min_cdp_active_sats": args.min_cdp_active_sats,
-            "cdp_feasible_slot_count": int(cdp_row["feasible_slot_count"]),
-            "source_mode_selection_dir": str(source_dir),
-        }
-        rows.extend(model_rows)
-        audits.append(audit)
-    df = pd.DataFrame(rows)
-    df.to_csv(out_dir / f"exp06_fwms_data_sensitivity_{args.model}_summary.csv", index=False, encoding="utf-8-sig")
-    pd.DataFrame(audits).to_csv(out_dir / f"exp06_fwms_data_sensitivity_{args.model}_slot_filter.csv", index=False, encoding="utf-8-sig")
-    _plot_exp06(df, out_dir, args.model)
-    notes = [
-        "# 实验 6：FWMS 输入数据量敏感性实验",
-        "",
-        f"- 模型：{MODEL_LABELS.get(args.model, args.model)}。",
-        "- 每个 batch 都读取 mode_selection_experiment.py 的 slot_mode_results.csv，不使用实验 1 的 PMP 比例外推。",
-        f"- 共同时间片集合：所有 batch 共享同一批 slot，并要求 PMP/GS-Only/FWMS 可行且 PMP 路由至少包含 {args.min_pmp_route_leo} 颗 LEO。",
-        f"- 统计口径：各模式在共同 slot 集合上取均值；CDP 仅统计 active_sat_count 至少为 {args.min_cdp_active_sats} 的可行 slot。",
-        "- 路由口径：PMP、GS-Only、Sat-Only 在每个 slot 上共用同一路由；Sat-Only 只在该共享路由上选择单星执行位置。",
-    ]
-    (out_dir / f"exp06_fwms_data_sensitivity_{args.model}_notes.md").write_text("\n".join(notes), encoding="utf-8")
-    print(out_dir)
-    return 0
+    out_dir, cleanup_dir = _prepare_runtime_out_dir(args.out_dir, _is_show_only(args), "exp06_show")
+    try:
+        loaded: list[tuple[pd.DataFrame, Path]] = []
+        batches = [int(value) for value in args.data_sizes.split(",") if value.strip()]
+        for batch_size in batches:
+            loaded.append(_ensure_mode_selection_results(args.model, batch_size, args, out_dir, "exp06_fair"))
+        common_slots = _common_average_slots(loaded, args.min_pmp_route_leo)
+        if not common_slots:
+            raise ValueError("No common slots satisfy the shared-route baseline filter for exp06.")
+        rows: list[dict] = []
+        audits: list[dict] = []
+        for df_source, source_dir in loaded:
+            model_rows = _aggregate_mode_rows_over_slots(
+                df_source,
+                common_slots,
+                source_dir,
+                args.min_cdp_active_sats,
+                "common_slot_mean",
+            )
+            cdp_row = next(row for row in model_rows if row["mode"] == "CDP")
+            audit = {
+                "model_name": model_rows[0]["model_name"],
+                "batch_size": model_rows[0]["batch_size"],
+                "selection_status": "common_slot_mean",
+                "common_slot_count": len(common_slots),
+                "common_slot_ids": "|".join(common_slots),
+                "min_pmp_route_leo": args.min_pmp_route_leo,
+                "min_cdp_active_sats": args.min_cdp_active_sats,
+                "cdp_feasible_slot_count": int(cdp_row["feasible_slot_count"]),
+                "source_mode_selection_dir": str(source_dir),
+            }
+            rows.extend(model_rows)
+            audits.append(audit)
+        df = pd.DataFrame(rows)
+        if not _is_show_only(args):
+            df.to_csv(out_dir / f"exp06_fwms_data_sensitivity_{args.model}_summary.csv", index=False, encoding="utf-8-sig")
+            pd.DataFrame(audits).to_csv(out_dir / f"exp06_fwms_data_sensitivity_{args.model}_slot_filter.csv", index=False, encoding="utf-8-sig")
+        _plot_exp06(df, out_dir, args.model, show_only=_is_show_only(args))
+        if not _is_show_only(args):
+            notes = [
+                "# 实验 6：FWMS 输入数据量敏感性实验",
+                "",
+                f"- 模型：{MODEL_LABELS.get(args.model, args.model)}。",
+                "- 每个 batch 都读取 mode_selection_experiment.py 的 slot_mode_results.csv，不使用实验 1 的 PMP 比例外推。",
+                f"- 共同时间片集合：所有 batch 共享同一批 slot，并要求 PMP/GS-Only/FWMS 可行且 PMP 路由至少包含 {args.min_pmp_route_leo} 颗 LEO。",
+                f"- 统计口径：各模式在共同 slot 集合上取均值；CDP 仅统计 active_sat_count 至少为 {args.min_cdp_active_sats} 的可行 slot。",
+                "- 路由口径：PMP、GS-Only、Sat-Only 在每个 slot 上共用同一路由；Sat-Only 只在该共享路由上选择单星执行位置。",
+            ]
+            (out_dir / f"exp06_fwms_data_sensitivity_{args.model}_notes.md").write_text("\n".join(notes), encoding="utf-8")
+            print(out_dir)
+        return 0
+    finally:
+        if _is_show_only(args):
+            _cleanup_runtime_dir(cleanup_dir)
 
 
 def main() -> None:
@@ -1644,6 +2383,7 @@ def main() -> None:
         default="result/paper_figures_v2/00_layer_output_distribution",
         help="Output directory for exp00 figures",
     )
+    exp00_parser.add_argument("--show-only", action="store_true", help="Display figures only and do not keep outputs")
     _add_passthrough_subparser(subparsers, "exp01", "Rerun experiment 1 paper figure")
     exp02_parser = subparsers.add_parser("exp02", help="Run experiment 2 and draw the paper figure")
     exp02_parser.add_argument(
@@ -1664,11 +2404,16 @@ def main() -> None:
     exp02_parser.add_argument("--sat-memory-mb", type=int, default=4096, help="Homogeneous LEO memory")
     exp02_parser.add_argument("--gs-compute-tflops", type=float, default=300.0, help="GS compute")
     exp02_parser.add_argument("--gs-memory-mb", type=int, default=64000, help="GS memory")
+    exp02_parser.add_argument("--engineering-model", default="yolov5,resnet101,vgg19,vit_huge", help="Comma-separated model ids used by exp02A/exp02B")
+    exp02_parser.add_argument("--task-block-batch", type=int, default=EXP02_BLOCK_BATCH, help="Batch size of each task block")
+    exp02_parser.add_argument("--task-block-count", type=int, default=EXP02_BLOCK_COUNT, help="Number of task blocks in the fixed-load experiment")
+    exp02_parser.add_argument("--min-common-duration-s", type=float, default=0.0, help="Optional minimum STK common visibility duration for engineering exp02; default keeps all routes")
     exp02_parser.add_argument(
         "--out-dir",
-        default="result/paper_figures_v2/02_ladp_pmp_node_count_sensitivity",
+        default="result/paper_figures_final/02_ladp_pmp_node_count_sensitivity",
         help="Output directory for experiment 2 figure and summaries",
     )
+    exp02_parser.add_argument("--show-only", action="store_true", help="Display figures only and do not keep outputs")
     exp03_parser = subparsers.add_parser("exp03", help="Run experiment 3 and draw CDP data-size sensitivity figures")
     exp03_parser.add_argument("--models", default="yolov5,resnet101,vgg19", help="Comma-separated model ids")
     exp03_parser.add_argument("--data-sizes", default="16,32,64,128", help="Comma-separated input data sizes")
@@ -1685,6 +2430,7 @@ def main() -> None:
         default="result/paper_figures_v2/03_lawa_cdp_data_sensitivity",
         help="Output directory for experiment 3",
     )
+    exp03_parser.add_argument("--show-only", action="store_true", help="Display figures only and do not keep outputs")
     exp04_parser = subparsers.add_parser("exp04", help="Run experiment 4 and draw CDP worker-count sensitivity figures")
     exp04_parser.add_argument("--models", default="yolov5,resnet101,vgg19", help="Comma-separated model ids")
     exp04_parser.add_argument("--data-size", type=int, default=64, help="Fixed input data size")
@@ -1701,6 +2447,7 @@ def main() -> None:
         default="result/paper_figures_v2/04_lawa_cdp_worker_count_sensitivity",
         help="Output directory for experiment 4",
     )
+    exp04_parser.add_argument("--show-only", action="store_true", help="Display figures only and do not keep outputs")
     exp05_parser = subparsers.add_parser("exp05", help="Run experiment 5 and draw FWMS mode-selection figure")
     exp05_parser.add_argument("--models", default="yolov5,resnet101,vgg19,vit_huge", help="Comma-separated model ids")
     exp05_parser.add_argument("--data-size", type=int, default=64, help="Fixed input data size")
@@ -1727,6 +2474,7 @@ def main() -> None:
         default="result/paper_figures_v2/05_fwms_mode_selection_effectiveness",
         help="Output directory for experiment 5",
     )
+    exp05_parser.add_argument("--show-only", action="store_true", help="Display figures only and do not keep outputs")
     exp06_parser = subparsers.add_parser("exp06", help="Run experiment 6 and draw FWMS data-size sensitivity figure")
     exp06_parser.add_argument("--model", default="yolov5", help="Model id")
     exp06_parser.add_argument("--data-sizes", default="16,32,64,128", help="Comma-separated input data sizes")
@@ -1753,6 +2501,22 @@ def main() -> None:
         default="result/paper_figures_v2/06_fwms_data_sensitivity",
         help="Output directory for experiment 6",
     )
+    exp06_parser.add_argument("--show-only", action="store_true", help="Display figures only and do not keep outputs")
+    exp07_parser = subparsers.add_parser("exp07", help="Run PMP/CDP flip-boundary verification across models")
+    exp07_parser.add_argument("--models", default="yolov5,resnet101,vgg19,vit_huge", help="Comma-separated model ids")
+    exp07_parser.add_argument("--batch-size", type=int, default=16, help="Fixed batch size used for all models")
+    exp07_parser.add_argument("--worker-counts", default="2,3,4", help="Comma-separated CDP worker counts")
+    exp07_parser.add_argument(
+        "--reuse-mode-results",
+        action="store_true",
+        help="Reuse existing mode_selection sources under the output directory instead of rerunning them",
+    )
+    exp07_parser.add_argument(
+        "--out-dir",
+        default="result/paper_figures_final/07_pmp_cdp_flip_boundary",
+        help="Output directory for experiment 7",
+    )
+    exp07_parser.add_argument("--show-only", action="store_true", help="Display figures only and do not keep outputs")
 
     args = parser.parse_args()
 
@@ -1794,6 +2558,8 @@ def main() -> None:
         raise SystemExit(_run_exp05(args))
     if args.command == "exp06":
         raise SystemExit(_run_exp06(args))
+    if args.command == "exp07":
+        raise SystemExit(_run_exp07(args))
 
     parser.error(f"Unknown command: {args.command}")
 

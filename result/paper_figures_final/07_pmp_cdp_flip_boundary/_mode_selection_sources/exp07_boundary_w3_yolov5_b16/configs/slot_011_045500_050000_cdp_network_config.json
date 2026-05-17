@@ -1,0 +1,93 @@
+{
+  "source_run_id": "stk_dynamic_yolo_001",
+  "slot_id": "slot_011_045500_050000",
+  "mode_family": "CDP",
+  "mode_algo": "LAWA-Discrete",
+  "route_policy": "best_lawa_worker_set_no_aggregator",
+  "no_aggregator": true,
+  "workers": [
+    {
+      "worker_stk_id": "LEO157",
+      "worker_node_id": "SAT-01",
+      "candidate_rank": 36,
+      "candidate_path": [
+        "RS",
+        "LEO157",
+        "LEO137",
+        "LEO117",
+        "LEO097",
+        "LEO173",
+        "Shenzhen"
+      ],
+      "dispatch_route": [
+        "RS",
+        "LEO157"
+      ],
+      "return_route": [
+        "LEO157",
+        "LEO137",
+        "LEO117",
+        "LEO097",
+        "LEO173",
+        "Shenzhen"
+      ],
+      "b_dist_mbps": 17460.9193,
+      "b_return_mbps": 208.01499989025717,
+      "compute_full_model_ms": 184.92084754018512
+    },
+    {
+      "worker_stk_id": "LEO064",
+      "worker_node_id": "SAT-01",
+      "candidate_rank": 8,
+      "candidate_path": [
+        "RS",
+        "LEO064",
+        "LEO136",
+        "LEO106",
+        "LEO173",
+        "Shenzhen"
+      ],
+      "dispatch_route": [
+        "RS",
+        "LEO064"
+      ],
+      "return_route": [
+        "LEO064",
+        "LEO136",
+        "LEO106",
+        "LEO173",
+        "Shenzhen"
+      ],
+      "b_dist_mbps": 13849.4897,
+      "b_return_mbps": 234.99255245727383,
+      "compute_full_model_ms": 253.09500000000006
+    },
+    {
+      "worker_stk_id": "LEO147",
+      "worker_node_id": "SAT-01",
+      "candidate_rank": 3,
+      "candidate_path": [
+        "RS",
+        "LEO147",
+        "LEO127",
+        "LEO107",
+        "LEO097",
+        "Shenzhen"
+      ],
+      "dispatch_route": [
+        "RS",
+        "LEO147"
+      ],
+      "return_route": [
+        "LEO147",
+        "LEO127",
+        "LEO107",
+        "LEO097",
+        "Shenzhen"
+      ],
+      "b_dist_mbps": 9689.255,
+      "b_return_mbps": 212.1996248989017,
+      "compute_full_model_ms": 253.09500000000006
+    }
+  ]
+}

@@ -23,6 +23,7 @@ import pandas as pd
 
 RUNS = Path("result/runs")
 DEFAULT_OUT = Path("result/paper_figures")
+SHOW_ONLY = False
 
 MODEL_ORDER = ["yolov5", "resnet101", "vgg19", "swin_base", "vit_huge"]
 MODEL_LABEL = {
@@ -195,7 +196,11 @@ def read_grouped(files: dict[str, Path], model_order: list[str] | None = None) -
     return pd.concat(frames, ignore_index=True)
 
 
-def save(fig: plt.Figure, stem: str, out_dir: Path) -> None:
+def save(fig: plt.Figure, stem: str, out_dir: Path, show_only: bool = False) -> None:
+    if show_only or SHOW_ONLY:
+        plt.show()
+        plt.close(fig)
+        return
     out_dir.mkdir(parents=True, exist_ok=True)
     fig.savefig(out_dir / f"{stem}.png", bbox_inches="tight")
     fig.savefig(out_dir / f"{stem}.pdf", bbox_inches="tight")
@@ -219,6 +224,7 @@ def plot_sweep(
     out_dir: Path,
     model_order: list[str] | None = None,
     algorithm_order: list[str] | None = None,
+    show_only: bool = False,
 ) -> pd.DataFrame:
     model_order = model_order or MODEL_ORDER
     algorithm_order = algorithm_order or ALGORITHM_ORDER
@@ -351,7 +357,7 @@ def plot_sweep(
     )
     fig.suptitle(title, fontsize=16.5, fontweight="bold", y=0.995)
     fig.subplots_adjust(top=0.80, bottom=0.14, left=0.075, right=0.985, hspace=0.34, wspace=0.24)
-    save(fig, stem, out_dir)
+    save(fig, stem, out_dir, show_only=show_only)
     return pd.DataFrame(summary_rows)
 
 
@@ -364,6 +370,7 @@ def plot_algorithm_trend(
     stem: str,
     out_dir: Path,
     model_order: list[str] | None = None,
+    show_only: bool = False,
 ) -> pd.DataFrame:
     model_order = model_order or MODEL_ORDER
     fig, ax = plt.subplots(figsize=(8.2, 4.8))
@@ -421,7 +428,7 @@ def plot_algorithm_trend(
     ax.set_xticklabels([str(int(x)) for x in x_ticks])
     ax.legend(loc="upper right", frameon=False)
     fig.tight_layout()
-    save(fig, stem, out_dir)
+    save(fig, stem, out_dir, show_only=show_only)
     return pd.DataFrame(summary_rows)
 
 
@@ -728,7 +735,8 @@ def run_scenario_node_plot(args) -> None:
         out_dir=out_dir,
         model_order=model_order,
     )
-    summary.to_csv(out_dir / f"{args.stem}_summary.csv", index=False, encoding="utf-8-sig")
+    if not args.show_only:
+        summary.to_csv(out_dir / f"{args.stem}_summary.csv", index=False, encoding="utf-8-sig")
 
     active_summary = None
     if "mean_active_sat_count" in df.columns:
@@ -741,11 +749,12 @@ def run_scenario_node_plot(args) -> None:
             y_col="mean_active_sat_count",
             y_label="启用计算星数量",
         )
-        active_summary.to_csv(
-            out_dir / f"{args.stem}_active_sat_count_summary.csv",
-            index=False,
-            encoding="utf-8-sig",
-        )
+        if not args.show_only:
+            active_summary.to_csv(
+                out_dir / f"{args.stem}_active_sat_count_summary.csv",
+                index=False,
+                encoding="utf-8-sig",
+            )
 
     note_lines = [
         f"# {args.title}",
@@ -763,8 +772,9 @@ def run_scenario_node_plot(args) -> None:
             f"{args.stem}_active_sat_count.png/pdf"
             "`，展示 LADP 最优解实际启用的计算卫星数量。",
         ]
-    (out_dir / f"{args.stem}_notes.md").write_text("\n".join(note_lines), encoding="utf-8")
-    print(f"[OK] scenario node-count figure written to {out_dir}")
+    if not args.show_only:
+        (out_dir / f"{args.stem}_notes.md").write_text("\n".join(note_lines), encoding="utf-8")
+        print(f"[OK] scenario node-count figure written to {out_dir}")
 
 
 def main() -> None:
@@ -823,7 +833,10 @@ def main() -> None:
         default=None,
         help="Optional title for the extra trend-only figure.",
     )
+    parser.add_argument("--show-only", action="store_true", help="Display figures only and do not keep outputs")
     args = parser.parse_args()
+    global SHOW_ONLY
+    SHOW_ONLY = bool(args.show_only)
 
     if args.scenario_csv:
         run_scenario_node_plot(args)

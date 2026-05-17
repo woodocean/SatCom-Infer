@@ -260,7 +260,7 @@ def annotate_bars(ax: plt.Axes, bars) -> None:
         )
 
 
-def plot(summary: pd.DataFrame, out_dir: Path, file_stem: str) -> None:
+def plot(summary: pd.DataFrame, out_dir: Path, file_stem: str, show_only: bool = False) -> None:
     setup_style()
     summary = summary.copy()
     for col in ["mean_norm_latency_vs_gs", "std_norm_latency_vs_gs"]:
@@ -319,6 +319,10 @@ def plot(summary: pd.DataFrame, out_dir: Path, file_stem: str) -> None:
     ax.spines["right"].set_visible(False)
     add_legend_below(fig, ax, 6)
     fig.subplots_adjust(top=0.72, bottom=0.13, left=0.08, right=0.98)
+    if show_only:
+        plt.show()
+        plt.close(fig)
+        return
     fig.savefig(out_dir / f"{file_stem}.png", bbox_inches="tight")
     fig.savefig(out_dir / f"{file_stem}.pdf", bbox_inches="tight")
     plt.close(fig)
@@ -383,6 +387,7 @@ def main() -> None:
         default="result/paper_figures_controlled/stk_slot_highlight_rerun",
         help="Output directory",
     )
+    parser.add_argument("--show-only", action="store_true", help="Display figure only and do not keep outputs")
     args = parser.parse_args()
 
     model_order = [m.strip() for m in args.models.split(",") if m.strip()]
@@ -398,11 +403,13 @@ def main() -> None:
     summary = summarize(df, model_order)
 
     file_stem = "exp01_ladp_pmp_algorithm_effectiveness"
-    df.to_csv(out_dir / f"{file_stem}_long.csv", index=False, encoding="utf-8-sig")
-    summary.to_csv(out_dir / f"{file_stem}_summary.csv", index=False, encoding="utf-8-sig")
-    plot(summary, out_dir, file_stem)
-    write_notes(args.slot_id, args.repeats, model_order, summary, out_dir, file_stem)
-    print(out_dir)
+    if not args.show_only:
+        df.to_csv(out_dir / f"{file_stem}_long.csv", index=False, encoding="utf-8-sig")
+        summary.to_csv(out_dir / f"{file_stem}_summary.csv", index=False, encoding="utf-8-sig")
+    plot(summary, out_dir, file_stem, show_only=args.show_only)
+    if not args.show_only:
+        write_notes(args.slot_id, args.repeats, model_order, summary, out_dir, file_stem)
+        print(out_dir)
 
 
 if __name__ == "__main__":

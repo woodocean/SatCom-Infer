@@ -151,27 +151,56 @@ class PMPSolver:
         hardware = node.get('hardware', {}) if isinstance(node.get('hardware', {}), dict) else {}
         return float(node.get('memory_mb', hardware.get('memory_mb', 8192)))
 
-    def _check_memory(self, node_idx: int, start: int, end: int) -> Tuple[bool, float]:
+    def _check_memory(self, node_idx: int, start: int, end: int) -> Tuple[bool, Dict]:
         """
         Check whether node_idx can hold layers [start, end).
-        Thesis-style model in MB: weights + input/intermediate activation sum.
-        The profile fields are already in MB, so no extra 1/8 conversion is needed.
+
+        Peak-memory model in MB:
+            segment weights + max(current input activation + current output activation)
+
+        This better matches inference-time peak activation caching than summing all
+        intermediate activations across the whole segment.
         """
         if start >= end:
-            return True, 0.0  # 中继节点无内存占用
+            return True, {
+                "memory_required_mb": 0.0,
+                "weight_sum_mb": 0.0,
+                "peak_activation_mb": 0.0,
+                "peak_input_mb": 0.0,
+                "peak_output_mb": 0.0,
+                "peak_layer_idx": None,
+            }
 
         weight_sum: float = self.prefix_weight[end] - self.prefix_weight[start]
-        activation_sum = 0.0
-        if start == 0:
-            activation_sum += self.input_size_raw
-        else:
-            activation_sum += self.layers[start - 1].get('comm_pure_mb', 0.0)
-        for i in range(start, end):
-            activation_sum += self.layers[i].get('comm_pure_mb', 0.0)
-        mem_required = weight_sum + activation_sum
+        peak_activation_mb = 0.0
+        peak_input_mb = 0.0
+        peak_output_mb = 0.0
+        peak_layer_idx = start
 
+        for i in range(start, end):
+            if i == 0:
+                layer_input_mb = float(self.input_size_raw)
+            else:
+                layer_input_mb = float(self.layers[i - 1].get('comm_pure_mb', 0.0))
+            layer_output_mb = float(self.layers[i].get('comm_pure_mb', 0.0))
+            layer_peak_mb = layer_input_mb + layer_output_mb
+            if layer_peak_mb > peak_activation_mb:
+                peak_activation_mb = layer_peak_mb
+                peak_input_mb = layer_input_mb
+                peak_output_mb = layer_output_mb
+                peak_layer_idx = i
+
+        mem_required = weight_sum + peak_activation_mb
         node_mem = self._node_memory_mb(node_idx)
-        return mem_required <= node_mem, mem_required
+        details = {
+            "memory_required_mb": mem_required,
+            "weight_sum_mb": weight_sum,
+            "peak_activation_mb": peak_activation_mb,
+            "peak_input_mb": peak_input_mb,
+            "peak_output_mb": peak_output_mb,
+            "peak_layer_idx": peak_layer_idx,
+        }
+        return mem_required <= node_mem, details
 
     def _check_segment_constraints(self, node_idx: int, start: int, end: int) -> Tuple[bool, Dict]:
         """
@@ -179,14 +208,14 @@ class PMPSolver:
         Currently this only enforces memory; energy and visibility constraints can
         be added here later so every algorithm uses the same feasibility rule.
         """
-        mem_ok, mem_required = self._check_memory(node_idx, start, end)
+        mem_ok, mem_details = self._check_memory(node_idx, start, end)
         if not mem_ok:
             return False, {
                 "reason": "memory",
-                "memory_required_mb": mem_required,
+                **mem_details,
                 "memory_limit_mb": self._node_memory_mb(node_idx),
             }
-        return True, {"memory_required_mb": mem_required}
+        return True, mem_details
 
     # =================== 工具函数：计算某段层的计算时延（ms） ===================
     def _compute_delay(self, node_idx: int, start: int, end: int) -> float:

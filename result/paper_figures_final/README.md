@@ -1,353 +1,234 @@
 # paper_figures_final
 
-这个文件夹存放当前最终交付版论文图、对应汇总数据，以及一份按严格验收口径整理的实验说明。
+本文件夹存放当前最终使用的 6 组实验图及对应汇总结果。
 
-这份说明不只回答“怎么跑”，还回答四个更关键的问题：
+建议介绍顺序：
 
-1. 每个实验到底在比较什么。
-2. 哪些变量被固定，哪些变量被改变。
-3. 图里观察到的现象，究竟能支持哪些结论。
-4. 哪些结论其实不能说太满，否则容易被老师追问击穿。
+1. 实验 5、6：系统层模式比较与模式切换
+2. 实验 1、2：`PMP` 模式与 `LADP`
+3. 实验 3、4：`CDP` 模式与 `LAWA`
 
-## 统一重跑入口
+## 统一说明
 
-根目录统一入口：
+- `PMP`：模型流水切分
+- `CDP`：数据并行
+- `GS-Only`：全部回传地面站推理
+- `Sat-Only`：单星完成推理
+- `FWMS`：模式选择
 
-```powershell
-python thesis_entry.py <command> ...
-```
+除实验 2、3、4 的受控扫描外，其余结果均使用当前仓库中的新 profile 与当前代码口径生成。
 
-当前最终图对应命令：
-
-```powershell
-python thesis_entry.py exp01 --slot-id slot_033_064500_065000 --models yolov5,resnet101,vgg19,vit_huge --repeats 100 --out-dir result\paper_figures_final\01_ladp_pmp_algorithm_effectiveness
-python thesis_entry.py exp02 --repeats 30 --out-dir result\paper_figures_final\02_ladp_pmp_node_count_sensitivity
-python thesis_entry.py exp03 --models resnet101 --out-dir result\paper_figures_final\03_lawa_cdp_data_sensitivity
-python thesis_entry.py exp04 --models yolov5 --out-dir result\paper_figures_final\04_lawa_cdp_worker_count_sensitivity
-python thesis_entry.py exp05 --out-dir result\paper_figures_final\05_fwms_mode_selection_effectiveness
-python thesis_entry.py exp06 --out-dir result\paper_figures_final\06_fwms_data_sensitivity
-```
-
-## 验收总原则
-
-这 6 个实验并不是同一层级的问题，验收时不要混着讲：
-
-- 实验1和实验2回答的是：`PMP` 模式本身值不值得做，`LADP` 是否比其他切分算法更合理。
-- 实验3和实验4回答的是：`CDP` 模式本身值不值得做，`LAWA` 是否比简单分配更合理。
-- 实验5和实验6回答的是：在 `PMP / CDP / GS-Only / Sat-Only / FWMS` 之间，模式选择是否合理，以及这种选择如何随任务变化而变化。
-
-这意味着：
-
-- 不能用实验1/2直接证明 `FWMS` 一定最优。
-- 不能用实验3/4直接证明 `PMP` 一定不如 `CDP`。
-- 不能把实验5/6里某一个模型的现象，直接推广成“所有模型都如此”。
+现场复现时，如只需要弹图、不保存结果，可直接使用下面的 `show-only` 命令。
 
 ## 实验 1：LADP-PMP 算法有效性
 
-### 目的
+### 图文件
 
-在固定单个 STK 时间片、固定单条多跳路由、固定节点资源的条件下，对比 `LADP / Greedy / GA / Random / Uniform / GS-Only`，验证 `LADP` 在 `PMP` 模式中的切分有效性。
+- `01_ladp_pmp_algorithm_effectiveness/exp01_ladp_pmp_algorithm_effectiveness.png`
 
-### 自变量
-
-- 模型：`YOLOv5 / ResNet101 / VGG19 / ViT-Huge`
-- 算法：`LADP / Greedy / GA / Random / Uniform / GS-Only`
-
-### 固定变量
+### 参数
 
 - 时间片：`slot_033_064500_065000`
-- 路由：固定 6 跳链路 `RS -> SAT-01 -> SAT-02 -> SAT-03 -> SAT-04 -> SAT-05 -> GS`
-- 节点资源：5 颗 LEO + 1 个 GS 的算力与内存固定
-- 输入批次：四个模型统一为 `batch=32`
-- 链路带宽和传播时延：固定为该 slot 对应 STK 导出结果
-- `GA / Random` 重复 `100` 次，其余算法为确定性单次求解
+- 模型：`YOLOv5 / ResNet101 / VGG19 / ViT-Huge`
+- batch：统一 `32`
+- 算法：`LADP / Greedy / GA / Random / Uniform / GS-Only`
+- `GA / Random`：各重复 `100` 次取均值
+- 路由：固定该时间片对应的单条 STK 多跳路径
 
-### 当前观察到的现象
+### 现象
 
-- `YOLOv5`：`LADP=0.0338`，`GA=0.0338`，`Greedy=0.0945`，`Uniform=0.5937`
-- `ResNet101`：`LADP=0.2885`，`GA=0.3264`，`Greedy=0.4210`
-- `VGG19`：`LADP=0.2665`，`GA=0.2674`，`Greedy=0.5582`
-- `ViT-Huge`：`LADP=1.0`，`Greedy=1.0`，`GS-Only=1.0`
+- `YOLOv5`：`LADP` 与 `GA` 接近，明显优于 `Greedy / Random / Uniform`
+- `ResNet101`：`LADP` 优于 `Greedy / Random / Uniform`
+- `VGG19`：`LADP` 与 `GA` 接近，优于其余基线
+- `ViT-Huge`：`LADP` 退化到 `GS-Only`
 
-### 可以支持的结论
+### 结论
 
-- 在这个固定多跳动态场景下，`LADP` 对 `YOLOv5 / ResNet101 / VGG19` 的确优于 `Greedy / Random / Uniform`。
-- `YOLOv5` 和 `VGG19` 上，`LADP` 与改进后的 `GA` 很接近，说明这两个场景的最优切分结构相对清晰。
-- `ViT-Huge` 在当前资源和链路条件下退化为 `GS-Only`，说明 `PMP` 存在明确适用边界。
+- 在当前固定时间片与固定路由下，`LADP` 能为 `PMP` 提供更合理的层切分。
+- 对 `YOLOv5 / ResNet101 / VGG19`，`PMP` 具有明显收益。
+- `ViT-Huge` 在当前配置下不适合 `PMP`。
 
-### 不能说太满的结论
+### 复现命令
 
-- 不能说“LADP 普遍优于 GA”。这里只能说：在这个 slot 和这组模型上，`LADP` 至少不差于 GA，且求解更稳定。
-- 不能说“ViT 一定不适合 PMP”。更准确的说法是：在当前 `batch=32`、当前路由、当前算力和内存约束下，`ViT-Huge` 不适合 PMP。
-- 不能说“实验1证明了 PMP 优于 GS-Only”。实验1只证明了某些模型在该固定 slot 中，合理切分的 `PMP` 可以显著优于 `GS-Only`。
-
-### 最危险的追问
-
-- 为什么只选一个时间片？这个时间片是不是挑出来的有利样本？
-- 为什么 `GA` 只用 `100` 次采样，你怎么知道没有更好的随机结果？
-- 为什么四个模型都固定 `batch=32`，这会不会偏向 PMP？
-- 为什么 `ViT-Huge` 的失败可以归因于模型特征，而不是当前卫星内存太小？
+```powershell
+python -m tools.paper_figures.run_stk_slot_pmp_highlight --slot-id slot_033_064500_065000 --models yolov5,resnet101,vgg19,vit_huge --repeats 100 --show-only --out-dir result\.codex_tmp\exp01_preview
+```
 
 ## 实验 2：LADP-PMP 节点数量敏感性
 
-### 目的
+### 图文件
 
-在受控理论场景中，考察中继 LEO 数量变化对 `LADP` 的影响，并验证这种影响是否依赖资源异构性。
+- `02_ladp_pmp_node_count_sensitivity/exp02_ladp_pmp_node_count_sensitivity.png`
 
-### 自变量
+### 参数
 
-- 中继 LEO 数量：`1 / 2 / 3 / 4 / 5`
-- 资源场景：`同构 / 单一异构 / 典型异构均值`
 - 模型：`YOLOv5 / ResNet101 / VGG19 / ViT-Huge`
-
-### 固定变量
-
-- 基准路由模板：由实验1对应 slot 裁剪而来
+- batch：统一 `32`
+- 中继 LEO 数量：`1 / 2 / 3 / 4 / 5`
+- 场景：`同构 / 异构 / 典型异构均值`
 - `ISL = 5 Gbps`
 - `GSL = 100 Mbps`
-- `GS = 300 TFLOPS, 64 GB`
-- LEO 内存固定 `4 GB`
-- 各模型仍使用 `batch=32`
-- 公平口径：节点数变化时，总体算力预算按节点数同步扩展；异构模板按节点数归一化
+- `LEO` 同构算力：`3 TFLOPS`
+- `LEO` 内存：`4 GB`
+- `GS` 算力：`300 TFLOPS`
+- `GS` 内存：`64 GB`
 
-### 当前观察到的现象
+### 现象
 
-- `YOLOv5`：同构场景几乎不变，`0.0606 -> 0.0599`
-- `YOLOv5`：异构场景反而变差，`0.0606 -> 0.0904`
-- `ResNet101`：典型异构均值下降，`0.3566 -> 0.2842`
-- `VGG19`：典型异构均值明显下降，`0.5769 -> 0.3489`
-- `ViT-Huge`：三种场景都保持 `1.0`
+- `YOLOv5`：同构场景变化很小，异构场景下可能略有变差
+- `ResNet101`：异构场景下随节点数增加有收益
+- `VGG19`：节点数增加时收益更明显
+- `ViT-Huge`：基本保持 `GS-Only = 1`
 
-### 可以支持的结论
+### 结论
 
-- 节点数量增加本身不保证更优，收益依赖模型压缩特征与资源异构结构。
-- 对 `VGG19` 这类可在中间层显著压缩数据的模型，更多节点和异构资源会扩大 `PMP` 的收益空间。
-- 对 `YOLOv5`，额外节点在某些异构模板下可能引入更多通信负担而不是收益。
+- 节点数增加本身不保证收益，效果与模型特征和资源异构性有关。
+- `VGG19` 更能利用多星 `PMP` 的切分空间。
+- `YOLOv5` 在某些异构条件下更容易受到额外通信开销影响。
 
-### 不能说太满的结论
+### 复现命令
 
-- 不能说“节点越多越差”或“节点越多越好”。这张图恰恰说明收益方向依赖模型。
-- 不能说这是 STK 动态场景结论。实验2是受控理论实验，不是多时间片真实动态平均。
-- 不能说“异构一定优于同构”。这里只能说：在某些模型上，异构给了 `LADP` 更多可利用空间。
-
-### 最危险的追问
-
-- 总算力口径到底是“固定总算力”还是“随节点数扩展总算力”？如果是后者，这还是纯节点数敏感性吗？
-- 路由是从一个 slot 裁剪来的，是否会把实验1里的拓扑偏好带进实验2？
-- 为什么只扫到 5 个节点？再多会不会趋势反转？
-- `YOLOv5` 在异构场景下变差，说明 `LADP` 不稳，还是说明实验设置本身偏向通信瓶颈？
+```powershell
+python thesis_entry.py exp02 --repeats 1 --show-only
+```
 
 ## 实验 3：LAWA-CDP 数据量敏感性
 
-### 目的
+### 图文件
 
-在固定 worker 数量下，比较输入数据量变化时 `LAWA` 与简单分配策略在 `CDP` 模式下的表现。
+- `03_lawa_cdp_data_sensitivity/exp03_lawa_cdp_data_sensitivity_resnet101.png`
 
-### 自变量
+### 参数
 
+- 模型：`ResNet101`
 - 输入数据量：`16 / 32 / 64 / 128`
-- worker 场景：`homogeneous / heterogeneous`
+- worker 数量：固定 `4`
+- 场景：`同构 worker / 异构 worker`
 - 算法：`LAWA / Greedy / Uniform / Random / Sat-Only`
-
-### 固定变量
-
-- 最终图只保留 `ResNet101`
-- worker 数量固定 `4`
 - profile：`config/dnn_profiles_database_jetson.json`
-- `ResNet101` 输入尺寸固定 `224x224`
-- 随机基线固定种子，重复 `30` 次
+- 随机基线：固定种子，重复 `30` 次
 
-### 当前观察到的现象
+### 现象
 
-在 `heterogeneous` 场景、`ResNet101` 上：
+- 同构场景下，`LAWA` 与简单分配差距较小
+- 异构场景下，`LAWA` 明显优于 `Uniform / Random`
+- 随输入数据量增大，`LAWA` 对异构 worker 的利用更稳定
 
-- `LAWA`：`0.4949 -> 0.4072`
-- `Greedy`：约 `0.4823 -> 0.4803`
-- `Uniform`：约 `0.9688 -> 0.9664`
-- `Random`：约 `1.0222 -> 1.0894`
+### 结论
 
-### 可以支持的结论
+- `CDP` 的收益不仅来自并行，还来自对异构 worker 的感知分配。
+- `LAWA` 在异构场景下优于简单均分与随机分配。
 
-- 在异构 worker 场景下，`LAWA` 能随着数据量增大更好地利用强 worker，整体优于 `Uniform / Random`。
-- `Greedy` 在小规模下可能接近 `LAWA`，但随着输入数据量增大，`LAWA` 的优势更稳定。
-- `CDP` 的收益不仅来自“多星并行”，更来自“异构感知的数据量分配”。
+### 复现命令
 
-### 不能说太满的结论
-
-- 不能说 `LAWA` 在所有 batch 都明显优于 `Greedy`。这里 `Greedy` 在小 batch 下很接近。
-- 不能说实验3证明了 `CDP` 比 `PMP` 更适合 `ResNet101`。实验3压根没和 `PMP` 做同口径对比。
-- 不能说“输入越大，LAWA 优势越大”是普适规律。这里只保留了 `ResNet101`。
-
-### 最危险的追问
-
-- 为什么只展示 `ResNet101`，是不是因为别的模型现象不够漂亮？
-- 既然 `Greedy` 和 `LAWA` 在小 batch 下很接近，你怎么证明 LAWA 的复杂度是值得的？
-- 为什么归一化基准选 `Sat-Only` 而不是 `GS-Only`？
-- 这个实验没有动态路由，能不能代表真实星地环境下的 CDP？
+```powershell
+python thesis_entry.py exp03 --models resnet101 --show-only
+```
 
 ## 实验 4：LAWA-CDP worker 数量敏感性
 
-### 目的
+### 图文件
 
-在固定输入数据量下，比较 worker 数量增加时 `LAWA` 的收益是否持续，以及是否优于简单贪心。
+- `04_lawa_cdp_worker_count_sensitivity/exp04_lawa_cdp_worker_count_sensitivity_yolov5.png`
 
-### 自变量
+### 参数
 
+- 模型：`YOLOv5`
+- 输入数据量：固定 `64`
 - worker 数量：`1 / 2 / 3 / 4 / 5`
 - 算法：`LAWA / Greedy / Sat-Only`
-
-### 固定变量
-
-- 最终图只保留 `YOLOv5`
-- 输入数据量固定 `64`
 - profile：`config/dnn_profiles_database_jetson.json`
-- worker 场景：典型异构 worker 集合逐步增加
+- 场景：异构 worker 集合逐步增加
 
-### 当前观察到的现象
+### 现象
 
-- `LAWA`：`1.0000 -> 0.3767`
-- `Greedy`：`1.0000 -> 0.4304`
-- `Sat-Only`：恒为 `1.0`
+- `LAWA` 随 worker 数增加持续下降
+- `Greedy` 也下降，但整体高于 `LAWA`
+- `Sat-Only` 作为基线保持 `1`
 
-### 可以支持的结论
+### 结论
 
-- 在当前异构 worker 配置下，worker 数量增加能明显提升 `YOLOv5` 的 `CDP` 收益。
-- `LAWA` 全程优于 `Greedy`，说明异构感知分配在多 worker 条件下有稳定价值。
-- 收益并不是线性叠加：从 `1->2`、`2->3`、`3->4`、`4->5` 的边际改善不同。
+- 在当前异构 worker 配置下，增加 worker 数量能降低 `CDP` 时延。
+- `LAWA` 比 `Greedy` 更能利用异构 worker。
 
-### 不能说太满的结论
+### 复现命令
 
-- 不能说“worker 越多越好”是一般规律。这里只展示 `YOLOv5`，且 worker 是一组特定异构配置。
-- 不能说 `LAWA` 对所有模型都有同样幅度收益。`ResNet101 / VGG19` 当前未纳入最终图。
-- 不能说去掉 `Uniform / Random` 之后它们就不重要。这里只是最终图聚焦，不代表它们没有分析价值。
-
-### 最危险的追问
-
-- 为什么最终图只保留 `YOLOv5`？这会不会有选择性展示的问题？
-- worker 增加时，总带宽、总算力、总回传开销是不是也在变？如果都在变，这还是单一变量实验吗？
-- `Sat-Only` 被固定为 1 的归一化口径，会不会掩盖绝对时延上的某些反常点？
+```powershell
+python thesis_entry.py exp04 --models yolov5 --show-only
+```
 
 ## 实验 5：FWMS 模式选择有效性
 
-### 目的
+### 图文件
 
-在同一批真实 STK 时间片上，对 `PMP / CDP / GS-Only / Sat-Only / FWMS` 做公平比较，验证 `FWMS` 的模式选择是否符合各模型任务特征。
+- `05_fwms_mode_selection_effectiveness/exp05_fwms_mode_selection_effectiveness.png`
 
-### 自变量
+### 参数
 
 - 模型：`YOLOv5 / ResNet101 / VGG19 / ViT-Huge`
+- 输入数据量：固定 `64`
 - 模式：`PMP / CDP / GS-Only / Sat-Only / FWMS`
-
-### 固定变量
-
-- 输入数据量固定 `64`
+- `CDP worker_count = 4`
+- `worker_memory = 2048 MB`
+- `gsl_bandwidth = 100 Mbps`
+- `gs_compute_factor = 100`
 - 共同时间片集合：`28` 个 common slots
-- 公平筛选：
+- 公平口径：
   - `PMP` 共享路由至少包含 `3` 颗 `LEO`
   - `CDP active_sat_count >= 3`
   - `PMP / GS-Only / Sat-Only` 在每个 slot 上共用同一路由
-- `CDP worker_count = 4`
-- `worker_memory = 2048 MB`
-- `gsl_bandwidth = 100 Mbps`
-- `gs_compute_factor = 100`
-- profile：`config/dnn_profiles_database_jetson.json`
 
-### 当前观察到的现象
+### 现象
 
-- `YOLOv5`：`CDP=0.0278`，`FWMS=0.0286`，`PMP=0.0986`
-- `ResNet101`：`CDP=0.1751`，`FWMS=0.1922`，`PMP=0.6340`
-- `VGG19`：`CDP` 不可行，`Sat-Only` 不可行，`FWMS=PMP=0.9138`
-- `ViT-Huge`：`CDP` 不可行，`Sat-Only` 不可行，`FWMS=PMP=GS-Only=1.0`
+- `YOLOv5`：`CDP` 最低，`FWMS` 接近 `CDP`
+- `ResNet101`：`CDP` 最低，`FWMS` 接近 `CDP`
+- `VGG19`：`CDP / Sat-Only` 不可行，`FWMS` 回到 `PMP`
+- `ViT-Huge`：`CDP / Sat-Only` 不可行，`FWMS` 与 `PMP / GS-Only` 重合
 
-### 可以支持的结论
+### 结论
 
-- 在当前共同 slot 平均口径下，`FWMS` 没有简单地固定偏向 `PMP` 或 `GS-Only`，而是随模型可行性与收益空间变化。
-- `YOLOv5` 与 `ResNet101` 上，`CDP` 明显优于 `PMP`，说明当前新 profile 下，这两个模型的主导瓶颈更接近“分摊计算”而非“流水线压缩回传”。
-- `VGG19 / ViT-Huge` 的 `CDP` 与 `Sat-Only` 在当前内存约束下不可行，`FWMS` 合理回退到可行模式。
+- 不同模型对应的最优模式不同。
+- `FWMS` 会随模型特征与资源可行性切换模式，而不是固定选择某一种模式。
 
-### 不能说太满的结论
+### 复现命令
 
-- 不能说 `FWMS` 已经达到 oracle 最优。这里只能说它给出了合理、可解释、可行的模式选择。
-- 不能说 `YOLOv5` 一定应该选 `CDP`。这是基于当前 `batch=64`、`worker=4`、`2 GB` 内存和共同 slot 集合的结果。
-- 不能说 `VGG19 / ViT-Huge` 天然不适合 `CDP`。更准确地说：在当前 worker 内存与共同 slot 条件下不可行。
-
-### 最危险的追问
-
-- 为什么 `FWMS` 比 `CDP` 略差？如果最终目的是真正最小时延，为什么不直接选 `CDP`？
-- 公平性到底如何保证？为什么 PMP、GS-Only、Sat-Only 必须共路由？
-- `VGG19 / ViT-Huge` 的不可行是算法问题、内存问题，还是你们人为设置太严？
-- `28` 个 common slots 会不会过滤掉了大量对 `CDP` 不利或对 `PMP` 不利的时间片？
+```powershell
+python thesis_entry.py exp05 --show-only
+```
 
 ## 实验 6：FWMS 输入数据量敏感性
 
-### 目的
+### 图文件
 
-在与实验5相同的公平模式比较框架下，只改变 `YOLOv5` 的输入数据量，考察模式收益随 batch 增大如何变化。
+- `06_fwms_data_sensitivity/exp06_fwms_data_sensitivity_yolov5.png`
+- `06_fwms_data_sensitivity/exp06_fwms_data_sensitivity_yolov5_normalized.png`
 
-### 自变量
+### 参数
 
+- 模型：`YOLOv5`
 - 输入数据量：`16 / 32 / 64 / 128`
 - 模式：`PMP / CDP / GS-Only / Sat-Only / FWMS`
-
-### 固定变量
-
-- 模型固定 `YOLOv5`
-- 共同时间片集合：同样为 `28` 个 common slots
-- 路由公平口径与实验5一致
 - `CDP worker_count = 4`
 - `worker_memory = 2048 MB`
 - `gsl_bandwidth = 100 Mbps`
 - `gs_compute_factor = 100`
+- 共同时间片集合：与实验 5 相同的 `28` 个 common slots
+- 路由公平口径：与实验 5 相同
 
-### 当前观察到的现象
+### 现象
 
-- `GS-Only`：`3203.63 -> 25269.02 ms`，近似线性增长
-- `PMP`：归一化时延稳定在 `0.0986 ~ 0.1149`
-- `CDP`：`0.0399 -> 0.0278`，到 `batch=128` 不可行
-- `Sat-Only`：与 `PMP` 基本重合，到 `batch=128` 不可行
-- `FWMS`：`batch=16` 取值 `0.0587`，`32/64` 接近 `CDP`，`128` 回退到 `PMP`
+- `GS-Only` 随 batch 增大近似线性增长
+- `PMP` 保持稳定低于 `GS-Only`
+- `CDP` 在 `16 / 32 / 64` 上最低，到 `128` 不可行
+- `FWMS` 在小中 batch 下接近 `CDP`，到 `128` 回退为 `PMP`
 
-### 可以支持的结论
+### 结论
 
-- 在当前公平口径下，`GS-Only` 的主要代价随输入规模近似线性上升。
-- `CDP` 在 `batch=16/32/64` 上明显优于 `PMP`，但到 `batch=128` 受到可行性约束。
-- `FWMS` 体现出“可行时选低时延，不可行时回退保底”的策略行为。
+- 模式优劣会随任务规模变化。
+- `FWMS` 在可行时选择更低时延模式，在不可行时回退到保底模式。
 
-### 不能说太满的结论
+### 复现命令
 
-- 不能说 `FWMS` 会随着 batch 单调变好或变差。它是离散模式选择，可能出现阈值切换。
-- 不能说 `PMP` 对 `YOLOv5` 没价值。它在 `batch=128` 时成为可行保底，而且比 `GS-Only` 低很多。
-- 不能说 `CDP` 在大 batch 上绝对更强。当前 `2 GB` worker 内存让 `batch=128` 不可行。
-
-### 最危险的追问
-
-- 为什么 `GS-Only` 现在看起来线性增长，而你前面说它“不一定线性”？是不是口径改过？
-- `FWMS` 在 `batch=16` 没直接选最优 `CDP`，这个判据是不是太保守？
-- `batch=128` 时 `CDP` 不可行，到底是内存限制还是路由限制？
-- 为什么只展示 `YOLOv5`？如果换成 `ResNet101`，趋势还会这样吗？
-
-## 答辩时必须主动交代的三件事
-
-### 1. 哪些实验是“真实动态平均”，哪些只是“受控理论实验”
-
-- 实验1：单 slot 真实路由实例
-- 实验2：受控理论扫描
-- 实验3/4：受控 CDP 资源实验
-- 实验5/6：多 slot 公平平均
-
-### 2. 哪些结论是“算法优劣”，哪些只是“适用边界”
-
-- `LADP` 和 `LAWA` 的图主要讲算法优劣
-- `ViT-Huge`、`VGG19` 的不可行更多讲适用边界与资源约束
-
-### 3. 当前最脆弱的地方
-
-- 实验1只看一个 slot，外推能力有限
-- 实验2不是 STK 动态平均
-- 实验3/4只保留一个模型做最终图，存在“展示压缩”风险
-- 实验5/6仍是 profile 驱动的仿真，不是完整半实物闭环
-
-## 配套文档
-
-- [STRICT_ACCEPTANCE_CHECKLIST.md](E:\Workspace\Python_pycharm_workspace\Projects\Collabrative_Inference\Neurosurgeon-main\result\paper_figures_final\STRICT_ACCEPTANCE_CHECKLIST.md)
-
+```powershell
+python thesis_entry.py exp06 --show-only
+```
