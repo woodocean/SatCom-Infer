@@ -64,7 +64,7 @@ CDP_ALG_LABEL = {
     "Greedy": "贪心",
     "Uniform": "均匀",
     "Random": "随机",
-    "Sat-Only": "Sat-Only",
+    "Sat-Only": "Single-LEO",
 }
 CDP_ALG_COLOR = {
     "LAWA": "#244C85",
@@ -92,7 +92,7 @@ MODE_LABEL = {
     "PMP": "PMP",
     "CDP": "CDP",
     "GS-Only": "GS-Only",
-    "Sat-Only": "Sat-Only",
+    "Sat-Only": "Single-LEO",
     "FWMS": "FWMS",
 }
 MODE_COLOR = {
@@ -1054,6 +1054,37 @@ def _build_cdp_env(profile: dict, scenario: str, worker_count: int) -> dict:
     }
 
 
+def _build_cdp_env_exp04(profile: dict, worker_count: int) -> dict:
+    base_compute_ms = float(profile["compute_full_model_ms"])
+    pool = [
+        {"compute": 3.0, "b_dist": 5000.0, "b_return": 100.0, "dist_prop": 3.0, "return_prop": 3.0},
+        {"compute": 3.8, "b_dist": 5000.0, "b_return": 210.0, "dist_prop": 2.1, "return_prop": 2.0},
+        {"compute": 2.4, "b_dist": 5000.0, "b_return": 80.0, "dist_prop": 4.0, "return_prop": 3.5},
+        {"compute": 3.4, "b_dist": 5000.0, "b_return": 165.0, "dist_prop": 2.4, "return_prop": 2.6},
+        {"compute": 2.8, "b_dist": 5000.0, "b_return": 95.0, "dist_prop": 3.7, "return_prop": 3.2},
+    ]
+    templates = [dict(item) for item in pool[:worker_count]]
+    if templates:
+        mean_compute = sum(item["compute"] for item in templates) / len(templates)
+        if mean_compute > 0:
+            scale = 3.0 / mean_compute
+            for item in templates:
+                item["compute"] *= scale
+    return {
+        "nodes": [
+            {
+                "id": f"SAT-{idx + 1:02d}",
+                "compute_full_model_ms": _scale_worker_compute(base_compute_ms, template["compute"]),
+                "b_dist_mbps": template["b_dist"],
+                "b_return_mbps": template["b_return"],
+                "dist_prop_ms": template["dist_prop"],
+                "return_prop_ms": template["return_prop"],
+            }
+            for idx, template in enumerate(templates)
+        ]
+    }
+
+
 def _sat_only_latency(profile: dict, env: dict) -> float:
     latencies = []
     for node in env["nodes"]:
@@ -1061,6 +1092,20 @@ def _sat_only_latency(profile: dict, env: dict) -> float:
         latency, _ = solver.solve_uniform()
         latencies.append(float(latency))
     return min(latencies) if latencies else float("inf")
+
+
+def _single_leo_mean_latency(profile: dict) -> float:
+    mean_node = {
+        "id": "SAT-MEAN",
+        "compute_full_model_ms": _scale_worker_compute(float(profile["compute_full_model_ms"]), 3.0),
+        "b_dist_mbps": 5000.0,
+        "b_return_mbps": 100.0,
+        "dist_prop_ms": 3.0,
+        "return_prop_ms": 3.0,
+    }
+    solver = CDPSolver(profile, {"nodes": [mean_node]})
+    latency, _ = solver.solve_uniform()
+    return float(latency)
 
 
 def _random_allocation_latency(solver: CDPSolver, seed: int, repeats: int) -> tuple[float, float]:
@@ -1074,9 +1119,15 @@ def _random_allocation_latency(solver: CDPSolver, seed: int, repeats: int) -> tu
     return float(np.mean(latencies)), float(np.std(latencies))
 
 
-def _evaluate_cdp_algorithms(profile: dict, env: dict, seed: int, random_repeats: int) -> list[dict]:
+def _evaluate_cdp_algorithms(
+    profile: dict,
+    env: dict,
+    seed: int,
+    random_repeats: int,
+    sat_only_latency_override: float | None = None,
+) -> list[dict]:
     solver = CDPSolver(profile, env)
-    sat_only = _sat_only_latency(profile, env)
+    sat_only = float(sat_only_latency_override) if sat_only_latency_override is not None else _sat_only_latency(profile, env)
     results: list[dict] = []
 
     latency_lawa, plan_lawa = solver.solve_lawa_discrete(batch_size=int(profile["batch_size"]))
@@ -1124,14 +1175,8 @@ def _plot_exp03_model(df: pd.DataFrame, model_name: str, out_dir: Path, show_onl
     sub = model_df[model_df["scenario"] == "heterogeneous"].copy()
     fig, ax = plt.subplots(figsize=(9.4, 4.9))
     batch_order = sorted(sub["batch_size"].unique())
-    batch_to_mb = {
-        int(batch): float(
-            sub.loc[sub["batch_size"] == batch, "input_size_mb"].iloc[0]
-        )
-        for batch in batch_order
-    }
     x = np.arange(len(batch_order), dtype=float) * 1.35
-    width = 0.14
+    width = 0.18
     offsets = np.linspace(-2 * width, 2 * width, num=len(CDP_ALG_ORDER))
     y_values: list[float] = []
     handles = []
@@ -1153,11 +1198,23 @@ def _plot_exp03_model(df: pd.DataFrame, model_name: str, out_dir: Path, show_onl
         )
         handles.append(bars[0])
         labels.append(CDP_ALG_LABEL[algorithm])
-    ax.set_title("异构场景下处理数据量敏感性", pad=10, fontsize=15, fontweight="bold")
-    ax.set_xlabel("处理数据量 / MB")
-    ax.set_ylabel("归一化时延（Sat-Only = 1）")
+        for bar, value in zip(bars, y):
+            ax.text(
+                bar.get_x() + bar.get_width() / 2,
+                bar.get_height() + 0.015,
+                f"{value:.2f}",
+                ha="center",
+                va="bottom",
+                fontsize=8.6,
+                color=CDP_ALG_COLOR[algorithm],
+                rotation=0,
+                clip_on=False,
+            )
+    ax.set_title("CDP模式下不同算法的归一化时延对比", pad=10, fontsize=15, fontweight="bold")
+    ax.set_xlabel("输入数据量（样本数）")
+    ax.set_ylabel("归一化时延（Single-LEO = 1）")
     ax.set_xticks(x)
-    ax.set_xticklabels([f"{batch_to_mb[int(batch)]:.1f}" for batch in batch_order])
+    ax.set_xticklabels([str(int(batch)) for batch in batch_order])
     _style_cdp_axis(ax, y_values)
     ax.legend(handles, labels, loc="upper center", bbox_to_anchor=(0.5, 1.18), ncol=5, frameon=False)
     fig.tight_layout(rect=[0, 0, 1, 0.93])
@@ -1168,34 +1225,47 @@ def _plot_exp03_model(df: pd.DataFrame, model_name: str, out_dir: Path, show_onl
 def _plot_exp04_model(df: pd.DataFrame, model_name: str, out_dir: Path, show_only: bool = False) -> None:
     setup_style()
     model_df = df[df["model_name"] == model_name].copy()
-    fig, ax = plt.subplots(figsize=(7.8, 4.8))
-    y_values: list[float] = []
-    for algorithm in CDP_ALG_ORDER_EXP04:
-        alg_df = model_df[model_df["algorithm"] == algorithm].sort_values("worker_count")
-        if alg_df.empty:
-            continue
-        x = alg_df["worker_count"].to_numpy(dtype=float)
-        y = alg_df["norm_latency_vs_sat_only"].to_numpy(dtype=float)
-        y_values.extend(y.tolist())
-        ax.plot(
-            x,
-            y,
-            label=CDP_ALG_LABEL[algorithm],
-            color=CDP_ALG_COLOR[algorithm],
-            marker=CDP_ALG_MARKER[algorithm],
-            linestyle=CDP_ALG_LINESTYLE[algorithm],
-            linewidth=2.0,
-            markersize=5.2,
-        )
-    ax.set_title("LAWA-CDP 模式的 worker 数量敏感性实验", pad=12, fontsize=15, fontweight="bold")
-    ax.set_xlabel("并行 worker 卫星数量")
-    ax.set_ylabel("归一化时延（Sat-Only = 1）")
-    ax.set_xticks(sorted(model_df["worker_count"].unique()))
-    _style_cdp_axis(ax, y_values)
-    ax.legend(loc="upper center", bbox_to_anchor=(0.5, 1.18), ncol=5, frameon=False)
-    fig.tight_layout()
-    stem = f"exp04_lawa_cdp_worker_count_sensitivity_{model_name}"
-    _finalize_figure(fig, out_dir / f"{stem}.png", out_dir / f"{stem}.pdf", show_only=show_only)
+    style_map = {
+        "LAWA": ("#244C85", "o", "-"),
+        "Sat-Only": ("#4A4A4A", "D", "--"),
+    }
+
+    def _draw(y_field: str, title: str, ylabel: str, stem_suffix: str) -> None:
+        fig, ax = plt.subplots(figsize=(7.8, 4.8))
+        y_values: list[float] = []
+        for algorithm in ["LAWA", "Sat-Only"]:
+            alg_df = model_df[model_df["algorithm"] == algorithm].sort_values("worker_count")
+            if alg_df.empty:
+                continue
+            x = alg_df["worker_count"].to_numpy(dtype=float)
+            if y_field == "latency_total_min":
+                y = (alg_df["latency_ms"].to_numpy(dtype=float) * 50.0) / 1000.0 / 60.0
+            else:
+                y = alg_df["norm_latency_vs_sat_only"].to_numpy(dtype=float)
+            y_values.extend(y.tolist())
+            color, marker, linestyle = style_map[algorithm]
+            ax.plot(
+                x,
+                y,
+                label=CDP_ALG_LABEL[algorithm],
+                color=color,
+                marker=marker,
+                linestyle=linestyle,
+                linewidth=2.0,
+                markersize=5.2,
+            )
+        ax.set_title(title, pad=12, fontsize=15, fontweight="bold")
+        ax.set_xlabel("参与 LEO 节点数")
+        ax.set_ylabel(ylabel)
+        ax.set_xticks(sorted(model_df["worker_count"].unique()))
+        _style_cdp_axis(ax, y_values)
+        ax.legend(loc="upper center", bbox_to_anchor=(0.5, 1.16), ncol=2, frameon=False)
+        fig.tight_layout()
+        stem = f"exp04_lawa_cdp_worker_count_sensitivity_{model_name}{stem_suffix}"
+        _finalize_figure(fig, out_dir / f"{stem}.png", out_dir / f"{stem}.pdf", show_only=show_only)
+
+    _draw("latency_total_min", "CDP 节点数与总时延", "总时延 / min", "")
+    _draw("norm_latency_vs_sat_only", "CDP 节点数与归一化时延", "归一化时延（Single-LEO = 1）", "_normalized")
 
 def _write_cdp_notes(out_dir: Path, stem: str, title: str, models: list[str], command: str, conclusion: list[str]) -> None:
     lines = [
@@ -1233,7 +1303,7 @@ def _run_exp03(args) -> int:
                     "output_size_mb": raw_profile["output_size_mb"],
                     "batch_size": raw_profile["batch_size"],
                 }
-                for scenario in ["homogeneous", "heterogeneous"]:
+                for scenario in ["heterogeneous"]:
                     env = _build_cdp_env(raw_profile, scenario=scenario, worker_count=args.worker_count)
                     for result in _evaluate_cdp_algorithms(
                         cdp_profile,
@@ -1266,12 +1336,12 @@ def _run_exp03(args) -> int:
                 "实验 3：LAWA-CDP 模式的数据量敏感性实验",
                 models,
                 f"python thesis_entry.py exp03 --out-dir {args.out_dir}",
-                [
-                    "同构 worker 场景下，各 worker 能力一致，均匀分配通常接近 LAWA。",
-                    "异构 worker 场景下，LAWA 会把更多数据分给算力强、链路好的 worker，优势更明显。",
-                    "输入数据量增大后，离散样本分配更接近连续最优解，LAWA 相对随机/贪心/均匀的稳定性更容易体现。",
-                ],
-            )
+                  [
+                      "实验 3 使用 PC profile，并仅保留异构 worker 场景。",
+                      "横轴 batch 从 64 扩展到 512，用于观察 CDP 在更大任务输入下的相对时延变化。",
+                      "LAWA 的优势主要体现在异构节点间的数据分配能力。",
+                  ],
+              )
             print(out_dir)
         return 0
     finally:
@@ -1293,13 +1363,15 @@ def _run_exp04(args) -> int:
                 "output_size_mb": raw_profile["output_size_mb"],
                 "batch_size": raw_profile["batch_size"],
             }
+            single_leo_latency = _single_leo_mean_latency(raw_profile)
             for worker_count in worker_counts:
-                env = _build_cdp_env(raw_profile, scenario="heterogeneous", worker_count=worker_count)
+                env = _build_cdp_env_exp04(raw_profile, worker_count=worker_count)
                 for result in _evaluate_cdp_algorithms(
                     cdp_profile,
                     env,
                     seed=args.seed + worker_count + len(model_name),
                     random_repeats=args.random_repeats,
+                    sat_only_latency_override=single_leo_latency,
                 ):
                     rows.append(
                         {
@@ -1326,12 +1398,12 @@ def _run_exp04(args) -> int:
                 "实验 4：LAWA-CDP 模式的 worker 数量敏感性实验",
                 models,
                 f"python thesis_entry.py exp04 --out-dir {args.out_dir}",
-                [
-                    "worker 数量增加通常会降低 CDP 时延，但收益不是线性的。",
-                    "当新增 worker 算力或链路条件较弱时，额外分发和回传开销会削弱并行收益。",
-                    "LAWA 的作用是根据 worker 的计算和链路状态调节数据量，避免简单均分在异构场景下失效。",
-                ],
-            )
+                  [
+                      "实验 4 使用异构 worker 场景、batch=64，并将任务总量固定为 50 个任务块。",
+                      "图中仅保留 LAWA-CDP 与 Single-LEO 两种方式，比较分钟级总时延。",
+                      "随着参与 LEO 节点数增加，LAWA 更能把新增节点资源转化为总时延收益。",
+                  ],
+              )
             print(out_dir)
         return 0
     finally:
@@ -1464,6 +1536,8 @@ def _ensure_mode_selection_results(
     out_dir: Path,
     tag: str,
     worker_count: int | None = None,
+    profile_device: str | None = None,
+    sat_memory_range_mb: str | None = None,
 ) -> tuple[pd.DataFrame, Path]:
     source_dir = _mode_selection_source_dir(model_name)
     source_out_dir = out_dir / "_mode_selection_sources" / f"{tag}_{model_name}_b{batch_size}"
@@ -1471,6 +1545,18 @@ def _ensure_mode_selection_results(
     metadata_path = source_out_dir / "metadata.json"
 
     reuse = bool(getattr(args, "reuse_mode_results", False))
+    if reuse and profile_device and metadata_path.exists():
+        try:
+            existing_metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+            reuse = str(existing_metadata.get("profile_device", "mixed")) == str(profile_device)
+        except (OSError, json.JSONDecodeError):
+            reuse = False
+    if reuse and sat_memory_range_mb and metadata_path.exists():
+        try:
+            existing_metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+            reuse = str(existing_metadata.get("sat_memory_range_mb", "")) == str(sat_memory_range_mb)
+        except (OSError, json.JSONDecodeError):
+            reuse = False
     effective_worker_count = int(worker_count if worker_count is not None else getattr(args, "worker_count", 4))
     if not reuse or not csv_path.exists() or not metadata_path.exists():
         command = [
@@ -1489,6 +1575,10 @@ def _ensure_mode_selection_results(
             "--shared-pmp-min-hops",
             "3",
         ]
+        if profile_device:
+            command.extend(["--profile-device", str(profile_device)])
+        if sat_memory_range_mb:
+            command.extend(["--sat-memory-range-mb", str(sat_memory_range_mb)])
         completed = subprocess.run(command, cwd=ROOT)
         if completed.returncode != 0:
             raise RuntimeError(f"mode_selection_experiment.py failed for {model_name} batch={batch_size}")
@@ -1882,39 +1972,70 @@ def _plot_exp05(df: pd.DataFrame, out_dir: Path, show_only: bool = False) -> Non
 def _plot_exp06(df: pd.DataFrame, out_dir: Path, model_name: str, show_only: bool = False) -> None:
     setup_style()
     stem = f"exp06_fwms_data_sensitivity_{model_name}"
+    mode_label_map = dict(MODE_LABEL)
+    mode_label_map["Sat-Only"] = "Single-LEO"
 
-    def _plot_mode_lines(value_col: str, ylabel: str, title: str, suffix: str) -> None:
-        fig, ax = plt.subplots(figsize=(8.8, 5.2))
+    def _plot_mode_bars(value_col: str, ylabel: str, title: str, suffix: str) -> None:
+        fig, ax = plt.subplots(figsize=(9.6, 5.4))
         finite_values: list[float] = []
+        batches = sorted(df["batch_size"].unique())
+        x = np.arange(len(batches), dtype=float)
+        width = 0.14
+        offsets = np.linspace(-2 * width, 2 * width, num=len(MODE_ORDER))
         mode_to_idx = {mode: idx for idx, mode in enumerate(MODE_ORDER)}
-        for mode in MODE_ORDER:
+
+        for offset, mode in zip(offsets, MODE_ORDER):
             sub = df[df["mode"] == mode].sort_values("batch_size")
-            x = sub["batch_size"].to_numpy(dtype=float)
-            y = sub[value_col].to_numpy(dtype=float)
-            finite_values.extend([float(value) for value in y if np.isfinite(float(value))])
-            ax.plot(
-                x,
-                y,
-                label=MODE_LABEL[mode],
+            batch_to_row = {int(row["batch_size"]): row for _, row in sub.iterrows()}
+            y_values = []
+            feasible_flags = []
+            for batch in batches:
+                row = batch_to_row.get(int(batch))
+                if row is None:
+                    y_values.append(np.nan)
+                    feasible_flags.append(False)
+                else:
+                    value = float(row[value_col]) if pd.notna(row[value_col]) else float("nan")
+                    y_values.append(value)
+                    feasible_flags.append(_truthy(row.get("feasible", False)))
+
+            bar_heights = [value if np.isfinite(value) else 0.0 for value in y_values]
+            finite_values.extend([float(value) for value in y_values if np.isfinite(float(value))])
+            bars = ax.bar(
+                x + offset,
+                bar_heights,
+                width=width,
                 color=MODE_COLOR[mode],
-                marker=MODE_MARKER[mode],
-                linestyle=MODE_LINESTYLE[mode],
-                linewidth=2.2,
-                markersize=6.0,
+                edgecolor="white",
+                linewidth=0.7,
+                label=mode_label_map[mode],
                 zorder=MODE_ZORDER[mode],
-                markeredgecolor="white",
-                markeredgewidth=0.6,
             )
-            for xv, yv, feasible in zip(x, y, sub["feasible"].tolist()):
-                if np.isfinite(float(yv)):
+
+            for bar, value in zip(bars, y_values):
+                if not np.isfinite(float(value)):
                     continue
-                if not _truthy(feasible):
+                ax.text(
+                    bar.get_x() + bar.get_width() / 2,
+                    bar.get_height() + max(0.01, bar.get_height() * 0.02),
+                    f"{value:.2f}" if value_col == "norm_latency_vs_gs" else f"{value:.0f}",
+                    ha="center",
+                    va="bottom",
+                    fontsize=7.8,
+                    color=MODE_COLOR[mode],
+                    rotation=90,
+                    clip_on=False,
+                )
+
+            for batch_x, value, feasible in zip(x + offset, y_values, feasible_flags):
+                if np.isfinite(float(value)):
+                    continue
+                if not feasible:
                     max_value = max(finite_values) if finite_values else 1.0
                     anchor = max_value * 0.03
                     y_step = max_value * 0.028
-                    x_offset = (mode_to_idx[mode] - (len(MODE_ORDER) - 1) / 2) * 1.25
                     ax.text(
-                        xv + x_offset,
+                        batch_x,
                         anchor + mode_to_idx[mode] * y_step,
                         "不可行",
                         ha="center",
@@ -1926,7 +2047,8 @@ def _plot_exp06(df: pd.DataFrame, out_dir: Path, model_name: str, show_only: boo
         ax.set_title(title, pad=12, fontsize=15, fontweight="bold")
         ax.set_xlabel("输入数据量（样本数）")
         ax.set_ylabel(ylabel)
-        ax.set_xticks(sorted(df["batch_size"].unique()))
+        ax.set_xticks(x)
+        ax.set_xticklabels([str(int(batch)) for batch in batches])
         ax.grid(True, axis="y", alpha=0.75)
         ax.spines["top"].set_visible(False)
         ax.spines["right"].set_visible(False)
@@ -1941,13 +2063,13 @@ def _plot_exp06(df: pd.DataFrame, out_dir: Path, model_name: str, show_only: boo
             show_only=show_only,
         )
 
-    _plot_mode_lines(
+    _plot_mode_bars(
         "latency_ms",
         "平均端到端时延 / ms",
         "实验6：输入数据量敏感性",
         "",
     )
-    _plot_mode_lines(
+    _plot_mode_bars(
         "norm_latency_vs_gs",
         "归一化时延（GS-Only = 1）",
         "实验6：输入数据量敏感性",
@@ -2299,7 +2421,17 @@ def _run_exp06(args) -> int:
         loaded: list[tuple[pd.DataFrame, Path]] = []
         batches = [int(value) for value in args.data_sizes.split(",") if value.strip()]
         for batch_size in batches:
-            loaded.append(_ensure_mode_selection_results(args.model, batch_size, args, out_dir, "exp06_fair"))
+            loaded.append(
+                _ensure_mode_selection_results(
+                    args.model,
+                    batch_size,
+                    args,
+                    out_dir,
+                    "exp06_fair",
+                    profile_device=args.profile_device,
+                    sat_memory_range_mb=args.sat_memory_range_mb,
+                )
+            )
         common_slots = _common_average_slots(loaded, args.min_pmp_route_leo)
         if not common_slots:
             raise ValueError("No common slots satisfy the shared-route baseline filter for exp06.")
@@ -2337,6 +2469,8 @@ def _run_exp06(args) -> int:
                 "# 实验 6：FWMS 输入数据量敏感性实验",
                 "",
                 f"- 模型：{MODEL_LABELS.get(args.model, args.model)}。",
+                f"- Profile 口径：所有计算节点统一使用 {str(args.profile_device).upper()} profile。",
+                f"- LEO 内存：{args.sat_memory_range_mb} MB，按 STK 卫星 ID 稳定映射。",
                 "- 每个 batch 都读取 mode_selection_experiment.py 的 slot_mode_results.csv，不使用实验 1 的 PMP 比例外推。",
                 f"- 共同时间片集合：所有 batch 共享同一批 slot，并要求 PMP/GS-Only/FWMS 可行且 PMP 路由至少包含 {args.min_pmp_route_leo} 颗 LEO。",
                 f"- 统计口径：各模式在共同 slot 集合上取均值；CDP 仅统计 active_sat_count 至少为 {args.min_cdp_active_sats} 的可行 slot。",
@@ -2415,36 +2549,36 @@ def main() -> None:
     )
     exp02_parser.add_argument("--show-only", action="store_true", help="Display figures only and do not keep outputs")
     exp03_parser = subparsers.add_parser("exp03", help="Run experiment 3 and draw CDP data-size sensitivity figures")
-    exp03_parser.add_argument("--models", default="yolov5,resnet101,vgg19", help="Comma-separated model ids")
-    exp03_parser.add_argument("--data-sizes", default="16,32,64,128", help="Comma-separated input data sizes")
+    exp03_parser.add_argument("--models", default="resnet101", help="Comma-separated model ids")
+    exp03_parser.add_argument("--data-sizes", default="64,128,256,512", help="Comma-separated input data sizes")
     exp03_parser.add_argument("--worker-count", type=int, default=4, help="Fixed CDP worker count")
     exp03_parser.add_argument("--random-repeats", type=int, default=30, help="Random baseline repeats")
     exp03_parser.add_argument("--seed", type=int, default=42, help="Random seed")
     exp03_parser.add_argument(
         "--profile",
-        default="config/dnn_profiles_database_jetson.json",
+        default="config/dnn_profiles_database_pc.json",
         help="DNN profile database used for full-model latency and output size",
     )
     exp03_parser.add_argument(
         "--out-dir",
-        default="result/paper_figures_v2/03_lawa_cdp_data_sensitivity",
+        default="result/paper_figures_final/03_lawa_cdp_data_sensitivity",
         help="Output directory for experiment 3",
     )
     exp03_parser.add_argument("--show-only", action="store_true", help="Display figures only and do not keep outputs")
     exp04_parser = subparsers.add_parser("exp04", help="Run experiment 4 and draw CDP worker-count sensitivity figures")
-    exp04_parser.add_argument("--models", default="yolov5,resnet101,vgg19", help="Comma-separated model ids")
+    exp04_parser.add_argument("--models", default="yolov5", help="Comma-separated model ids")
     exp04_parser.add_argument("--data-size", type=int, default=64, help="Fixed input data size")
     exp04_parser.add_argument("--worker-counts", default="1,2,3,4,5", help="Comma-separated worker counts")
     exp04_parser.add_argument("--random-repeats", type=int, default=30, help="Random baseline repeats")
     exp04_parser.add_argument("--seed", type=int, default=42, help="Random seed")
     exp04_parser.add_argument(
         "--profile",
-        default="config/dnn_profiles_database_jetson.json",
+        default="config/dnn_profiles_database_pc.json",
         help="DNN profile database used for full-model latency and output size",
     )
     exp04_parser.add_argument(
         "--out-dir",
-        default="result/paper_figures_v2/04_lawa_cdp_worker_count_sensitivity",
+        default="result/paper_figures_final/04_lawa_cdp_worker_count_sensitivity",
         help="Output directory for experiment 4",
     )
     exp04_parser.add_argument("--show-only", action="store_true", help="Display figures only and do not keep outputs")
@@ -2471,19 +2605,30 @@ def main() -> None:
     )
     exp05_parser.add_argument(
         "--out-dir",
-        default="result/paper_figures_v2/05_fwms_mode_selection_effectiveness",
+        default="result/paper_figures_final/05_fwms_mode_selection_effectiveness",
         help="Output directory for experiment 5",
     )
     exp05_parser.add_argument("--show-only", action="store_true", help="Display figures only and do not keep outputs")
     exp06_parser = subparsers.add_parser("exp06", help="Run experiment 6 and draw FWMS data-size sensitivity figure")
     exp06_parser.add_argument("--model", default="yolov5", help="Model id")
-    exp06_parser.add_argument("--data-sizes", default="16,32,64,128", help="Comma-separated input data sizes")
+    exp06_parser.add_argument("--data-sizes", default="64,128,256,512", help="Comma-separated input data sizes")
     exp06_parser.add_argument("--worker-count", type=int, default=4, help="CDP worker count")
     exp06_parser.add_argument("--worker-memory-mb", type=float, default=2048.0, help="Memory limit for each CDP worker")
     exp06_parser.add_argument("--gsl-bandwidth-mbps", type=float, default=100.0, help="GS-only uplink bandwidth")
-    exp06_parser.add_argument("--gs-compute-factor", type=float, default=100.0, help="GS speedup over profiled Jetson latency")
+    exp06_parser.add_argument("--gs-compute-factor", type=float, default=100.0, help="GS speedup over profiled latency")
     exp06_parser.add_argument("--min-cdp-gain", type=float, default=0.05, help="Minimum CDP gain required by FWMS")
-    exp06_parser.add_argument("--profile", default="config/dnn_profiles_database_jetson.json", help="DNN profile database")
+    exp06_parser.add_argument("--profile", default="config/dnn_profiles_database_pc.json", help="DNN profile database")
+    exp06_parser.add_argument(
+        "--profile-device",
+        choices=["pc", "jetson", "mixed"],
+        default="pc",
+        help="Profile device family used by the mode-selection rerun for experiment 6",
+    )
+    exp06_parser.add_argument(
+        "--sat-memory-range-mb",
+        default="4096,16384",
+        help="Stable LEO memory override range for experiment 6, in MB",
+    )
     exp06_parser.add_argument("--min-pmp-route-leo", type=int, default=3, help="Minimum LEO satellites on the PMP route for representative-slot filtering")
     exp06_parser.add_argument("--min-cdp-active-sats", type=int, default=3, help="Minimum active CDP worker satellites for representative-slot filtering")
     exp06_parser.add_argument(
@@ -2498,7 +2643,7 @@ def main() -> None:
     )
     exp06_parser.add_argument(
         "--out-dir",
-        default="result/paper_figures_v2/06_fwms_data_sensitivity",
+        default="result/paper_figures_final/06_fwms_data_sensitivity",
         help="Output directory for experiment 6",
     )
     exp06_parser.add_argument("--show-only", action="store_true", help="Display figures only and do not keep outputs")

@@ -7,11 +7,11 @@ ResNet101
 ## 验收重跑命令
 
 ```powershell
-python thesis_entry.py exp03 --out-dir result\paper_figures_final\03_lawa_cdp_data_sensitivity
+python thesis_entry.py exp03 --out-dir result/paper_figures_final/03_lawa_cdp_data_sensitivity
 ```
 
 ## 结论口径
 
-- 同构 worker 场景下，各 worker 能力一致，均匀分配通常接近 LAWA。
-- 异构 worker 场景下，LAWA 会把更多数据分给算力强、链路好的 worker，优势更明显。
-- 输入数据量增大后，离散样本分配更接近连续最优解，LAWA 相对随机/贪心/均匀的稳定性更容易体现。
+- 实验 3 使用 PC profile，并仅保留异构 worker 场景。
+- 横轴 batch 从 64 扩展到 512，用于观察 CDP 在更大任务输入下的相对时延变化。
+- LAWA 的优势主要体现在异构节点间的数据分配能力。

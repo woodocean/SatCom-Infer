@@ -1,4 +1,4 @@
-import json
+﻿import json
 import os
 import csv
 from datetime import datetime
@@ -78,27 +78,27 @@ class Scheduler:
     def __init__(self, net_config_path="config/network_config.json", 
                  pc_profiles_path="config/dnn_profiles_database_pc.json", 
                  jetson_profiles_path="config/dnn_profiles_database_jetson.json"):
-        # 1. 加载卫星网络配置
+        # 1. 鍔犺浇鍗槦缃戠粶閰嶇疆
         if not os.path.exists(net_config_path):
-            raise FileNotFoundError(f"找不到网络配置文件: {net_config_path}")
+            raise FileNotFoundError(f"鎵句笉鍒扮綉缁滈厤缃枃浠? {net_config_path}")
         with open(net_config_path, 'r', encoding='utf-8') as f:
             self.net_config = json.load(f)
             
-        # 2. 根据设备类型加载模型物理测绘数据库
+        # 2. 鏍规嵁璁惧绫诲瀷鍔犺浇妯″瀷鐗╃悊娴嬬粯鏁版嵁搴?
         self.dnn_profiles = {}
         
         if not os.path.exists(pc_profiles_path):
-            raise FileNotFoundError(f"找不到 PC 配置文件: {pc_profiles_path}")
+            raise FileNotFoundError(f"鎵句笉鍒?PC 閰嶇疆鏂囦欢: {pc_profiles_path}")
         with open(pc_profiles_path, 'r', encoding='utf-8') as f:
             self.dnn_profiles["pc"] = json.load(f)
             
         if not os.path.exists(jetson_profiles_path):
-            raise FileNotFoundError(f"找不到 Jetson 配置文件: {jetson_profiles_path}")
+            raise FileNotFoundError(f"鎵句笉鍒?Jetson 閰嶇疆鏂囦欢: {jetson_profiles_path}")
         with open(jetson_profiles_path, 'r', encoding='utf-8') as f:
             self.dnn_profiles["jetson"] = json.load(f)
 
     def _extract_bw_metrics(self, raw_links):
-        """从链路配置中提取星间/星地带宽统计，用于标准化结果表。"""
+        """Extract ISL/GSL bandwidth statistics for standardized result rows."""
         isl_bws = []
         gsl_bws = []
 
@@ -132,7 +132,7 @@ class Scheduler:
         normalization_baseline_energy=None,
         metadata_extra=None,
     ):
-        """将理论调度结果写入标准化长表，便于统一分析与绘图。"""
+        """Append theory scheduling results to the standardized long table."""
         file_exists = _ensure_csv_schema(output_csv, STANDARDIZED_RESULT_FIELDS)
         timestamp = datetime.now().isoformat(timespec="seconds")
         metadata_extra = metadata_extra or {}
@@ -141,7 +141,7 @@ class Scheduler:
         pipeline_hop_count = max(0, len(pipeline) - 1) if pipeline else ""
         pipeline_path = "->".join(pipeline) if pipeline else ""
 
-        # 归一化基线：同任务下 GS-Only 的时延
+        # 褰掍竴鍖栧熀绾匡細鍚屼换鍔′笅 GS-Only 鐨勬椂寤?
         gs_only_latency = normalization_baseline_latency
         if gs_only_latency is None:
             gs_only_latency = plans.get("GS-Only", {}).get("latency", float("inf"))
@@ -250,59 +250,72 @@ class Scheduler:
         normalization_baseline_energy=None,
         return_full_plans=False,
         metadata_extra=None,
+        profile_device=None,
     ):
-        # print(f"\n[{task_id}] 接收任务: {model_name} | 规格: b{batch_size}_{target_h}x{target_w}")
+        # print(f"\n[{task_id}] 鎺ユ敹浠诲姟: {model_name} | 瑙勬牸: b{batch_size}_{target_h}x{target_w}")
         
-        # ================= 1. 物理档案查表提取 =================
+        # ================= 1. 鐗╃悊妗ｆ鏌ヨ〃鎻愬彇 =================
         config_key = f"b{batch_size}_{target_h}x{target_w}"
         
-        layers_dict = {"pc": [], "jetson": []}
-        for device in ["pc", "jetson"]:
-            if model_name not in self.dnn_profiles[device] or config_key not in self.dnn_profiles[device][model_name]:
-                raise KeyError(f"数据库({device})中缺少配置: {model_name} -> {config_key}，请先运行 validator 进行测绘！")
-            raw_profile = self.dnn_profiles[device][model_name][config_key]
+        profile_device = str(profile_device or "mixed").lower()
+        if profile_device in {"pc", "jetson"}:
+            raw_profile = self.dnn_profiles.get(profile_device, {}).get(model_name, {}).get(config_key)
+            if raw_profile is None:
+                raise KeyError(f"Missing profile for {model_name} -> {config_key} on device={profile_device}; run validator first.")
+            layers = [raw_profile[str(i)] for i in range(len(raw_profile)) if str(i) in raw_profile]
+            layers_dict = {"pc": list(layers), "jetson": list(layers)}
+        else:
+            layers_dict = {"pc": [], "jetson": []}
+            for device in ["pc", "jetson"]:
+                model_profiles = self.dnn_profiles.get(device, {}).get(model_name, {})
+                raw_profile = model_profiles.get(config_key)
+                if raw_profile is None and device == "jetson":
+                    raw_profile = self.dnn_profiles.get("pc", {}).get(model_name, {}).get(config_key)
+                if raw_profile is None:
+                    raise KeyError(f"Missing profile for {model_name} -> {config_key} on device={device}; run validator first.")
+                for i in range(len(raw_profile)):
+                    if str(i) in raw_profile:
+                        layers_dict[device].append(raw_profile[str(i)])
             
-            for i in range(len(raw_profile)):
-                if str(i) in raw_profile:
-                    layers_dict[device].append(raw_profile[str(i)])
-            
-        # 计算原始输入体积 (MB): Batch * C(3) * H * W * 4Bytes / 1024^2
+        # 璁＄畻鍘熷杈撳叆浣撶Н (MB): Batch * C(3) * H * W * 4Bytes / 1024^2
         input_mb = (batch_size * 3 * target_h * target_w * 4) / (1024 ** 2)
 
         model_profile = {
-            "layers": dict(layers_dict), # 将不同设备的layers字典传给算法
+            "layers": dict(layers_dict), # 灏嗕笉鍚岃澶囩殑layers瀛楀吀浼犵粰绠楁硶
             "input_size_raw": input_mb
         }
 
-        # ================= 2. 环境状态组装 (修复 KeyError 的核心逻辑) =================
+        # ================= 2. 鐜鐘舵€佺粍瑁?(淇 KeyError 鐨勬牳蹇冮€昏緫) =================
         raw_nodes = self.net_config.get("nodes", {})
         raw_links = self.net_config.get("links", {})
         
-        # [核心] 从 JSON 字典中按顺序提取 "参与计算" 的节点，必须过滤掉 RS 任务节点
+        # [鏍稿績] 浠?JSON 瀛楀吀涓寜椤哄簭鎻愬彇 "鍙備笌璁＄畻" 鐨勮妭鐐癸紝蹇呴』杩囨护鎺?RS 浠诲姟鑺傜偣
         if "simulation_paths" in self.net_config and "pipeline" in self.net_config["simulation_paths"]:
             compute_node_ids = self.net_config["simulation_paths"]["pipeline"][1:] 
         else:
             compute_node_ids = [nid for nid in raw_nodes.keys() if "RS" not in nid]
 
-        # 组装算法能够直接吃的标准列表结构 List[Dict]
+        # 缁勮绠楁硶鑳藉鐩存帴鍚冪殑鏍囧噯鍒楄〃缁撴瀯 List[Dict]
         nodes = []
         for nid in compute_node_ids:
             node_info = raw_nodes[nid].copy()
             node_info["id"] = nid
+            if profile_device in {"pc", "jetson"}:
+                node_info["device"] = "PC" if profile_device == "pc" else "Jetson"
             nodes.append(node_info)
         
-        # 构建逐跳带宽向量 B (Mbps)
+        # 鏋勫缓閫愯烦甯﹀鍚戦噺 B (Mbps)
         bandwidth_list = []
         propagation_delay_list = []
-        # 获取源节点 ID (通常是 RS)
+        # 鑾峰彇婧愯妭鐐?ID (閫氬父鏄?RS)
         current_source = self.net_config["simulation_paths"]["pipeline"][0] if "simulation_paths" in self.net_config else "RS"
 
         for i in range(len(nodes)):
             target_node = nodes[i]["id"]
-            bw = 100.0  # 默认保底带宽
-            prop_ms = 0.0  # 默认保底传播时延
+            bw = 100.0  # 榛樿淇濆簳甯﹀
+            prop_ms = 0.0  # 榛樿淇濆簳浼犳挱鏃跺欢
             
-            # 使用字符串匹配 JSON 中的 Key
+            # 浣跨敤瀛楃涓插尮閰?JSON 涓殑 Key
             forward_key = f"{current_source}_to_{target_node}"
             backward_key = f"{target_node}_to_{current_source}"
             
@@ -315,7 +328,7 @@ class Scheduler:
             
             bandwidth_list.append(bw)
             propagation_delay_list.append(prop_ms)
-            current_source = target_node # 移动指针，下一跳的源是当前节点
+            current_source = target_node # 绉诲姩鎸囬拡锛屼笅涓€璺崇殑婧愭槸褰撳墠鑺傜偣
 
         env_status = {
             "nodes": nodes,
@@ -324,10 +337,10 @@ class Scheduler:
             "reference_compute_speed": self.net_config.get("reference_compute_speed", 100.0)
         }
 
-        # 为标准化结果表提取带宽变量
+        # 涓烘爣鍑嗗寲缁撴灉琛ㄦ彁鍙栧甫瀹藉彉閲?
         isl_avg_bw, gsl_avg_bw = self._extract_bw_metrics(raw_links)
 
-        # ================= 3. 执行六大算法 (对标实验核心) =================
+        # ================= 3. 鎵ц鍏ぇ绠楁硶 (瀵规爣瀹為獙鏍稿績) =================
         solver = PMPSolver(model_profile, env_status)
         plans = {}
         selected_algorithms = set(algorithm_names) if algorithm_names else None
@@ -388,17 +401,17 @@ class Scheduler:
             data.update(energy)
             data["energy_model"] = "satellite_only:P_compute=15W,P_tx=10W"
 
-        # ================= 4. 终端打印与日志记录 =================
-        print(f"\n--- 调度结果汇总 ({task_id}) ---")
+        # ================= 4. Console summary and optional logging =================
+        print(f"\n--- Scheduling summary ({task_id}) ---")
         for name, data in plans.items():
-            lat_str = f"{data['latency']:.2f} ms" if data['latency'] != float('inf') else "无解/越界"
+            lat_str = f"{data['latency']:.2f} ms" if data['latency'] != float('inf') else "infeasible"
             energy = data.get("satellite_energy_j", float("inf"))
-            energy_str = f"{energy:.4f} J" if energy != float("inf") else "无解/越界"
-            print(f"| {name.ljust(15)} | 预计时延: {lat_str.ljust(12)} | 卫星能耗: {energy_str.ljust(12)} | 层级决策: {data['plan']}")
+            energy_str = f"{energy:.4f} J" if energy != float("inf") else "infeasible"
+            print(f"| {name.ljust(15)} | latency: {lat_str.ljust(12)} | satellite energy: {energy_str.ljust(12)} | plan: {data['plan']}")
 
         if persist_theory:
             persist_algorithms_set = set(persist_algorithms) if persist_algorithms else None
-            # 记录到 CSV 中
+            # 璁板綍鍒?CSV 涓?
             csv_file = "theoretical_results.csv"
             file_exists = os.path.isfile(csv_file)
             with open(csv_file, 'a', newline='') as f:
@@ -410,7 +423,7 @@ class Scheduler:
                         continue
                     writer.writerow([task_id,name, data['latency']])
 
-            # 双写：新增标准化长表输出，不影响旧流程读取。
+            # 鍙屽啓锛氭柊澧炴爣鍑嗗寲闀胯〃杈撳嚭锛屼笉褰卞搷鏃ф祦绋嬭鍙栥€?
             self._append_standardized_theory_rows(
                 task_id=task_id,
                 model_name=model_name,

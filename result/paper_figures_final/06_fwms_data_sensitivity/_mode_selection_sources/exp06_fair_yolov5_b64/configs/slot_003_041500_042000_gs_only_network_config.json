@@ -25,14 +25,15 @@
       "device": "Jetson_1",
       "hardware": {
         "compute_speed_gflops_per_ms": 3.0,
-        "memory_mb": 4096,
+        "memory_mb": 15041.0,
         "compute_speed_tflops": 3.0
       },
       "stk_id": "LEO072",
       "neighbors": [
         "RS",
         "SAT-02"
-      ]
+      ],
+      "memory_mb": 15872.0
     },
     "SAT-02": {
       "ip": "192.168.10.181",
@@ -41,14 +42,15 @@
       "device": "Jetson_1",
       "hardware": {
         "compute_speed_gflops_per_ms": 3.0,
-        "memory_mb": 4096,
+        "memory_mb": 15041.0,
         "compute_speed_tflops": 3.0
       },
       "stk_id": "LEO082",
       "neighbors": [
         "SAT-01",
         "GS"
-      ]
+      ],
+      "memory_mb": 15041.0
     },
     "GS": {
       "ip": "192.168.10.165",
@@ -143,6 +145,13 @@
       "common_duration_s": 151.324,
       "total_range_km": 6124.953163,
       "total_propagation_delay_ms": 20.430645
+    },
+    "resource_override": {
+      "sat_memory_range_mb": [
+        4096.0,
+        16384.0
+      ],
+      "memory_assignment": "stable_uniform_by_stk_id"
     },
     "mode_selection": {
       "slot_id": "slot_003_041500_042000",

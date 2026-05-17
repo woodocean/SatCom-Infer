@@ -213,7 +213,7 @@ def _base_config_path(scene: SlotScene) -> Path:
 
 def _network_config_for_candidate(scene: SlotScene, candidate: CandidatePath) -> dict:
     if _path_key(candidate.path) == _path_key(scene.selected_stk_path):
-        return copy.deepcopy(scene.network_config)
+        return _apply_resource_overrides(copy.deepcopy(scene.network_config), scene)
 
     isl_range, gsl_range = _metadata_ranges(scene)
     config = build_network_config_for_path(
@@ -223,7 +223,7 @@ def _network_config_for_candidate(scene: SlotScene, candidate: CandidatePath) ->
         gsl_bandwidth_mbps=gsl_range[0],
     )
     _sample_missing_bandwidths(config, scene)
-    return config
+    return _apply_resource_overrides(config, scene)
 
 
 def _route_policy_with_min_hops(base_policy: str, min_hops: int) -> str:
@@ -233,6 +233,72 @@ def _route_policy_with_min_hops(base_policy: str, min_hops: int) -> str:
 
 
 _PROFILE_CACHE: Optional[Dict[str, Dict]] = None
+_PROFILE_DEVICE_OVERRIDE: Optional[str] = None
+_SAT_MEMORY_RANGE_MB: Optional[Tuple[float, float]] = None
+
+
+def set_profile_device_override(device: str | None) -> None:
+    """Force all mode evaluators to use one profiled device family."""
+    global _PROFILE_DEVICE_OVERRIDE
+    if device in (None, "", "mixed"):
+        _PROFILE_DEVICE_OVERRIDE = None
+        return
+    normalized = str(device).lower()
+    if normalized not in {"pc", "jetson"}:
+        raise ValueError(f"Unsupported profile device override: {device}")
+    _PROFILE_DEVICE_OVERRIDE = normalized
+
+
+def set_sat_memory_range_mb(value: str | Sequence[float] | None) -> None:
+    """Override every LEO satellite memory with a stable value in the range."""
+    global _SAT_MEMORY_RANGE_MB
+    if value in (None, ""):
+        _SAT_MEMORY_RANGE_MB = None
+        return
+    if isinstance(value, str):
+        parts = [item.strip() for item in value.split(",") if item.strip()]
+    else:
+        parts = [str(item) for item in value]
+    if len(parts) != 2:
+        raise ValueError("sat memory range must have two values: min,max")
+    lo, hi = float(parts[0]), float(parts[1])
+    if lo <= 0 or hi < lo:
+        raise ValueError(f"invalid sat memory range: {value}")
+    _SAT_MEMORY_RANGE_MB = (lo, hi)
+
+
+def _sat_memory_for_stk_id(scene: SlotScene, stk_id: str) -> float:
+    if _SAT_MEMORY_RANGE_MB is None:
+        return 0.0
+    lo, hi = _SAT_MEMORY_RANGE_MB
+    if math.isclose(lo, hi):
+        return lo
+    base_seed = int(scene.metadata.get("seed", 42))
+    payload = f"{base_seed}|{stk_id}|sat_memory_mb"
+    digest = hashlib.sha256(payload.encode("utf-8")).hexdigest()
+    rng = random.Random(int(digest[:16], 16))
+    return float(round(rng.uniform(lo, hi)))
+
+
+def _apply_resource_overrides(config: dict, scene: SlotScene) -> dict:
+    if _SAT_MEMORY_RANGE_MB is None:
+        return config
+
+    for node_id, node in config.get("nodes", {}).items():
+        if not str(node_id).startswith("SAT-") and str(node.get("role", "")) != "leo_computing":
+            continue
+        hardware = node.setdefault("hardware", {})
+        stk_id = str(node.get("stk_id", node_id))
+        memory_mb = _sat_memory_for_stk_id(scene, stk_id)
+        hardware["memory_mb"] = memory_mb
+        node["memory_mb"] = memory_mb
+
+    sim_paths = config.setdefault("simulation_paths", {})
+    sim_paths["resource_override"] = {
+        "sat_memory_range_mb": list(_SAT_MEMORY_RANGE_MB),
+        "memory_assignment": "stable_uniform_by_stk_id",
+    }
+    return config
 
 
 def _load_profiles() -> Dict[str, Dict]:
@@ -249,10 +315,28 @@ def _load_profiles() -> Dict[str, Dict]:
 def _build_model_profile(scene: SlotScene) -> Dict:
     profiles = _load_profiles()
     config_key = f"b{scene.task.batch_size}_{scene.task.input_h}x{scene.task.input_w}"
+
+    if _PROFILE_DEVICE_OVERRIDE:
+        raw_profile = profiles[_PROFILE_DEVICE_OVERRIDE][scene.task.model_name].get(config_key)
+        if raw_profile is None:
+            raise KeyError(
+                f"Missing profile for {scene.task.model_name}:{config_key} "
+                f"on device={_PROFILE_DEVICE_OVERRIDE}"
+            )
+        layers = [raw_profile[str(idx)] for idx in range(len(raw_profile)) if str(idx) in raw_profile]
+        input_mb = (scene.task.batch_size * 3 * scene.task.input_h * scene.task.input_w * 4) / (1024 ** 2)
+        return {"layers": {"pc": layers, "jetson": layers}, "input_size_raw": input_mb}
+
     layers_dict = {"pc": [], "jetson": []}
 
     for device in ("pc", "jetson"):
-        raw_profile = profiles[device][scene.task.model_name][config_key]
+        raw_profile = profiles[device][scene.task.model_name].get(config_key)
+        if raw_profile is None and device == "jetson":
+            raw_profile = profiles["pc"][scene.task.model_name].get(config_key)
+        if raw_profile is None:
+            raise KeyError(
+                f"Missing profile for {scene.task.model_name}:{config_key} on device={device}"
+            )
         for idx in range(len(raw_profile)):
             if str(idx) in raw_profile:
                 layers_dict[device].append(raw_profile[str(idx)])
@@ -271,6 +355,8 @@ def _build_env_status(config: dict) -> Dict:
     for node_id in compute_node_ids:
         node_info = raw_nodes[node_id].copy()
         node_info["id"] = node_id
+        if _PROFILE_DEVICE_OVERRIDE:
+            node_info["device"] = "PC" if _PROFILE_DEVICE_OVERRIDE == "pc" else "Jetson"
         nodes.append(node_info)
 
     bandwidths = []
@@ -353,6 +439,7 @@ def evaluate_pmp_slot(
         persist_theory=False,
         algorithm_names=[algorithm],
         return_full_plans=True,
+        profile_device=_PROFILE_DEVICE_OVERRIDE,
         metadata_extra={
             "sweep_param": "time_slot",
             "sweep_value": scene.slot_id,
@@ -475,17 +562,14 @@ def evaluate_gs_only_slot(
     selected = best[1]
     candidate = selected["candidate"]
     config = selected["config"]
-    if _path_key(candidate.path) == _path_key(scene.selected_stk_path):
-        config_path = scene.config_path
-    else:
-        config["simulation_paths"]["mode_selection"] = {
-            "slot_id": scene.slot_id,
-            "mode_family": "GS-Only",
-            "route_policy": route_policy,
-            "source_stk_run_id": scene.source_run_id,
-        }
-        config_path = Path(config_output_dir) / f"{scene.slot_id}_gs_only_network_config.json"
-        _write_network_config(config_path, config)
+    config["simulation_paths"]["mode_selection"] = {
+        "slot_id": scene.slot_id,
+        "mode_family": "GS-Only",
+        "route_policy": route_policy,
+        "source_stk_run_id": scene.source_run_id,
+    }
+    config_path = Path(config_output_dir) / f"{scene.slot_id}_gs_only_network_config.json"
+    _write_network_config(config_path, config)
 
     plan = selected["plan"]
     latency = selected["latency_ms"]

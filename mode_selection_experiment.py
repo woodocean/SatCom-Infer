@@ -28,6 +28,8 @@ from core.mode_evaluators import (
     evaluate_gs_only_slot,
     evaluate_pmp_slot,
     evaluate_sat_only_slot,
+    set_sat_memory_range_mb,
+    set_profile_device_override,
 )
 from core.mode_scene_builder import SlotScene, load_stk_slot_scenes, write_slot_scene
 
@@ -305,12 +307,25 @@ def main() -> None:
     )
     parser.add_argument("--cdp-max-workers", type=int, default=4, help="Maximum CDP worker satellites to try.")
     parser.add_argument(
+        "--profile-device",
+        choices=["mixed", "pc", "jetson"],
+        default="mixed",
+        help="Profile device family used for all compute nodes. mixed keeps node-specific PC/Jetson profiles.",
+    )
+    parser.add_argument(
+        "--sat-memory-range-mb",
+        default=None,
+        help="Optional stable LEO memory override as min,max in MB, for example 4096,16384.",
+    )
+    parser.add_argument(
         "--shared-pmp-min-hops",
         type=int,
         default=3,
         help="Require GS-Only/PMP shared comparison routes to have at least this many hops.",
     )
     args = parser.parse_args()
+    set_profile_device_override(args.profile_device)
+    set_sat_memory_range_mb(args.sat_memory_range_mb)
 
     stk_run_dir = Path(args.stk_run_dir)
     source_run_id = stk_run_dir.name
@@ -400,6 +415,8 @@ def main() -> None:
             "input_w": scenes[0].task.input_w,
         },
         "cdp_max_workers": args.cdp_max_workers,
+        "profile_device": args.profile_device,
+        "sat_memory_range_mb": args.sat_memory_range_mb,
         "shared_pmp_min_hops": args.shared_pmp_min_hops,
         "slot_scene_count": len(scenes),
         "mode_result_rows": row_count,

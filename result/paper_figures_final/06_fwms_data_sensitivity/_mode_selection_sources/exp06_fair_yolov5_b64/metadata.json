@@ -4,8 +4,8 @@
   "stage": "stage6_slot_scene_pmp_gs_sat_cdp_fwms_feature_oracle",
   "source_stk_run_dir": "E:\\Workspace\\Python_pycharm_workspace\\Projects\\Collabrative_Inference\\Neurosurgeon-main\\result\\stk_dynamic\\stk_dynamic_yolo_001",
   "source_run_id": "stk_dynamic_yolo_001",
-  "started_at": "2026-05-13T00:16:55",
-  "completed_at": "2026-05-13T00:17:21",
+  "started_at": "2026-05-17T22:01:27",
+  "completed_at": "2026-05-17T22:01:56",
   "implemented_modes": [
     "PMP",
     "GS-Only",
@@ -42,6 +42,8 @@
     "input_w": 640
   },
   "cdp_max_workers": 4,
+  "profile_device": "pc",
+  "sat_memory_range_mb": "4096,16384",
   "shared_pmp_min_hops": 3,
   "slot_scene_count": 42,
   "mode_result_rows": 252,
