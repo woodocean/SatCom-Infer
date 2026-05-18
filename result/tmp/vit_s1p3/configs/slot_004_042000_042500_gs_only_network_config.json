@@ -1,0 +1,162 @@
+{
+  "global_settings": {
+    "base_gpu_speed_gflops_per_ms": 100.0,
+    "hardware_baseline_mbps": 800.0
+  },
+  "nodes": {
+    "RS": {
+      "ip": "192.168.10.165",
+      "port": 8000,
+      "role": "remote_sensing",
+      "device": "PC",
+      "hardware": {
+        "compute_speed_gflops_per_ms": 0.0,
+        "memory_mb": 0,
+        "compute_speed_tflops": 0.0
+      },
+      "neighbors": [
+        "SAT-01"
+      ]
+    },
+    "SAT-01": {
+      "ip": "192.168.10.181",
+      "port": 8001,
+      "role": "leo_computing",
+      "device": "Jetson_1",
+      "hardware": {
+        "compute_speed_gflops_per_ms": 5.07,
+        "memory_mb": 4096,
+        "compute_speed_tflops": 5.07
+      },
+      "stk_id": "LEO071",
+      "neighbors": [
+        "RS",
+        "SAT-02"
+      ]
+    },
+    "SAT-02": {
+      "ip": "192.168.10.181",
+      "port": 8001,
+      "role": "leo_computing",
+      "device": "Jetson_1",
+      "hardware": {
+        "compute_speed_gflops_per_ms": 5.07,
+        "memory_mb": 4096,
+        "compute_speed_tflops": 5.07
+      },
+      "stk_id": "LEO176",
+      "neighbors": [
+        "SAT-01",
+        "GS"
+      ]
+    },
+    "GS": {
+      "ip": "192.168.10.165",
+      "port": 8006,
+      "role": "ground_station",
+      "device": "PC",
+      "hardware": {
+        "compute_speed_gflops_per_ms": 300.0,
+        "memory_mb": 64000,
+        "compute_speed_tflops": 300.0
+      },
+      "neighbors": [
+        "SAT-02"
+      ]
+    }
+  },
+  "links": {
+    "RS_to_SAT-01": {
+      "bandwidth_mbps": 14722.2585,
+      "propagation_delay_ms": 7.694508,
+      "stk_from": "RS",
+      "stk_to": "LEO071",
+      "stk_link_type": "RS-SAT",
+      "avg_range_km": 2306.755509,
+      "sample_count": 5,
+      "window_count": 1,
+      "visibility_duration_s": 300.0,
+      "effective_bandwidth_class": "ISL",
+      "bandwidth_sampling_range_mbps": [
+        1000.0,
+        20000.0
+      ],
+      "bandwidth_model": "effective_random_uniform"
+    },
+    "SAT-01_to_SAT-02": {
+      "bandwidth_mbps": 19661.9952,
+      "propagation_delay_ms": 13.742142,
+      "stk_from": "LEO071",
+      "stk_to": "LEO176",
+      "stk_link_type": "SAT-SAT",
+      "avg_range_km": 4119.790585,
+      "sample_count": 4,
+      "window_count": 1,
+      "visibility_duration_s": 204.491,
+      "effective_bandwidth_class": "ISL",
+      "bandwidth_sampling_range_mbps": [
+        1000.0,
+        20000.0
+      ],
+      "bandwidth_model": "effective_random_uniform"
+    },
+    "SAT-02_to_GS": {
+      "bandwidth_mbps": 263.1322,
+      "propagation_delay_ms": 3.273451,
+      "stk_from": "LEO176",
+      "stk_to": "Shenzhen",
+      "stk_link_type": "SAT-GS",
+      "avg_range_km": 981.355858,
+      "sample_count": 4,
+      "window_count": 1,
+      "visibility_duration_s": 189.115,
+      "effective_bandwidth_class": "GSL",
+      "bandwidth_sampling_range_mbps": [
+        50.0,
+        300.0
+      ],
+      "bandwidth_model": "effective_random_uniform"
+    }
+  },
+  "simulation_paths": {
+    "pipeline": [
+      "RS",
+      "SAT-01",
+      "SAT-02",
+      "GS"
+    ],
+    "parallel_candidates": [
+      "SAT-01",
+      "SAT-02"
+    ],
+    "parallel_aggregator": "SAT-02",
+    "stk_path": {
+      "rank": 3,
+      "original_path": [
+        "RS",
+        "LEO071",
+        "LEO176",
+        "Shenzhen"
+      ],
+      "common_start_utcg": "14 Apr 2026 04:21:35.509",
+      "common_stop_utcg": "14 Apr 2026 04:23:09.115",
+      "common_duration_s": 93.606,
+      "total_range_km": 7407.901952,
+      "total_propagation_delay_ms": 24.710101
+    },
+    "resource_override": {
+      "sat_memory_range_mb": "",
+      "sat_memory_values_mb": "",
+      "memory_assignment": "stable_uniform_by_stk_id",
+      "sat_compute_scale": 1.3,
+      "isl_bandwidth_scale": "",
+      "gsl_bandwidth_scale": ""
+    },
+    "mode_selection": {
+      "slot_id": "slot_004_042000_042500",
+      "mode_family": "GS-Only",
+      "route_policy": "min_predicted_gs_only_latency_ge3hops",
+      "source_stk_run_id": "stk_dynamic_vit_huge_001"
+    }
+  }
+}

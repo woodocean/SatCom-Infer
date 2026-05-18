@@ -2,7 +2,7 @@
 
 - 模型：YOLOv5。
 - Profile 口径：所有计算节点统一使用 PC profile。
-- LEO 内存：4096,16384 MB，按 STK 卫星 ID 稳定映射。
+- LEO 内存：2048,4096,8192 MB，按 STK 卫星 ID 稳定映射。
 - 每个 batch 都读取 mode_selection_experiment.py 的 slot_mode_results.csv，不使用实验 1 的 PMP 比例外推。
 - 共同时间片集合：所有 batch 共享同一批 slot，并要求 PMP/GS-Only/FWMS 可行且 PMP 路由至少包含 3 颗 LEO。
 - 统计口径：各模式在共同 slot 集合上取均值；CDP 仅统计 active_sat_count 至少为 3 的可行 slot。

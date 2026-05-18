@@ -235,6 +235,10 @@ def _route_policy_with_min_hops(base_policy: str, min_hops: int) -> str:
 _PROFILE_CACHE: Optional[Dict[str, Dict]] = None
 _PROFILE_DEVICE_OVERRIDE: Optional[str] = None
 _SAT_MEMORY_RANGE_MB: Optional[Tuple[float, float]] = None
+_SAT_MEMORY_VALUES_MB: Optional[Tuple[float, ...]] = None
+_SAT_COMPUTE_SCALE: Optional[float] = None
+_ISL_BANDWIDTH_SCALE: Optional[float] = None
+_GSL_BANDWIDTH_SCALE: Optional[float] = None
 
 
 def set_profile_device_override(device: str | None) -> None:
@@ -267,7 +271,61 @@ def set_sat_memory_range_mb(value: str | Sequence[float] | None) -> None:
     _SAT_MEMORY_RANGE_MB = (lo, hi)
 
 
+def set_sat_memory_values_mb(value: str | Sequence[float] | None) -> None:
+    """Override every LEO satellite memory with one stable choice from a discrete set."""
+    global _SAT_MEMORY_VALUES_MB
+    if value in (None, ""):
+        _SAT_MEMORY_VALUES_MB = None
+        return
+    if isinstance(value, str):
+        parts = [item.strip() for item in value.split(",") if item.strip()]
+    else:
+        parts = [str(item) for item in value]
+    values = tuple(sorted({float(item) for item in parts}))
+    if not values or any(item <= 0 for item in values):
+        raise ValueError(f"invalid sat memory values: {value}")
+    _SAT_MEMORY_VALUES_MB = values
+
+
+def set_sat_compute_scale(value: float | str | None) -> None:
+    global _SAT_COMPUTE_SCALE
+    if value in (None, ""):
+        _SAT_COMPUTE_SCALE = None
+        return
+    scale = float(value)
+    if scale <= 0.0:
+        raise ValueError(f"invalid sat compute scale: {value}")
+    _SAT_COMPUTE_SCALE = scale
+
+
+def set_link_bandwidth_scales(
+    isl_scale: float | str | None,
+    gsl_scale: float | str | None,
+) -> None:
+    global _ISL_BANDWIDTH_SCALE, _GSL_BANDWIDTH_SCALE
+    if isl_scale in (None, ""):
+        _ISL_BANDWIDTH_SCALE = None
+    else:
+        scale = float(isl_scale)
+        if scale <= 0.0:
+            raise ValueError(f"invalid ISL bandwidth scale: {isl_scale}")
+        _ISL_BANDWIDTH_SCALE = scale
+    if gsl_scale in (None, ""):
+        _GSL_BANDWIDTH_SCALE = None
+    else:
+        scale = float(gsl_scale)
+        if scale <= 0.0:
+            raise ValueError(f"invalid GSL bandwidth scale: {gsl_scale}")
+        _GSL_BANDWIDTH_SCALE = scale
+
+
 def _sat_memory_for_stk_id(scene: SlotScene, stk_id: str) -> float:
+    if _SAT_MEMORY_VALUES_MB is not None:
+        base_seed = int(scene.metadata.get("seed", 42))
+        payload = f"{base_seed}|{stk_id}|sat_memory_values_mb"
+        digest = hashlib.sha256(payload.encode("utf-8")).hexdigest()
+        index = int(digest[:8], 16) % len(_SAT_MEMORY_VALUES_MB)
+        return float(_SAT_MEMORY_VALUES_MB[index])
     if _SAT_MEMORY_RANGE_MB is None:
         return 0.0
     lo, hi = _SAT_MEMORY_RANGE_MB
@@ -281,7 +339,13 @@ def _sat_memory_for_stk_id(scene: SlotScene, stk_id: str) -> float:
 
 
 def _apply_resource_overrides(config: dict, scene: SlotScene) -> dict:
-    if _SAT_MEMORY_RANGE_MB is None:
+    if (
+        _SAT_MEMORY_RANGE_MB is None
+        and _SAT_MEMORY_VALUES_MB is None
+        and _SAT_COMPUTE_SCALE is None
+        and _ISL_BANDWIDTH_SCALE is None
+        and _GSL_BANDWIDTH_SCALE is None
+    ):
         return config
 
     for node_id, node in config.get("nodes", {}).items():
@@ -289,14 +353,36 @@ def _apply_resource_overrides(config: dict, scene: SlotScene) -> dict:
             continue
         hardware = node.setdefault("hardware", {})
         stk_id = str(node.get("stk_id", node_id))
-        memory_mb = _sat_memory_for_stk_id(scene, stk_id)
-        hardware["memory_mb"] = memory_mb
-        node["memory_mb"] = memory_mb
+        if _SAT_MEMORY_VALUES_MB is not None or _SAT_MEMORY_RANGE_MB is not None:
+            memory_mb = _sat_memory_for_stk_id(scene, stk_id)
+            hardware["memory_mb"] = memory_mb
+            node["memory_mb"] = memory_mb
+        if _SAT_COMPUTE_SCALE is not None:
+            for key in ("compute_speed_tflops", "compute_speed_gflops_per_ms"):
+                if key in hardware:
+                    hardware[key] = round(float(hardware[key]) * _SAT_COMPUTE_SCALE, 6)
+
+    for link in config.get("links", {}).values():
+        bw = float(link.get("bandwidth_mbps", 0.0))
+        if bw <= 0.0:
+            continue
+        link_class = str(link.get("effective_bandwidth_class", "")).upper()
+        link_type = str(link.get("stk_link_type", "")).upper()
+        if link_class == "GSL" or link_type == "SAT-GS":
+            if _GSL_BANDWIDTH_SCALE is not None:
+                link["bandwidth_mbps"] = round(bw * _GSL_BANDWIDTH_SCALE, 4)
+        else:
+            if _ISL_BANDWIDTH_SCALE is not None:
+                link["bandwidth_mbps"] = round(bw * _ISL_BANDWIDTH_SCALE, 4)
 
     sim_paths = config.setdefault("simulation_paths", {})
     sim_paths["resource_override"] = {
-        "sat_memory_range_mb": list(_SAT_MEMORY_RANGE_MB),
-        "memory_assignment": "stable_uniform_by_stk_id",
+        "sat_memory_range_mb": list(_SAT_MEMORY_RANGE_MB) if _SAT_MEMORY_RANGE_MB is not None else "",
+        "sat_memory_values_mb": list(_SAT_MEMORY_VALUES_MB) if _SAT_MEMORY_VALUES_MB is not None else "",
+        "memory_assignment": "stable_choice_by_stk_id" if _SAT_MEMORY_VALUES_MB is not None else "stable_uniform_by_stk_id",
+        "sat_compute_scale": _SAT_COMPUTE_SCALE if _SAT_COMPUTE_SCALE is not None else "",
+        "isl_bandwidth_scale": _ISL_BANDWIDTH_SCALE if _ISL_BANDWIDTH_SCALE is not None else "",
+        "gsl_bandwidth_scale": _GSL_BANDWIDTH_SCALE if _GSL_BANDWIDTH_SCALE is not None else "",
     }
     return config
 

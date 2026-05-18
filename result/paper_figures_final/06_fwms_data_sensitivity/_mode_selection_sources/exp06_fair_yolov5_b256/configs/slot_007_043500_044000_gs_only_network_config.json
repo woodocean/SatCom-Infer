@@ -25,7 +25,7 @@
       "device": "Jetson_1",
       "hardware": {
         "compute_speed_gflops_per_ms": 4.106,
-        "memory_mb": 7652.0,
+        "memory_mb": 4096.0,
         "compute_speed_tflops": 4.106
       },
       "stk_id": "LEO037",
@@ -33,7 +33,7 @@
         "RS",
         "SAT-02"
       ],
-      "memory_mb": 7652.0
+      "memory_mb": 4096.0
     },
     "SAT-02": {
       "ip": "192.168.10.178",
@@ -42,7 +42,7 @@
       "device": "Jetson_2",
       "hardware": {
         "compute_speed_gflops_per_ms": 9.201,
-        "memory_mb": 6204.0,
+        "memory_mb": 8192.0,
         "compute_speed_tflops": 9.201
       },
       "stk_id": "LEO185",
@@ -50,7 +50,7 @@
         "SAT-01",
         "SAT-03"
       ],
-      "memory_mb": 6204.0
+      "memory_mb": 8192.0
     },
     "SAT-03": {
       "ip": "192.168.10.181",
@@ -60,7 +60,7 @@
       "is_aggregator": true,
       "hardware": {
         "compute_speed_gflops_per_ms": 4.597,
-        "memory_mb": 11108.0,
+        "memory_mb": 8192.0,
         "compute_speed_tflops": 4.597
       },
       "stk_id": "LEO081",
@@ -68,7 +68,7 @@
         "SAT-02",
         "GS"
       ],
-      "memory_mb": 11108.0
+      "memory_mb": 8192.0
     },
     "GS": {
       "ip": "192.168.10.165",
@@ -200,11 +200,16 @@
       ]
     },
     "resource_override": {
-      "sat_memory_range_mb": [
+      "sat_memory_range_mb": "",
+      "sat_memory_values_mb": [
+        2048.0,
         4096.0,
-        16384.0
+        8192.0
       ],
-      "memory_assignment": "stable_uniform_by_stk_id"
+      "memory_assignment": "stable_choice_by_stk_id",
+      "sat_compute_scale": "",
+      "isl_bandwidth_scale": "",
+      "gsl_bandwidth_scale": ""
     },
     "mode_selection": {
       "slot_id": "slot_007_043500_044000",

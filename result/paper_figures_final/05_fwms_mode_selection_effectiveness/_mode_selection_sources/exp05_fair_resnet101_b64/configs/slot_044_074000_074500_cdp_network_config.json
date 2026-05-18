@@ -7,8 +7,8 @@
   "no_aggregator": true,
   "workers": [
     {
-      "worker_stk_id": "LEO108",
-      "worker_node_id": "SAT-01",
+      "worker_stk_id": "LEO017",
+      "worker_node_id": "SAT-02",
       "candidate_rank": 1,
       "candidate_path": [
         "RS",
@@ -18,91 +18,103 @@
       ],
       "dispatch_route": [
         "RS",
-        "LEO108"
-      ],
-      "return_route": [
-        "LEO108",
-        "LEO017",
-        "Shenzhen"
-      ],
-      "b_dist_mbps": 14084.7519,
-      "b_return_mbps": 92.84704627523494,
-      "compute_full_model_ms": 662.9736970287386
-    },
-    {
-      "worker_stk_id": "LEO186",
-      "worker_node_id": "SAT-01",
-      "candidate_rank": 5,
-      "candidate_path": [
-        "RS",
-        "LEO186",
-        "LEO108",
-        "LEO017",
-        "Shenzhen"
-      ],
-      "dispatch_route": [
-        "RS",
-        "LEO186"
-      ],
-      "return_route": [
-        "LEO186",
-        "LEO108",
-        "LEO017",
-        "Shenzhen"
-      ],
-      "b_dist_mbps": 17298.9852,
-      "b_return_mbps": 91.9108272437262,
-      "compute_full_model_ms": 907.3900000000002
-    },
-    {
-      "worker_stk_id": "LEO088",
-      "worker_node_id": "SAT-01",
-      "candidate_rank": 7,
-      "candidate_path": [
-        "RS",
-        "LEO088",
-        "LEO108",
-        "LEO017",
-        "Shenzhen"
-      ],
-      "dispatch_route": [
-        "RS",
-        "LEO088"
-      ],
-      "return_route": [
-        "LEO088",
-        "LEO108",
-        "LEO017",
-        "Shenzhen"
-      ],
-      "b_dist_mbps": 15349.6215,
-      "b_return_mbps": 92.1348960693711,
-      "compute_full_model_ms": 907.3900000000002
-    },
-    {
-      "worker_stk_id": "LEO017",
-      "worker_node_id": "SAT-02",
-      "candidate_rank": 11,
-      "candidate_path": [
-        "RS",
-        "LEO108",
-        "LEO017",
-        "LEO101",
-        "Shenzhen"
-      ],
-      "dispatch_route": [
-        "RS",
         "LEO108",
         "LEO017"
       ],
       "return_route": [
         "LEO017",
-        "LEO101",
         "Shenzhen"
       ],
       "b_dist_mbps": 6927.123267510819,
-      "b_return_mbps": 264.7177816639902,
-      "compute_full_model_ms": 907.3900000000002
+      "b_return_mbps": 93.4838,
+      "compute_full_model_ms": 246.54657102488864
+    },
+    {
+      "worker_stk_id": "LEO078",
+      "worker_node_id": "SAT-01",
+      "candidate_rank": 40,
+      "candidate_path": [
+        "RS",
+        "LEO078",
+        "LEO088",
+        "LEO098",
+        "LEO108",
+        "LEO017",
+        "Shenzhen"
+      ],
+      "dispatch_route": [
+        "RS",
+        "LEO078"
+      ],
+      "return_route": [
+        "LEO078",
+        "LEO088",
+        "LEO098",
+        "LEO108",
+        "LEO017",
+        "Shenzhen"
+      ],
+      "b_dist_mbps": 17250.4944,
+      "b_return_mbps": 90.39784025968055,
+      "compute_full_model_ms": 364.65969007201653
+    },
+    {
+      "worker_stk_id": "LEO176",
+      "worker_node_id": "SAT-02",
+      "candidate_rank": 38,
+      "candidate_path": [
+        "RS",
+        "LEO186",
+        "LEO176",
+        "LEO098",
+        "LEO108",
+        "LEO017",
+        "Shenzhen"
+      ],
+      "dispatch_route": [
+        "RS",
+        "LEO186",
+        "LEO176"
+      ],
+      "return_route": [
+        "LEO176",
+        "LEO098",
+        "LEO108",
+        "LEO017",
+        "Shenzhen"
+      ],
+      "b_dist_mbps": 6910.951245169258,
+      "b_return_mbps": 90.7394470266525,
+      "compute_full_model_ms": 364.65969007201653
+    },
+    {
+      "worker_stk_id": "LEO098",
+      "worker_node_id": "SAT-03",
+      "candidate_rank": 40,
+      "candidate_path": [
+        "RS",
+        "LEO078",
+        "LEO088",
+        "LEO098",
+        "LEO108",
+        "LEO017",
+        "Shenzhen"
+      ],
+      "dispatch_route": [
+        "RS",
+        "LEO078",
+        "LEO088",
+        "LEO098"
+      ],
+      "return_route": [
+        "LEO098",
+        "LEO108",
+        "LEO017",
+        "Shenzhen"
+      ],
+      "b_dist_mbps": 3403.0417691588427,
+      "b_return_mbps": 92.36744021078741,
+      "compute_full_model_ms": 364.65969007201653
     }
   ]
 }

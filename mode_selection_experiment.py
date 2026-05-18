@@ -28,7 +28,10 @@ from core.mode_evaluators import (
     evaluate_gs_only_slot,
     evaluate_pmp_slot,
     evaluate_sat_only_slot,
+    set_link_bandwidth_scales,
+    set_sat_compute_scale,
     set_sat_memory_range_mb,
+    set_sat_memory_values_mb,
     set_profile_device_override,
 )
 from core.mode_scene_builder import SlotScene, load_stk_slot_scenes, write_slot_scene
@@ -209,7 +212,12 @@ def _run_mode_stage(
                 max_workers=cdp_max_workers,
             )
         )
-        fwms_feature = select_fwms_feature(scene, scene_evaluations)
+        fwms_feature = select_fwms_feature(
+            scene,
+            scene_evaluations,
+            resolver=resolver,
+            max_workers=cdp_max_workers,
+        )
         print(
             "[MODE] FWMS-Feature | "
             f"{scene.slot_id} | selected={json.loads(fwms_feature.plan_json).get('selected_mode', '')}"
@@ -318,6 +326,29 @@ def main() -> None:
         help="Optional stable LEO memory override as min,max in MB, for example 4096,16384.",
     )
     parser.add_argument(
+        "--sat-memory-values-mb",
+        default=None,
+        help="Optional stable LEO memory override as a discrete set in MB, for example 2048,4096,8192.",
+    )
+    parser.add_argument(
+        "--sat-compute-scale",
+        type=float,
+        default=None,
+        help="Optional multiplicative scale applied to all LEO compute capacities.",
+    )
+    parser.add_argument(
+        "--isl-bandwidth-scale",
+        type=float,
+        default=None,
+        help="Optional multiplicative scale applied to all ISL and RS-SAT bandwidths.",
+    )
+    parser.add_argument(
+        "--gsl-bandwidth-scale",
+        type=float,
+        default=None,
+        help="Optional multiplicative scale applied to all SAT-GS bandwidths.",
+    )
+    parser.add_argument(
         "--shared-pmp-min-hops",
         type=int,
         default=3,
@@ -326,6 +357,9 @@ def main() -> None:
     args = parser.parse_args()
     set_profile_device_override(args.profile_device)
     set_sat_memory_range_mb(args.sat_memory_range_mb)
+    set_sat_memory_values_mb(args.sat_memory_values_mb)
+    set_sat_compute_scale(args.sat_compute_scale)
+    set_link_bandwidth_scales(args.isl_bandwidth_scale, args.gsl_bandwidth_scale)
 
     stk_run_dir = Path(args.stk_run_dir)
     source_run_id = stk_run_dir.name
@@ -392,7 +426,7 @@ def main() -> None:
             "GS-Only": "Min-Latency-Route",
             "Sat-Only": "Min-Latency-Single-Sat",
             "CDP": "LAWA-Discrete",
-            "FWMS-Feature": "Feature-Weighted",
+            "FWMS-Feature": "Resource-Driven",
             "Oracle-Min-Latency": "Prediction-Min-Latency",
         },
         "pending_modes": [],
@@ -401,7 +435,7 @@ def main() -> None:
             "GS-Only": f"min_predicted_gs_only_latency_ge{int(args.shared_pmp_min_hops)}hops",
             "Sat-Only": f"shared_gs_only_route_single_sat_ge{int(args.shared_pmp_min_hops)}hops",
             "CDP": "best_lawa_worker_set_no_aggregator",
-            "FWMS-Feature": "feature_weighted_pmp_cdp_boundary",
+            "FWMS-Feature": "resource_guided_multi_mode_boundary",
             "Oracle-Min-Latency": "min_predicted_latency_over_all_feasible_modes",
         },
         "batch_size_override": args.batch_size_override,
@@ -417,6 +451,10 @@ def main() -> None:
         "cdp_max_workers": args.cdp_max_workers,
         "profile_device": args.profile_device,
         "sat_memory_range_mb": args.sat_memory_range_mb,
+        "sat_memory_values_mb": args.sat_memory_values_mb,
+        "sat_compute_scale": args.sat_compute_scale,
+        "isl_bandwidth_scale": args.isl_bandwidth_scale,
+        "gsl_bandwidth_scale": args.gsl_bandwidth_scale,
         "shared_pmp_min_hops": args.shared_pmp_min_hops,
         "slot_scene_count": len(scenes),
         "mode_result_rows": row_count,

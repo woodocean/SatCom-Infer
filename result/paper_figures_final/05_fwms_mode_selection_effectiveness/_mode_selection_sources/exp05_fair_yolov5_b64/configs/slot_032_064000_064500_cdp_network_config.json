@@ -7,33 +7,6 @@
   "no_aggregator": true,
   "workers": [
     {
-      "worker_stk_id": "LEO156",
-      "worker_node_id": "SAT-01",
-      "candidate_rank": 1,
-      "candidate_path": [
-        "RS",
-        "LEO156",
-        "LEO146",
-        "LEO126",
-        "LEO106",
-        "Shenzhen"
-      ],
-      "dispatch_route": [
-        "RS",
-        "LEO156"
-      ],
-      "return_route": [
-        "LEO156",
-        "LEO146",
-        "LEO126",
-        "LEO106",
-        "Shenzhen"
-      ],
-      "b_dist_mbps": 8245.1562,
-      "b_return_mbps": 204.6307137791759,
-      "compute_full_model_ms": 695.6685338528981
-    },
-    {
       "worker_stk_id": "LEO147",
       "worker_node_id": "SAT-01",
       "candidate_rank": 31,
@@ -60,7 +33,7 @@
       ],
       "b_dist_mbps": 14299.1037,
       "b_return_mbps": 219.87505909593355,
-      "compute_full_model_ms": 952.1383333333332
+      "compute_full_model_ms": 382.6430416237997
     },
     {
       "worker_stk_id": "LEO062",
@@ -89,7 +62,36 @@
       ],
       "b_dist_mbps": 12220.6411,
       "b_return_mbps": 134.81719872084517,
-      "compute_full_model_ms": 952.1383333333332
+      "compute_full_model_ms": 382.6430416237997
+    },
+    {
+      "worker_stk_id": "LEO156",
+      "worker_node_id": "SAT-01",
+      "candidate_rank": 28,
+      "candidate_path": [
+        "RS",
+        "LEO156",
+        "LEO146",
+        "LEO136",
+        "LEO126",
+        "LEO106",
+        "Shenzhen"
+      ],
+      "dispatch_route": [
+        "RS",
+        "LEO156"
+      ],
+      "return_route": [
+        "LEO156",
+        "LEO146",
+        "LEO136",
+        "LEO126",
+        "LEO106",
+        "Shenzhen"
+      ],
+      "b_dist_mbps": 8245.1562,
+      "b_return_mbps": 220.05903009427445,
+      "compute_full_model_ms": 382.6430416237997
     },
     {
       "worker_stk_id": "LEO166",
@@ -116,7 +118,7 @@
       ],
       "b_dist_mbps": 10109.6314,
       "b_return_mbps": 194.58081264206692,
-      "compute_full_model_ms": 952.1383333333332
+      "compute_full_model_ms": 459.1716499485596
     }
   ]
 }

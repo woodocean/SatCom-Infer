@@ -22,6 +22,8 @@ from datetime import datetime
 from pathlib import Path
 
 import matplotlib.pyplot as plt
+from matplotlib.colors import ListedColormap
+from matplotlib.patches import Patch
 from matplotlib.ticker import AutoMinorLocator
 
 from algorithms.cdp_solver import CDPSolver
@@ -847,7 +849,7 @@ def _plot_exp02a_control_total_latency(df: pd.DataFrame, out_dir: Path, show_onl
         ax.yaxis.set_minor_locator(AutoMinorLocator(2))
         ax.set_xlabel("LEO节点数")
     axes[0].set_ylabel("总时延 / min")
-    fig.suptitle("50个任务块总时延", fontsize=15, fontweight="bold", y=0.975)
+    fig.suptitle("固定资源条件下中继节点数对总时延的影响", fontsize=15, fontweight="bold", y=0.975)
     fig.legend(handles, labels, frameon=False, loc="upper center", ncol=2, bbox_to_anchor=(0.5, 0.935))
     fig.tight_layout(rect=(0, 0, 1, 0.84))
     _finalize_figure(
@@ -1538,6 +1540,10 @@ def _ensure_mode_selection_results(
     worker_count: int | None = None,
     profile_device: str | None = None,
     sat_memory_range_mb: str | None = None,
+    sat_memory_values_mb: str | None = None,
+    sat_compute_scale: float | None = None,
+    isl_bandwidth_scale: float | None = None,
+    gsl_bandwidth_scale: float | None = None,
 ) -> tuple[pd.DataFrame, Path]:
     source_dir = _mode_selection_source_dir(model_name)
     source_out_dir = out_dir / "_mode_selection_sources" / f"{tag}_{model_name}_b{batch_size}"
@@ -1555,6 +1561,30 @@ def _ensure_mode_selection_results(
         try:
             existing_metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
             reuse = str(existing_metadata.get("sat_memory_range_mb", "")) == str(sat_memory_range_mb)
+        except (OSError, json.JSONDecodeError):
+            reuse = False
+    if reuse and sat_memory_values_mb and metadata_path.exists():
+        try:
+            existing_metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+            reuse = str(existing_metadata.get("sat_memory_values_mb", "")) == str(sat_memory_values_mb)
+        except (OSError, json.JSONDecodeError):
+            reuse = False
+    if reuse and sat_compute_scale is not None and metadata_path.exists():
+        try:
+            existing_metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+            reuse = str(existing_metadata.get("sat_compute_scale", "")) == str(sat_compute_scale)
+        except (OSError, json.JSONDecodeError):
+            reuse = False
+    if reuse and isl_bandwidth_scale is not None and metadata_path.exists():
+        try:
+            existing_metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+            reuse = str(existing_metadata.get("isl_bandwidth_scale", "")) == str(isl_bandwidth_scale)
+        except (OSError, json.JSONDecodeError):
+            reuse = False
+    if reuse and gsl_bandwidth_scale is not None and metadata_path.exists():
+        try:
+            existing_metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+            reuse = str(existing_metadata.get("gsl_bandwidth_scale", "")) == str(gsl_bandwidth_scale)
         except (OSError, json.JSONDecodeError):
             reuse = False
     effective_worker_count = int(worker_count if worker_count is not None else getattr(args, "worker_count", 4))
@@ -1579,6 +1609,14 @@ def _ensure_mode_selection_results(
             command.extend(["--profile-device", str(profile_device)])
         if sat_memory_range_mb:
             command.extend(["--sat-memory-range-mb", str(sat_memory_range_mb)])
+        if sat_memory_values_mb:
+            command.extend(["--sat-memory-values-mb", str(sat_memory_values_mb)])
+        if sat_compute_scale is not None:
+            command.extend(["--sat-compute-scale", str(sat_compute_scale)])
+        if isl_bandwidth_scale is not None:
+            command.extend(["--isl-bandwidth-scale", str(isl_bandwidth_scale)])
+        if gsl_bandwidth_scale is not None:
+            command.extend(["--gsl-bandwidth-scale", str(gsl_bandwidth_scale)])
         completed = subprocess.run(command, cwd=ROOT)
         if completed.returncode != 0:
             raise RuntimeError(f"mode_selection_experiment.py failed for {model_name} batch={batch_size}")
@@ -2077,227 +2115,321 @@ def _plot_exp06(df: pd.DataFrame, out_dir: Path, model_name: str, show_only: boo
     )
 
 
-BOUNDARY_CATEGORY_ORDER = ["PMP更快", "CDP更快", "仅PMP可行", "仅CDP可行", "均不可行", "并列"]
-BOUNDARY_CATEGORY_COLOR = {
-    "PMP更快": "#244C85",
-    "CDP更快": "#E39D2D",
-    "仅PMP可行": "#2A8C88",
-    "仅CDP可行": "#8A63D2",
-    "均不可行": "#9CA3AF",
-    "并列": "#4A4A4A",
+EXP07_SCENARIOS = [
+    {
+        "scenario_id": "tight_memory",
+        "scenario_label": "紧内存",
+        "sat_memory_range_mb": "4096,6144",
+        "sat_compute_scale": 0.85,
+        "isl_bandwidth_scale": 0.90,
+        "gsl_bandwidth_scale": 0.90,
+        "description": "内存偏紧，星上算力略弱，重点考察可行性边界。",
+    },
+    {
+        "scenario_id": "balanced",
+        "scenario_label": "均衡",
+        "sat_memory_range_mb": "6144,10240",
+        "sat_compute_scale": 1.00,
+        "isl_bandwidth_scale": 1.00,
+        "gsl_bandwidth_scale": 1.00,
+        "description": "作为默认资源基线，观察不同模型的自然模式偏好。",
+    },
+    {
+        "scenario_id": "pipeline_friendly",
+        "scenario_label": "高ISL",
+        "sat_memory_range_mb": "6144,10240",
+        "sat_compute_scale": 1.10,
+        "isl_bandwidth_scale": 1.60,
+        "gsl_bandwidth_scale": 0.70,
+        "description": "放大星间链路优势，压低星地回传，考察 PMP 的适用场景。",
+    },
+    {
+        "scenario_id": "parallel_friendly",
+        "scenario_label": "高并行",
+        "sat_memory_range_mb": "12288,16384",
+        "sat_compute_scale": 1.70,
+        "isl_bandwidth_scale": 1.00,
+        "gsl_bandwidth_scale": 1.35,
+        "description": "给足内存和并行算力，考察 CDP 何时成为最优模式。",
+    },
+    {
+        "scenario_id": "return_limited",
+        "scenario_label": "低GSL",
+        "sat_memory_range_mb": "12288,16384",
+        "sat_compute_scale": 1.50,
+        "isl_bandwidth_scale": 1.00,
+        "gsl_bandwidth_scale": 0.35,
+        "description": "保持星上资源充足，但压低回传带宽，考察并行模式是否受限。",
+    },
+    {
+        "scenario_id": "weak_sat",
+        "scenario_label": "弱星侧",
+        "sat_memory_range_mb": "4096,8192",
+        "sat_compute_scale": 0.55,
+        "isl_bandwidth_scale": 0.65,
+        "gsl_bandwidth_scale": 1.00,
+        "description": "压低星上计算和链路能力，检验 FWMS 是否能主动退回保守模式。",
+    },
+]
+EXP07_SCENARIO_BY_ID = {item["scenario_id"]: item for item in EXP07_SCENARIOS}
+EXP07_MODE_CODE = {"GS-Only": 0, "PMP": 1, "Sat-Only": 2, "CDP": 3, "": 4}
+EXP07_MODE_COLOR = {
+    "GS-Only": "#4A4A4A",
+    "PMP": "#244C85",
+    "Sat-Only": "#8A63D2",
+    "CDP": "#E39D2D",
+    "": "#D1D5DB",
+}
+EXP07_MODE_SHORT = {
+    "GS-Only": "GS",
+    "PMP": "PMP",
+    "Sat-Only": "S-LEO",
+    "CDP": "CDP",
+    "": "N/A",
 }
 
 
-def _classify_pmp_cdp_boundary(pmp_row: pd.Series | None, cdp_row: pd.Series | None) -> tuple[str, float, float]:
-    pmp_feasible = bool(pmp_row is not None and _truthy(pmp_row.get("feasible_bool", False)))
-    cdp_feasible = bool(cdp_row is not None and _truthy(cdp_row.get("feasible_bool", False)))
-    pmp_latency = _finite_float(pmp_row.get("latency_ms_num", np.nan) if pmp_row is not None else np.nan)
-    cdp_latency = _finite_float(cdp_row.get("latency_ms_num", np.nan) if cdp_row is not None else np.nan)
-    if pmp_feasible and cdp_feasible and np.isfinite(pmp_latency) and np.isfinite(cdp_latency):
-        if pmp_latency < cdp_latency:
-            return "PMP更快", pmp_latency, cdp_latency
-        if cdp_latency < pmp_latency:
-            return "CDP更快", pmp_latency, cdp_latency
-        return "并列", pmp_latency, cdp_latency
-    if pmp_feasible:
-        return "仅PMP可行", pmp_latency, cdp_latency
-    if cdp_feasible:
-        return "仅CDP可行", pmp_latency, cdp_latency
-    return "均不可行", pmp_latency, cdp_latency
+def _parse_exp07_scenarios(raw_value: str) -> list[dict]:
+    requested = [item.strip() for item in str(raw_value).split(",") if item.strip()]
+    if not requested:
+        return list(EXP07_SCENARIOS)
+    scenarios = []
+    for scenario_id in requested:
+        if scenario_id not in EXP07_SCENARIO_BY_ID:
+            raise KeyError(f"Unknown exp07 scenario: {scenario_id}")
+        scenarios.append(EXP07_SCENARIO_BY_ID[scenario_id])
+    return scenarios
 
 
-def _build_exp07_boundary_rows(df: pd.DataFrame, model_name: str, batch_size: int, worker_count: int) -> list[dict]:
+def _exp07_selected_mode(row: pd.Series | None) -> str:
+    if row is None:
+        return ""
+    try:
+        payload = json.loads(str(row.get("plan_json", "") or "{}"))
+    except json.JSONDecodeError:
+        return ""
+    return _canonical_mode(str(payload.get("selected_mode", ""))) or ""
+
+
+def _mode_mix_string(values: pd.Series) -> str:
+    counts = values[values.astype(str) != ""].value_counts()
+    if counts.empty:
+        return ""
+    return "|".join(f"{MODE_LABEL.get(mode, mode)}:{int(count)}" for mode, count in counts.items())
+
+
+def _dominant_mode(values: pd.Series) -> str:
+    counts = values[values.astype(str) != ""].value_counts()
+    return str(counts.index[0]) if not counts.empty else ""
+
+
+def _build_exp07_resource_rows(df: pd.DataFrame, model_name: str, batch_size: int, scenario: dict) -> list[dict]:
     rows: list[dict] = []
     for slot_id, slot_df in df.groupby("slot_id", sort=True):
-        pmp_row = _mode_row_by_plot_mode(slot_df, "PMP")
-        cdp_row = _mode_row_by_plot_mode(slot_df, "CDP")
-        category, pmp_latency, cdp_latency = _classify_pmp_cdp_boundary(pmp_row, cdp_row)
-        ratio = float("nan")
-        gap_ms = float("nan")
-        if np.isfinite(pmp_latency) and np.isfinite(cdp_latency) and pmp_latency > 0:
-            ratio = cdp_latency / pmp_latency
-            gap_ms = cdp_latency - pmp_latency
+        fwms_row = slot_df[slot_df["mode_family"] == "FWMS-Feature"]
+        oracle_row = slot_df[slot_df["mode_family"] == "Oracle-Min-Latency"]
+        fwms = fwms_row.iloc[0] if not fwms_row.empty else None
+        oracle = oracle_row.iloc[0] if not oracle_row.empty else None
+
+        fwms_mode = _exp07_selected_mode(fwms)
+        oracle_mode = _exp07_selected_mode(oracle)
+        fwms_latency = _finite_float(fwms.get("latency_ms_num", np.nan) if fwms is not None else np.nan)
+        oracle_latency = _finite_float(oracle.get("latency_ms_num", np.nan) if oracle is not None else np.nan)
+        regret_pct = float("nan")
+        if np.isfinite(fwms_latency) and np.isfinite(oracle_latency) and oracle_latency > 0:
+            regret_pct = max(0.0, (fwms_latency - oracle_latency) / oracle_latency * 100.0)
+
+        try:
+            fwms_payload = json.loads(str(fwms.get("plan_json", "") or "{}")) if fwms is not None else {}
+        except json.JSONDecodeError:
+            fwms_payload = {}
+
         rows.append(
             {
                 "model_name": model_name,
                 "model_label": MODEL_LABELS.get(model_name, model_name),
                 "batch_size": batch_size,
-                "worker_count": worker_count,
                 "slot_id": str(slot_id),
-                "category": category,
-                "pmp_feasible": bool(pmp_row is not None and _truthy(pmp_row.get("feasible_bool", False))),
-                "cdp_feasible": bool(cdp_row is not None and _truthy(cdp_row.get("feasible_bool", False))),
-                "pmp_latency_ms": pmp_latency,
-                "cdp_latency_ms": cdp_latency,
-                "cdp_over_pmp_ratio": ratio,
-                "cdp_minus_pmp_ms": gap_ms,
-                "pmp_route_leo_count": int(_finite_float(pmp_row.get("pmp_route_leo_count", 0), 0.0)) if pmp_row is not None else 0,
-                "cdp_active_sat_count": int(_finite_float(cdp_row.get("active_sat_count_num", 0), 0.0)) if cdp_row is not None else 0,
-                "source_results_csv": str(pmp_row.get("source_results_csv", "")) if pmp_row is not None else str(cdp_row.get("source_results_csv", "")) if cdp_row is not None else "",
+                "scenario_id": scenario["scenario_id"],
+                "scenario_label": scenario["scenario_label"],
+                "sat_memory_range_mb": scenario["sat_memory_range_mb"],
+                "sat_compute_scale": scenario["sat_compute_scale"],
+                "isl_bandwidth_scale": scenario["isl_bandwidth_scale"],
+                "gsl_bandwidth_scale": scenario["gsl_bandwidth_scale"],
+                "fwms_selected_mode": fwms_mode,
+                "oracle_selected_mode": oracle_mode,
+                "selection_correct": bool(fwms_mode != "" and fwms_mode == oracle_mode),
+                "fwms_latency_ms": fwms_latency,
+                "oracle_latency_ms": oracle_latency,
+                "regret_pct": regret_pct,
+                "fwms_feasible": bool(fwms is not None and _truthy(fwms.get("feasible_bool", False))),
+                "oracle_feasible": bool(oracle is not None and _truthy(oracle.get("feasible_bool", False))),
+                "fwms_reason": str(fwms_payload.get("decision_reason", "")),
+                "source_results_csv": str(fwms.get("source_results_csv", "")) if fwms is not None else "",
             }
         )
     return rows
 
 
-def _summarize_exp07(boundary_df: pd.DataFrame) -> pd.DataFrame:
-    summary_rows: list[dict] = []
-    for (model_name, worker_count), sub in boundary_df.groupby(["model_name", "worker_count"], sort=True):
-        total_slots = len(sub)
-        both = sub[sub["category"].isin(["PMP更快", "CDP更快", "并列"])]
-        pmp_better = int((sub["category"] == "PMP更快").sum())
-        cdp_better = int((sub["category"] == "CDP更快").sum())
-        tied = int((sub["category"] == "并列").sum())
-        pmp_only = int((sub["category"] == "仅PMP可行").sum())
-        cdp_only = int((sub["category"] == "仅CDP可行").sum())
-        neither = int((sub["category"] == "均不可行").sum())
-        summary_rows.append(
+def _summarize_exp07(summary_source: pd.DataFrame) -> pd.DataFrame:
+    rows: list[dict] = []
+    for (model_name, scenario_id), sub in summary_source.groupby(["model_name", "scenario_id"], sort=True):
+        valid_regret = pd.to_numeric(sub["regret_pct"], errors="coerce")
+        rows.append(
             {
                 "model_name": model_name,
                 "model_label": MODEL_LABELS.get(model_name, model_name),
                 "batch_size": int(sub["batch_size"].iloc[0]),
-                "worker_count": int(worker_count),
-                "total_slots": total_slots,
-                "both_feasible_slots": len(both),
-                "pmp_better_slots": pmp_better,
-                "cdp_better_slots": cdp_better,
-                "tied_slots": tied,
-                "pmp_only_feasible_slots": pmp_only,
-                "cdp_only_feasible_slots": cdp_only,
-                "neither_feasible_slots": neither,
-                "pmp_win_rate_among_both": (pmp_better / len(both)) if len(both) else float("nan"),
-                "cdp_win_rate_among_both": (cdp_better / len(both)) if len(both) else float("nan"),
-                "mean_pmp_latency_ms_both": float(both["pmp_latency_ms"].mean()) if len(both) else float("nan"),
-                "mean_cdp_latency_ms_both": float(both["cdp_latency_ms"].mean()) if len(both) else float("nan"),
-                "mean_cdp_over_pmp_ratio_both": float(both["cdp_over_pmp_ratio"].mean()) if len(both) else float("nan"),
-                "median_cdp_over_pmp_ratio_both": float(both["cdp_over_pmp_ratio"].median()) if len(both) else float("nan"),
+                "scenario_id": scenario_id,
+                "scenario_label": str(sub["scenario_label"].iloc[0]),
+                "sat_memory_range_mb": str(sub["sat_memory_range_mb"].iloc[0]),
+                "sat_compute_scale": float(sub["sat_compute_scale"].iloc[0]),
+                "isl_bandwidth_scale": float(sub["isl_bandwidth_scale"].iloc[0]),
+                "gsl_bandwidth_scale": float(sub["gsl_bandwidth_scale"].iloc[0]),
+                "slot_count": len(sub),
+                "selection_accuracy_pct": float(sub["selection_correct"].mean() * 100.0),
+                "mean_regret_pct": float(valid_regret.dropna().mean()) if valid_regret.notna().any() else float("nan"),
+                "median_regret_pct": float(valid_regret.dropna().median()) if valid_regret.notna().any() else float("nan"),
+                "dominant_oracle_mode": _dominant_mode(sub["oracle_selected_mode"]),
+                "dominant_fwms_mode": _dominant_mode(sub["fwms_selected_mode"]),
+                "oracle_mode_mix": _mode_mix_string(sub["oracle_selected_mode"]),
+                "fwms_mode_mix": _mode_mix_string(sub["fwms_selected_mode"]),
             }
         )
-    return pd.DataFrame(summary_rows)
+    return pd.DataFrame(rows)
 
 
-def _plot_exp07_counts(summary_df: pd.DataFrame, out_dir: Path, batch_size: int, show_only: bool = False) -> None:
+def _summarize_exp07_overall(summary_df: pd.DataFrame) -> pd.DataFrame:
+    rows: list[dict] = []
+    for scenario_id, sub in summary_df.groupby("scenario_id", sort=False):
+        rows.append(
+            {
+                "scenario_id": scenario_id,
+                "scenario_label": str(sub["scenario_label"].iloc[0]),
+                "mean_accuracy_pct": float(sub["selection_accuracy_pct"].mean()),
+                "mean_regret_pct": float(pd.to_numeric(sub["mean_regret_pct"], errors="coerce").mean()),
+            }
+        )
+    return pd.DataFrame(rows)
+
+
+def _plot_exp07_mode_map(summary_df: pd.DataFrame, out_dir: Path, show_only: bool = False) -> None:
     setup_style()
     models = [model for model in ["yolov5", "resnet101", "vgg19", "vit_huge"] if model in set(summary_df["model_name"])]
-    workers = sorted(summary_df["worker_count"].unique())
-    x = np.arange(len(models))
-    width = 0.22
-    fig, ax = plt.subplots(figsize=(12.0, 5.6))
+    scenarios = [item for item in EXP07_SCENARIOS if item["scenario_id"] in set(summary_df["scenario_id"])]
+    code_matrix = np.full((len(models), len(scenarios)), EXP07_MODE_CODE[""], dtype=float)
+    text_matrix: list[list[str]] = [["" for _ in scenarios] for _ in models]
 
-    for worker_idx, worker_count in enumerate(workers):
-        sub = summary_df[summary_df["worker_count"] == worker_count]
-        pos = x + (worker_idx - (len(workers) - 1) / 2) * width
-        bottom = np.zeros(len(models), dtype=float)
-        for category in BOUNDARY_CATEGORY_ORDER:
-            values = []
-            for model_name in models:
-                row = sub[sub["model_name"] == model_name]
-                if row.empty:
-                    values.append(0.0)
-                    continue
-                row = row.iloc[0]
-                field_map = {
-                    "PMP更快": "pmp_better_slots",
-                    "CDP更快": "cdp_better_slots",
-                    "仅PMP可行": "pmp_only_feasible_slots",
-                    "仅CDP可行": "cdp_only_feasible_slots",
-                    "均不可行": "neither_feasible_slots",
-                    "并列": "tied_slots",
-                }
-                values.append(float(row[field_map[category]]))
-            label = f"{category}（w={worker_count}）"
-            ax.bar(
-                pos,
-                values,
-                width=width * 0.92,
-                bottom=bottom,
-                color=BOUNDARY_CATEGORY_COLOR[category],
-                edgecolor="white",
-                linewidth=0.5,
-                label=label,
+    for row_idx, model_name in enumerate(models):
+        for col_idx, scenario in enumerate(scenarios):
+            sub = summary_df[
+                (summary_df["model_name"] == model_name)
+                & (summary_df["scenario_id"] == scenario["scenario_id"])
+            ]
+            if sub.empty:
+                continue
+            row = sub.iloc[0]
+            oracle_mode = str(row["dominant_oracle_mode"])
+            fwms_mode = str(row["dominant_fwms_mode"])
+            code_matrix[row_idx, col_idx] = EXP07_MODE_CODE.get(oracle_mode, EXP07_MODE_CODE[""])
+            text_matrix[row_idx][col_idx] = (
+                f"O:{EXP07_MODE_SHORT.get(oracle_mode, oracle_mode)}\n"
+                f"F:{EXP07_MODE_SHORT.get(fwms_mode, fwms_mode)}\n"
+                f"{float(row['selection_accuracy_pct']):.0f}% / {float(row['mean_regret_pct']):.1f}%"
             )
-            bottom += np.asarray(values, dtype=float)
-        for xpos, total in zip(pos, bottom):
-            ax.text(xpos, total + 0.35, f"w={worker_count}", ha="center", va="bottom", fontsize=8)
 
-    ax.set_title(f"实验7：PMP/CDP 翻转边界统计（batch={batch_size}）", pad=12, fontsize=15, fontweight="bold")
-    ax.set_xticks(x)
-    ax.set_xticklabels([MODEL_LABELS[model] for model in models])
-    ax.set_ylabel("slot 数量")
-    ax.set_ylim(0.0, max(float(summary_df["total_slots"].max()), 1.0) * 1.16)
-    ax.grid(True, axis="y", alpha=0.75)
-    ax.spines["top"].set_visible(False)
-    ax.spines["right"].set_visible(False)
-    handles, labels = ax.get_legend_handles_labels()
-    unique = dict(zip(labels, handles))
-    ax.legend(unique.values(), unique.keys(), loc="upper center", bbox_to_anchor=(0.5, 1.22), ncol=3, frameon=False, fontsize=8)
-    fig.tight_layout()
+    cmap = ListedColormap(
+        [
+            EXP07_MODE_COLOR["GS-Only"],
+            EXP07_MODE_COLOR["PMP"],
+            EXP07_MODE_COLOR["Sat-Only"],
+            EXP07_MODE_COLOR["CDP"],
+            EXP07_MODE_COLOR[""],
+        ]
+    )
+    fig, ax = plt.subplots(figsize=(11.2, 5.4))
+    ax.imshow(code_matrix, cmap=cmap, vmin=0, vmax=4, aspect="auto")
+    ax.set_xticks(np.arange(len(scenarios)))
+    ax.set_xticklabels([item["scenario_label"] for item in scenarios], fontsize=10)
+    ax.set_yticks(np.arange(len(models)))
+    ax.set_yticklabels([MODEL_LABELS.get(model, model) for model in models], fontsize=10)
+    ax.set_title("资源场景下的最优模式与 FWMS 选择", pad=10, fontsize=15, fontweight="bold")
+
+    for row_idx in range(len(models)):
+        for col_idx in range(len(scenarios)):
+            text = text_matrix[row_idx][col_idx]
+            if not text:
+                continue
+            ax.text(col_idx, row_idx, text, ha="center", va="center", fontsize=8.6, color="white")
+
+    ax.set_xticks(np.arange(-0.5, len(scenarios), 1), minor=True)
+    ax.set_yticks(np.arange(-0.5, len(models), 1), minor=True)
+    ax.grid(which="minor", color="white", linewidth=1.2)
+    ax.tick_params(which="minor", bottom=False, left=False)
+
+    legend_handles = [
+        Patch(facecolor=EXP07_MODE_COLOR[mode], label=MODE_LABEL.get(mode, mode))
+        for mode in ["GS-Only", "PMP", "Sat-Only", "CDP"]
+    ]
+    ax.legend(handles=legend_handles, loc="upper center", bbox_to_anchor=(0.5, 1.16), ncol=4, frameon=False)
+    fig.tight_layout(rect=[0, 0, 1, 0.94])
     _finalize_figure(
         fig,
-        out_dir / "exp07_pmp_cdp_flip_boundary_counts.png",
-        out_dir / "exp07_pmp_cdp_flip_boundary_counts.pdf",
+        out_dir / "exp07_fwms_resource_mode_map.png",
+        out_dir / "exp07_fwms_resource_mode_map.pdf",
         show_only=show_only,
     )
 
 
-def _plot_exp07_ratio(summary_df: pd.DataFrame, out_dir: Path, batch_size: int, show_only: bool = False) -> None:
+def _plot_exp07_metrics(summary_df: pd.DataFrame, out_dir: Path, show_only: bool = False) -> None:
     setup_style()
-    fig, ax = plt.subplots(figsize=(8.8, 5.2))
-    workers = sorted(summary_df["worker_count"].unique())
-    colors = {
-        "yolov5": "#244C85",
-        "resnet101": "#E39D2D",
-        "vgg19": "#2A8C88",
-        "vit_huge": "#8A63D2",
-    }
-    markers = {
-        "yolov5": "o",
-        "resnet101": "s",
-        "vgg19": "D",
-        "vit_huge": "^",
-    }
+    models = [model for model in ["yolov5", "resnet101", "vgg19", "vit_huge"] if model in set(summary_df["model_name"])]
+    scenarios = [item for item in EXP07_SCENARIOS if item["scenario_id"] in set(summary_df["scenario_id"])]
+    accuracy_matrix = np.full((len(models), len(scenarios)), np.nan, dtype=float)
+    regret_matrix = np.full((len(models), len(scenarios)), np.nan, dtype=float)
 
-    finite_values: list[float] = []
-    for model_name in ["yolov5", "resnet101", "vgg19", "vit_huge"]:
-        sub = summary_df[summary_df["model_name"] == model_name].sort_values("worker_count")
-        if sub.empty:
-            continue
-        x = sub["worker_count"].to_numpy(dtype=float)
-        y = sub["mean_cdp_over_pmp_ratio_both"].to_numpy(dtype=float)
-        finite_values.extend([float(value) for value in y if np.isfinite(float(value))])
-        ax.plot(
-            x,
-            y,
-            color=colors[model_name],
-            marker=markers[model_name],
-            linewidth=2.2,
-            markersize=6.5,
-            label=MODEL_LABELS.get(model_name, model_name),
-        )
-        for xv, yv, both in zip(x, y, sub["both_feasible_slots"].tolist()):
-            if np.isfinite(float(yv)):
-                ax.text(xv, yv, f"{yv:.2f}", ha="center", va="bottom", fontsize=8)
-            elif int(both) == 0:
-                ax.text(xv, 1.02, "无共同可行", ha="center", va="bottom", fontsize=7.5, color=colors[model_name], rotation=90)
+    for row_idx, model_name in enumerate(models):
+        for col_idx, scenario in enumerate(scenarios):
+            sub = summary_df[
+                (summary_df["model_name"] == model_name)
+                & (summary_df["scenario_id"] == scenario["scenario_id"])
+            ]
+            if sub.empty:
+                continue
+            row = sub.iloc[0]
+            accuracy_matrix[row_idx, col_idx] = float(row["selection_accuracy_pct"])
+            regret_matrix[row_idx, col_idx] = float(row["mean_regret_pct"])
 
-    ax.axhline(1.0, color="#2F855A", linestyle="--", linewidth=1.3)
-    ax.text(workers[0] - 0.1, 1.0, "CDP/PMP = 1", color="#2F855A", ha="right", va="bottom", fontsize=8)
-    ax.set_title(f"实验7：PMP/CDP 翻转边界（batch={batch_size}）", pad=12, fontsize=15, fontweight="bold")
-    ax.set_xlabel("CDP 并行卫星数")
-    ax.set_ylabel("平均时延比（CDP / PMP，仅统计两者都可行的 slot）")
-    ax.set_xticks(workers)
-    ax.grid(True, axis="y", alpha=0.75)
-    ax.spines["top"].set_visible(False)
-    ax.spines["right"].set_visible(False)
-    if finite_values:
-        ymin = min(min(finite_values), 1.0)
-        ymax = max(max(finite_values), 1.0)
-        ax.set_ylim(max(0.0, ymin * 0.9), ymax * 1.16)
-    ax.legend(loc="upper center", bbox_to_anchor=(0.5, 1.16), ncol=4, frameon=False)
-    fig.tight_layout()
+    fig, axes = plt.subplots(1, 2, figsize=(12.2, 5.1))
+    metric_specs = [
+        (accuracy_matrix, axes[0], "匹配率 / %", "YlGn", lambda value: f"{value:.1f}"),
+        (regret_matrix, axes[1], "平均 regret / %", "YlOrRd", lambda value: f"{value:.1f}"),
+    ]
+    for matrix, ax, title, cmap_name, formatter in metric_specs:
+        image = ax.imshow(matrix, cmap=plt.get_cmap(cmap_name), aspect="auto")
+        ax.set_xticks(np.arange(len(scenarios)))
+        ax.set_xticklabels([item["scenario_label"] for item in scenarios], fontsize=10)
+        ax.set_yticks(np.arange(len(models)))
+        ax.set_yticklabels([MODEL_LABELS.get(model, model) for model in models], fontsize=10)
+        ax.set_title(title, fontsize=13, fontweight="bold", pad=8)
+        for row_idx in range(len(models)):
+            for col_idx in range(len(scenarios)):
+                value = matrix[row_idx, col_idx]
+                if not np.isfinite(value):
+                    continue
+                ax.text(col_idx, row_idx, formatter(value), ha="center", va="center", fontsize=9, color="#111827")
+        ax.set_xticks(np.arange(-0.5, len(scenarios), 1), minor=True)
+        ax.set_yticks(np.arange(-0.5, len(models), 1), minor=True)
+        ax.grid(which="minor", color="white", linewidth=1.2)
+        ax.tick_params(which="minor", bottom=False, left=False)
+        fig.colorbar(image, ax=ax, fraction=0.046, pad=0.04)
+
+    fig.suptitle("FWMS 资源场景实验指标", fontsize=15, fontweight="bold", y=0.98)
+    fig.tight_layout(rect=[0, 0, 1, 0.94])
     _finalize_figure(
         fig,
-        out_dir / "exp07_pmp_cdp_flip_boundary_ratio.png",
-        out_dir / "exp07_pmp_cdp_flip_boundary_ratio.pdf",
+        out_dir / "exp07_fwms_resource_metrics.png",
+        out_dir / "exp07_fwms_resource_metrics.pdf",
         show_only=show_only,
     )
 
@@ -2305,53 +2437,71 @@ def _plot_exp07_ratio(summary_df: pd.DataFrame, out_dir: Path, batch_size: int, 
 def _run_exp07(args) -> int:
     out_dir, cleanup_dir = _prepare_runtime_out_dir(args.out_dir, _is_show_only(args), "exp07_show")
     models = [model.strip() for model in args.models.split(",") if model.strip()]
-    worker_counts = [int(value) for value in args.worker_counts.split(",") if value.strip()]
+    scenarios = _parse_exp07_scenarios(args.scenarios)
     try:
-        boundary_rows: list[dict] = []
+        rows: list[dict] = []
         audits: list[dict] = []
-        for model_name in models:
-            for worker_count in worker_counts:
-                tag = f"exp07_boundary_w{worker_count}"
+        for scenario in scenarios:
+            for model_name in models:
+                tag = f"exp07_{scenario['scenario_id']}"
                 df_source, source_dir = _ensure_mode_selection_results(
                     model_name,
                     args.batch_size,
                     args,
                     out_dir,
                     tag,
-                    worker_count=worker_count,
+                    worker_count=args.worker_count,
+                    profile_device=args.profile_device,
+                    sat_memory_range_mb=scenario["sat_memory_range_mb"],
+                    sat_compute_scale=scenario["sat_compute_scale"],
+                    isl_bandwidth_scale=scenario["isl_bandwidth_scale"],
+                    gsl_bandwidth_scale=scenario["gsl_bandwidth_scale"],
                 )
-                model_rows = _build_exp07_boundary_rows(df_source, model_name, args.batch_size, worker_count)
-                boundary_rows.extend(model_rows)
+                scenario_rows = _build_exp07_resource_rows(df_source, model_name, args.batch_size, scenario)
+                rows.extend(scenario_rows)
                 audits.append(
                     {
                         "model_name": model_name,
                         "batch_size": args.batch_size,
-                        "worker_count": worker_count,
-                        "slot_count": len({row["slot_id"] for row in model_rows}),
+                        "worker_count": args.worker_count,
+                        "scenario_id": scenario["scenario_id"],
+                        "scenario_label": scenario["scenario_label"],
+                        "slot_count": len({row["slot_id"] for row in scenario_rows}),
                         "source_mode_selection_dir": str(source_dir),
                     }
                 )
 
-        boundary_df = pd.DataFrame(boundary_rows)
-        summary_df = _summarize_exp07(boundary_df)
+        long_df = pd.DataFrame(rows)
+        summary_df = _summarize_exp07(long_df)
+        overall_df = _summarize_exp07_overall(summary_df)
         if not _is_show_only(args):
-            boundary_df.to_csv(out_dir / "exp07_pmp_cdp_flip_boundary_long.csv", index=False, encoding="utf-8-sig")
-            summary_df.to_csv(out_dir / "exp07_pmp_cdp_flip_boundary_summary.csv", index=False, encoding="utf-8-sig")
-            pd.DataFrame(audits).to_csv(out_dir / "exp07_pmp_cdp_flip_boundary_audit.csv", index=False, encoding="utf-8-sig")
-        _plot_exp07_counts(summary_df, out_dir, args.batch_size, show_only=_is_show_only(args))
-        _plot_exp07_ratio(summary_df, out_dir, args.batch_size, show_only=_is_show_only(args))
+            long_df.to_csv(out_dir / "exp07_fwms_resource_scenarios_long.csv", index=False, encoding="utf-8-sig")
+            summary_df.to_csv(out_dir / "exp07_fwms_resource_scenarios_summary.csv", index=False, encoding="utf-8-sig")
+            overall_df.to_csv(out_dir / "exp07_fwms_resource_scenarios_overall.csv", index=False, encoding="utf-8-sig")
+            pd.DataFrame(audits).to_csv(out_dir / "exp07_fwms_resource_scenarios_audit.csv", index=False, encoding="utf-8-sig")
+        _plot_exp07_mode_map(summary_df, out_dir, show_only=_is_show_only(args))
+        _plot_exp07_metrics(summary_df, out_dir, show_only=_is_show_only(args))
         if not _is_show_only(args):
             notes = [
-                "# 实验 7：PMP/CDP 翻转边界验证",
+                "# 实验 7：资源场景下的 FWMS 模式选择验证",
                 "",
                 f"- 模型：{', '.join(MODEL_LABELS.get(model, model) for model in models)}。",
                 f"- batch 固定为 {args.batch_size}。",
-                f"- CDP 并行卫星数：{', '.join(str(item) for item in worker_counts)}。",
-                "- 每个模型-并行卫星数组合都直接运行 mode_selection_experiment.py，读取相同 STK 时隙集合的 PMP/CDP 结果。",
-                "- 比较类别定义：PMP更快 / CDP更快 / 仅PMP可行 / 仅CDP可行 / 均不可行 / 并列。",
-                "- 比值图中的 CDP/PMP > 1 表示 PMP 更快，< 1 表示 CDP 更快。",
+                f"- CDP 最大并行卫星数：{args.worker_count}。",
+                f"- Profile 口径：{str(args.profile_device).upper()}。",
+                "- 对每个资源场景分别重跑 mode_selection_experiment.py，并统计 FWMS 与 Oracle-Min-Latency 的模式一致率和 regret。",
+                "",
+                "## 资源场景",
+                "",
             ]
-            (out_dir / "exp07_pmp_cdp_flip_boundary_notes.md").write_text("\n".join(notes), encoding="utf-8")
+            for scenario in scenarios:
+                notes.append(
+                    f"- {scenario['scenario_label']}：内存 {scenario['sat_memory_range_mb']} MB，"
+                    f"算力缩放 {scenario['sat_compute_scale']:.2f}，"
+                    f"ISL 缩放 {scenario['isl_bandwidth_scale']:.2f}，"
+                    f"GSL 缩放 {scenario['gsl_bandwidth_scale']:.2f}。"
+                )
+            (out_dir / "exp07_fwms_resource_scenarios_notes.md").write_text("\n".join(notes), encoding="utf-8")
             print(out_dir)
         return 0
     finally:
@@ -2365,7 +2515,16 @@ def _run_exp05(args) -> int:
     try:
         loaded: list[tuple[pd.DataFrame, Path]] = []
         for model_name in models:
-            loaded.append(_ensure_mode_selection_results(model_name, args.data_size, args, out_dir, "exp05_fair"))
+            loaded.append(
+                _ensure_mode_selection_results(
+                    model_name,
+                    args.data_size,
+                    args,
+                    out_dir,
+                    "exp05_fair",
+                    sat_compute_scale=args.sat_compute_scale,
+                )
+            )
         common_slots = _common_average_slots(loaded, args.min_pmp_route_leo)
         if not common_slots:
             raise ValueError("No common slots satisfy the shared-route baseline filter for exp05.")
@@ -2406,6 +2565,7 @@ def _run_exp05(args) -> int:
                 f"- 共同时间片集合：所有模型共享同一批 slot，并要求 PMP/GS-Only/FWMS 可行且 PMP 路由至少包含 {args.min_pmp_route_leo} 颗 LEO。",
                 f"- 统计口径：各模式在共同 slot 集合上取均值；CDP 仅统计 active_sat_count 至少为 {args.min_cdp_active_sats} 的可行 slot。",
                 "- 路由口径：PMP、GS-Only、Sat-Only 在每个 slot 上共用同一路由；Sat-Only 只在该共享路由上选择单星执行位置。",
+                f"- 星上算力缩放：{args.sat_compute_scale:.2f}。",
             ]
             (out_dir / "exp05_fwms_mode_selection_effectiveness_notes.md").write_text("\n".join(notes), encoding="utf-8")
             print(out_dir)
@@ -2420,6 +2580,7 @@ def _run_exp06(args) -> int:
     try:
         loaded: list[tuple[pd.DataFrame, Path]] = []
         batches = [int(value) for value in args.data_sizes.split(",") if value.strip()]
+        memory_range_arg = None if getattr(args, "sat_memory_values_mb", None) else args.sat_memory_range_mb
         for batch_size in batches:
             loaded.append(
                 _ensure_mode_selection_results(
@@ -2429,7 +2590,8 @@ def _run_exp06(args) -> int:
                     out_dir,
                     "exp06_fair",
                     profile_device=args.profile_device,
-                    sat_memory_range_mb=args.sat_memory_range_mb,
+                    sat_memory_range_mb=memory_range_arg,
+                    sat_memory_values_mb=getattr(args, "sat_memory_values_mb", None),
                 )
             )
         common_slots = _common_average_slots(loaded, args.min_pmp_route_leo)
@@ -2470,7 +2632,7 @@ def _run_exp06(args) -> int:
                 "",
                 f"- 模型：{MODEL_LABELS.get(args.model, args.model)}。",
                 f"- Profile 口径：所有计算节点统一使用 {str(args.profile_device).upper()} profile。",
-                f"- LEO 内存：{args.sat_memory_range_mb} MB，按 STK 卫星 ID 稳定映射。",
+                f"- LEO 内存：{getattr(args, 'sat_memory_values_mb', None) or args.sat_memory_range_mb} MB，按 STK 卫星 ID 稳定映射。",
                 "- 每个 batch 都读取 mode_selection_experiment.py 的 slot_mode_results.csv，不使用实验 1 的 PMP 比例外推。",
                 f"- 共同时间片集合：所有 batch 共享同一批 slot，并要求 PMP/GS-Only/FWMS 可行且 PMP 路由至少包含 {args.min_pmp_route_leo} 颗 LEO。",
                 f"- 统计口径：各模式在共同 slot 集合上取均值；CDP 仅统计 active_sat_count 至少为 {args.min_cdp_active_sats} 的可行 slot。",
@@ -2590,6 +2752,12 @@ def main() -> None:
     exp05_parser.add_argument("--gsl-bandwidth-mbps", type=float, default=100.0, help="GS-only uplink bandwidth")
     exp05_parser.add_argument("--gs-compute-factor", type=float, default=100.0, help="GS speedup over profiled Jetson latency")
     exp05_parser.add_argument("--min-cdp-gain", type=float, default=0.05, help="Minimum CDP gain required by FWMS")
+    exp05_parser.add_argument(
+        "--sat-compute-scale",
+        type=float,
+        default=1.2,
+        help="Scale factor applied to all satellite TFLOPS in experiment 5",
+    )
     exp05_parser.add_argument("--profile", default="config/dnn_profiles_database_jetson.json", help="DNN profile database")
     exp05_parser.add_argument("--min-pmp-route-leo", type=int, default=3, help="Minimum LEO satellites on the PMP route for representative-slot filtering")
     exp05_parser.add_argument("--min-cdp-active-sats", type=int, default=3, help="Minimum active CDP worker satellites for representative-slot filtering")
@@ -2628,6 +2796,11 @@ def main() -> None:
         "--sat-memory-range-mb",
         default="4096,16384",
         help="Stable LEO memory override range for experiment 6, in MB",
+    )
+    exp06_parser.add_argument(
+        "--sat-memory-values-mb",
+        default=None,
+        help="Optional stable discrete LEO memory set for experiment 6, in MB, for example 2048,4096,8192",
     )
     exp06_parser.add_argument("--min-pmp-route-leo", type=int, default=3, help="Minimum LEO satellites on the PMP route for representative-slot filtering")
     exp06_parser.add_argument("--min-cdp-active-sats", type=int, default=3, help="Minimum active CDP worker satellites for representative-slot filtering")

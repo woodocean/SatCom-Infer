@@ -1,0 +1,60 @@
+{
+  "run_id": "temp_vit_s2",
+  "exp_type": "mode_selection",
+  "stage": "stage6_slot_scene_pmp_gs_sat_cdp_fwms_feature_oracle",
+  "source_stk_run_dir": "result\\stk_dynamic\\stk_dynamic_vit_huge_001",
+  "source_run_id": "stk_dynamic_vit_huge_001",
+  "started_at": "2026-05-18T14:21:52",
+  "completed_at": "2026-05-18T14:22:22",
+  "implemented_modes": [
+    "PMP",
+    "GS-Only",
+    "Sat-Only",
+    "CDP",
+    "FWMS-Feature",
+    "Oracle-Min-Latency"
+  ],
+  "implemented_algorithms": {
+    "PMP": "LA-DP",
+    "GS-Only": "Min-Latency-Route",
+    "Sat-Only": "Min-Latency-Single-Sat",
+    "CDP": "LAWA-Discrete",
+    "FWMS-Feature": "Resource-Driven",
+    "Oracle-Min-Latency": "Prediction-Min-Latency"
+  },
+  "pending_modes": [],
+  "route_policy": {
+    "PMP": "shared_gs_only_route_ge3hops",
+    "GS-Only": "min_predicted_gs_only_latency_ge3hops",
+    "Sat-Only": "shared_gs_only_route_single_sat_ge3hops",
+    "CDP": "best_lawa_worker_set_no_aggregator",
+    "FWMS-Feature": "resource_guided_multi_mode_boundary",
+    "Oracle-Min-Latency": "min_predicted_latency_over_all_feasible_modes"
+  },
+  "batch_size_override": 64,
+  "model_name_override": null,
+  "input_h_override": null,
+  "input_w_override": null,
+  "effective_task": {
+    "model_name": "vit_huge",
+    "batch_size": 64,
+    "input_h": 224,
+    "input_w": 224
+  },
+  "cdp_max_workers": 4,
+  "profile_device": "mixed",
+  "sat_memory_range_mb": null,
+  "sat_memory_values_mb": null,
+  "sat_compute_scale": 2.0,
+  "isl_bandwidth_scale": null,
+  "gsl_bandwidth_scale": null,
+  "shared_pmp_min_hops": 3,
+  "slot_scene_count": 42,
+  "mode_result_rows": 252,
+  "feasible_rows": 252,
+  "scenes_dir": "result\\tmp\\vit_s2\\scenes",
+  "configs_dir": "result\\tmp\\vit_s2\\configs",
+  "slot_mode_results_csv": "result\\tmp\\vit_s2\\data\\slot_mode_results.csv",
+  "summary_by_mode_csv": "result\\tmp\\vit_s2\\data\\summary_by_mode.csv",
+  "fwms_selection_distribution_csv": "result\\tmp\\vit_s2\\data\\fwms_selection_distribution.csv"
+}

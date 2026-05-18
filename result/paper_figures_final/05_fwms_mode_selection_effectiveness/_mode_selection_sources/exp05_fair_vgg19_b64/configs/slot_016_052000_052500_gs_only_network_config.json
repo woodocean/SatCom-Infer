@@ -24,9 +24,9 @@
       "role": "leo_computing",
       "device": "Jetson_1",
       "hardware": {
-        "compute_speed_gflops_per_ms": 3.0,
+        "compute_speed_gflops_per_ms": 6.2208,
         "memory_mb": 4096,
-        "compute_speed_tflops": 3.0
+        "compute_speed_tflops": 6.2208
       },
       "stk_id": "LEO187",
       "neighbors": [
@@ -40,9 +40,9 @@
       "role": "leo_computing",
       "device": "Jetson_1",
       "hardware": {
-        "compute_speed_gflops_per_ms": 3.0,
+        "compute_speed_gflops_per_ms": 6.2208,
         "memory_mb": 4096,
-        "compute_speed_tflops": 3.0
+        "compute_speed_tflops": 6.2208
       },
       "stk_id": "LEO021",
       "neighbors": [
@@ -56,9 +56,9 @@
       "role": "leo_computing",
       "device": "Jetson_1",
       "hardware": {
-        "compute_speed_gflops_per_ms": 3.0,
+        "compute_speed_gflops_per_ms": 6.2208,
         "memory_mb": 4096,
-        "compute_speed_tflops": 3.0
+        "compute_speed_tflops": 6.2208
       },
       "stk_id": "LEO012",
       "neighbors": [
@@ -72,9 +72,9 @@
       "role": "leo_computing",
       "device": "Jetson_1",
       "hardware": {
-        "compute_speed_gflops_per_ms": 3.0,
+        "compute_speed_gflops_per_ms": 6.2208,
         "memory_mb": 4096,
-        "compute_speed_tflops": 3.0
+        "compute_speed_tflops": 6.2208
       },
       "stk_id": "LEO181",
       "neighbors": [
@@ -215,6 +215,14 @@
       "common_duration_s": 13.994,
       "total_range_km": 18188.693257,
       "total_propagation_delay_ms": 60.67095
+    },
+    "resource_override": {
+      "sat_memory_range_mb": "",
+      "sat_memory_values_mb": "",
+      "memory_assignment": "stable_uniform_by_stk_id",
+      "sat_compute_scale": 1.2,
+      "isl_bandwidth_scale": "",
+      "gsl_bandwidth_scale": ""
     },
     "mode_selection": {
       "slot_id": "slot_016_052000_052500",
